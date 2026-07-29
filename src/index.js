@@ -9,6 +9,12 @@ export {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
+export {
+  defaultExtensionArtifactSizeLimit,
+  extensionStatus,
+  syncExtensions,
+  updateExtensions,
+} from './extension-sync.js';
 export {decodeExtensionDataUrl, importSb3} from './import.js';
 export {
   compareDirectories,
