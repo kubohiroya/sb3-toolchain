@@ -10,12 +10,13 @@ import {fileURLToPath} from 'node:url';
 
 import {strFromU8, strToU8, unzipSync} from 'fflate';
 
-import {parseCliArguments} from '../src/cli.js';
+import {parseCliArguments, runCli} from '../src/cli.js';
 import {
   buildSb3,
   compareDirectories,
   createDeterministicSb3,
   importSb3,
+  packageVersion,
   validateSb3Source,
 } from '../src/index.js';
 
@@ -335,4 +336,14 @@ test('parses build and check CLI options', () => {
     () => parseCliArguments(['extensions', 'sync', 'custom-source', 'extra']),
     /accepts only SOURCE_DIR/u,
   );
+});
+
+test('keeps package metadata and the public CLI/API version aligned', async () => {
+  const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+  const messages = [];
+
+  await runCli(['--version'], {log: (message) => messages.push(message)});
+
+  assert.equal(packageVersion, packageJson.version);
+  assert.deepEqual(messages, [packageJson.version]);
 });
