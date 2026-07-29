@@ -70,6 +70,23 @@ sb3-toolchain extensions update app
 sb3-toolchain extensions update app example
 ```
 
+読み込み済みの拡張IDを変更する場合は、まずdry-runで分類済みの変更件数と、変更しない
+未分類参照を確認します。`--yes`を付けたときだけ適用します。
+
+```bash
+sb3-toolchain extensions migrate-id app --from oldId --to newid
+sb3-toolchain extensions migrate-id app --from oldId --to newid --yes
+```
+
+GitHub管理対象では、新IDを宣言する新しい成果物の取得とID移行を一つのtransactionにします。
+リモートの成果物パスも変わる場合は`--artifact`で明示します。
+
+```bash
+sb3-toolchain extensions update app oldId \
+  --migrate-id newid \
+  --artifact dist/newid.js
+```
+
 既存出力と内容が同じ場合は更新時刻を変えません。異なる既存出力の置換には対話確認
 または`--yes`が必要です。import先に未コミット変更がある場合、`--yes`だけでは置換せず、
 明示的な`--discard-local-changes`も要求します。
@@ -85,6 +102,8 @@ import {
   extensionIntegrity,
   extensionStatus,
   importSb3,
+  migrateExtensionId,
+  planExtensionIdMigration,
   syncExtensions,
   updateExtensions,
   validateSb3Source,
@@ -107,10 +126,23 @@ const {archive} = await createDeterministicSb3('app');
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 
 const statuses = await extensionStatus('app');
+const migration = await planExtensionIdMigration({
+  sourceDirectory: 'app',
+  fromId: 'oldId',
+  toId: 'newid',
+});
+await migrateExtensionId({
+  sourceDirectory: 'app',
+  fromId: 'oldId',
+  toId: 'newid',
+  yes: true,
+});
 await syncExtensions({sourceDirectory: 'app', yes: true});
 await updateExtensions({
   sourceDirectory: 'app',
-  extensionId: 'example',
+  extensionId: 'oldId',
+  migrateToId: 'newid',
+  sourceArtifact: 'dist/newid.js',
   yes: true,
 });
 ```
@@ -132,6 +164,10 @@ GitHubリポジトリ、追跡するref、解決済みcommit、成果物パス�
 HTTPS endpointに限定し、redirectと5 MiBを超える成果物を拒否します。取得したJavaScriptは
 実行せず、IDとSHA-256を検証してから展開ディレクトリを置換します。複数拡張の一部だけが
 失敗した場合は、ファイルもメタデータも変更しません。
+
+ID移行はTurboWarp公式形式の`[a-z0-9]+`を新IDに要求し、任意の文字列置換を行いません。
+対象schema、dry-run、未分類参照の詳細は
+[`docs/extension-id-migration.md`](docs/extension-id-migration.md)を参照してください。
 
 展開形式の詳細は[`docs/source-format-v1.md`](docs/source-format-v1.md)を参照してください。
 
