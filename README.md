@@ -7,6 +7,7 @@ bit-for-bitで同一のSB3を再生成するNode.jsツールチェーンです�
 
 - SB3を整形済み`project.source.json`、アセット、埋め込み拡張へ安全に展開
 - アセット参照、MD5、ZIPエントリ、埋め込み拡張対応を検証
+- GitHub由来の埋め込み拡張についてcommitとSHA-256を記録し、オフラインで検証
 - ZIPエントリ順、タイムスタンプ、圧縮条件を固定した決定的ビルド
 - Git管理中の未コミット変更を保護したimport
 - 既存出力を保護する原子的な置換とロールバック
@@ -56,9 +57,12 @@ sb3-toolchain build app --output dist/project.sb3
 ## JavaScript API
 
 ```js
+import {readFile} from 'node:fs/promises';
+
 import {
   buildSb3,
   createDeterministicSb3,
+  extensionIntegrity,
   importSb3,
   validateSb3Source,
 } from '@kubohiroya/sb3-toolchain';
@@ -76,7 +80,21 @@ await buildSb3({
 });
 
 const {archive} = await createDeterministicSb3('app');
+
+const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 ```
+
+## 管理対象の埋め込み拡張
+
+`embedded-extensions.json`の拡張エントリには、任意の`source`メタデータとして
+GitHubリポジトリ、追跡するref、解決済みcommit、成果物パス、SHA-256を記録できます。
+`check`と`build`はネットワークへ接続せず、ローカルのJavaScriptが記録済みハッシュおよび
+`// ID: <extensionId>`ヘッダーと一致することを検証します。
+
+既存の展開ディレクトリへSB3を再importする場合、同じIDとパスを持つ拡張の`source`は
+維持されます。SB3内の実ファイルが記録済みの内容から変わっている場合は、既存出力を
+変更せずにimportを拒否します。メタデータ形式は
+[`docs/source-format-v1.md`](docs/source-format-v1.md)を参照してください。
 
 展開形式の詳細は[`docs/source-format-v1.md`](docs/source-format-v1.md)を参照してください。
 

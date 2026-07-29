@@ -38,6 +38,50 @@ embedded-extension:extensions/<extensionId>.js
 ビルド時には`embedded-extensions.json`のメディアタイプ、パラメーター、エンコーディングを
 使ってdata URLへ戻します。
 
+## `embedded-extensions.json`
+
+埋め込み拡張のdata URL情報と展開先を保持します。GitHub上で管理する拡張には、任意の
+`source`メタデータを追加できます。
+
+```json
+{
+  "formatVersion": 1,
+  "extensions": [
+    {
+      "id": "example",
+      "path": "extensions/example.js",
+      "mediaType": "text/javascript",
+      "parameters": [],
+      "encoding": "base64",
+      "source": {
+        "provider": "github",
+        "repository": "owner/example-extension",
+        "ref": "main",
+        "resolvedCommit": "0123456789abcdef0123456789abcdef01234567",
+        "artifact": "dist/example.js",
+        "integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      }
+    }
+  ]
+}
+```
+
+- `repository`: `<owner>/<repository>`形式のGitHubリポジトリ
+- `ref`: 更新候補を追跡するbranch、tag、またはcommit
+- `resolvedCommit`: 現在の実ファイルを取得した小文字40桁のcommit SHA
+- `artifact`: リポジトリルートから見たJavaScript成果物の相対パス
+- `integrity`: 現在の実ファイルに対するSRI形式のSHA-256
+
+`source`を持つ拡張について、検証とビルドはネットワークへ接続せず、次を確認します。
+
+- 実ファイルのSHA-256が`integrity`と一致する
+- 実ファイルの`// ID: <extensionId>`ヘッダーが`id`と一致する
+- リポジトリ、ref、commit、成果物パスが安全な形式である
+
+既存の展開ディレクトリへSB3を再importすると、同じIDとパスに対応する`source`を維持します。
+再importされた実ファイルが記録済みハッシュまたはIDと一致しない場合は、既存出力を変更
+しません。新規importは由来を推測できないため、`source`を自動生成しません。
+
 ## アセット
 
 `assets/`には`project.source.json`から参照されるコスチュームと音声を置きます。
@@ -60,3 +104,4 @@ embedded-extension:extensions/<extensionId>.js
 - 認識できない既存ディレクトリを上書きしない
 - Git管理中の差分は明示的な二段階指定なしに破棄しない
 - 置換中断時のロールバック領域を検出した場合は自動上書きしない
+- 管理対象の拡張は、ネットワークに依存せずcommit、SHA-256、拡張IDの整合性を検証

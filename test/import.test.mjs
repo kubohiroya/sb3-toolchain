@@ -12,6 +12,7 @@ import {strToU8, zipSync} from 'fflate';
 import {parseCliArguments} from '../src/cli.js';
 import {
   decodeExtensionDataUrl,
+  extensionIntegrity,
   importSb3,
   validateArchiveEntryName,
   validateOutputDirectoryPath,
@@ -162,6 +163,55 @@ test('leaves an identical existing output unchanged without Git or confirmation'
     assert.equal(result.changed, false);
     assert.deepEqual(result.differenceCounts, {added: 0, modified: 0, removed: 0});
     assert.equal(confirmationCalled, false);
+  });
+});
+
+test('preserves managed extension source metadata during import and rejects content drift', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    await initializeGitRepository(directory);
+    const inputPath = path.join(directory, 'input.sb3');
+    const outputDirectory = path.join(directory, 'app');
+    const extensionSource =
+      '// Name: Managed\n// ID: managed\nScratch.extensions.register(new Managed());\n';
+    await writeProjectSb3(inputPath, {
+      extensionURLs: {
+        managed: `data:text/javascript;base64,${Buffer.from(extensionSource).toString('base64')}`,
+      },
+    });
+    await importSb3({inputPath, outputDirectory});
+
+    const manifestPath = path.join(outputDirectory, 'embedded-extensions.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.extensions[0].source = {
+      provider: 'github',
+      repository: 'example/managed-extension',
+      ref: 'main',
+      resolvedCommit: '1234567890abcdef1234567890abcdef12345678',
+      artifact: 'dist/managed.js',
+      integrity: extensionIntegrity(Buffer.from(extensionSource)),
+    };
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await commitOutput(directory);
+
+    const unchanged = await importSb3({inputPath, outputDirectory});
+    assert.equal(unchanged.changed, false);
+    assert.deepEqual(
+      JSON.parse(await readFile(manifestPath, 'utf8')).extensions[0].source,
+      manifest.extensions[0].source,
+    );
+
+    const changedExtensionSource =
+      '// Name: Managed\n// ID: managed\nScratch.extensions.register(new ManagedV2());\n';
+    await writeProjectSb3(inputPath, {
+      extensionURLs: {
+        managed: `data:text/javascript;base64,${Buffer.from(changedExtensionSource).toString('base64')}`,
+      },
+    });
+    await assert.rejects(importSb3({inputPath, outputDirectory, yes: true}), /integrity mismatch/u);
+    assert.equal(
+      await readFile(path.join(outputDirectory, 'extensions/managed.js'), 'utf8'),
+      extensionSource,
+    );
   });
 });
 
