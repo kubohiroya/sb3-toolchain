@@ -1,0 +1,24 @@
+{
+  "targets": [
+    {
+      "isStage": true,
+      "name": "Stage",
+      "costumes": [
+        {
+          "name": "pixel",
+          "assetId": "19fc47764555c248fbb3cca5465be39b",
+          "dataFormat": "svg",
+          "md5ext": "19fc47764555c248fbb3cca5465be39b.svg"
+        }
+      ],
+      "sounds": []
+    }
+  ],
+  "extensionURLs": {
+    "example": "embedded-extension:extensions/example.js",
+    "external": "https://extensions.turbowarp.org/text.js"
+  },
+  "meta": {
+    "semver": "3.0.0"
+  }
+}
