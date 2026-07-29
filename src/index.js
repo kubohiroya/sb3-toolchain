@@ -10,6 +10,11 @@ export {
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
 export {
+  migrateExtensionId,
+  planExtensionIdMigration,
+  validateNewExtensionId,
+} from './extension-id-migration.js';
+export {
   defaultExtensionArtifactSizeLimit,
   extensionStatus,
   syncExtensions,

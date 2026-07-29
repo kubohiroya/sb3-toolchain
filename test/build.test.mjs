@@ -268,6 +268,8 @@ test('parses build and check CLI options', () => {
     action: 'sync',
     command: 'extensions',
     extensionId: undefined,
+    migrateToId: undefined,
+    sourceArtifact: undefined,
     sourceDirectory: path.resolve('custom-source'),
     yes: true,
   });
@@ -277,7 +279,51 @@ test('parses build and check CLI options', () => {
       action: 'update',
       command: 'extensions',
       extensionId: 'example',
+      migrateToId: undefined,
+      sourceArtifact: undefined,
       sourceDirectory: path.resolve('custom-source'),
+      yes: true,
+    },
+  );
+  assert.deepEqual(
+    parseCliArguments([
+      'extensions',
+      'update',
+      'custom-source',
+      'oldId',
+      '--migrate-id',
+      'newid',
+      '--artifact',
+      'dist/newid.js',
+      '--yes',
+    ]),
+    {
+      action: 'update',
+      command: 'extensions',
+      extensionId: 'oldId',
+      migrateToId: 'newid',
+      sourceArtifact: 'dist/newid.js',
+      sourceDirectory: path.resolve('custom-source'),
+      yes: true,
+    },
+  );
+  assert.deepEqual(
+    parseCliArguments([
+      'extensions',
+      'migrate-id',
+      'custom-source',
+      '--from',
+      'oldId',
+      '--to',
+      'newid',
+      '--yes',
+    ]),
+    {
+      action: 'migrate-id',
+      command: 'extensions',
+      fromId: 'oldId',
+      sourceDirectory: path.resolve('custom-source'),
+      toId: 'newid',
       yes: true,
     },
   );

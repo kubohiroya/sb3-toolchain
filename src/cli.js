@@ -6,6 +6,7 @@ import {createInterface} from 'node:readline/promises';
 
 import {buildSb3} from './build.js';
 import {packageVersion} from './constants.js';
+import {migrateExtensionId} from './extension-id-migration.js';
 import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync.js';
 import {importSb3} from './import.js';
 import {validateSb3Source} from './source.js';
@@ -23,7 +24,8 @@ export function usage() {
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
-  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--yes]
+  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--yes]
+  sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
 
 Commands:
   import      Expand an SB3 into Git-friendly source files.
@@ -110,11 +112,22 @@ function parseBuildArguments(arguments_) {
 function parseExtensionMutationArguments(action, arguments_) {
   let sourceDirectory;
   let extensionId;
+  let migrateToId;
+  let sourceArtifact;
   let yes = false;
 
-  for (const argument of arguments_) {
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
     if (argument === '--yes') {
       yes = true;
+    } else if (argument === '--migrate-id') {
+      assert(action === 'update', '--migrate-id is only valid for extensions update.');
+      migrateToId = takeValue(arguments_, index, '--migrate-id');
+      index += 1;
+    } else if (argument === '--artifact') {
+      assert(action === 'update', '--artifact is only valid for extensions update.');
+      sourceArtifact = takeValue(arguments_, index, '--artifact');
+      index += 1;
     } else {
       assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
       if (!sourceDirectory) {
@@ -132,14 +145,65 @@ function parseExtensionMutationArguments(action, arguments_) {
   }
 
   assert(sourceDirectory, `The extensions ${action} command requires SOURCE_DIR.`);
-  return {action, command: 'extensions', extensionId, sourceDirectory, yes};
+  assert(
+    migrateToId === undefined || extensionId !== undefined,
+    '--migrate-id requires an explicit existing EXTENSION_ID.',
+  );
+  assert(
+    sourceArtifact === undefined || migrateToId !== undefined,
+    '--artifact requires --migrate-id.',
+  );
+  return {
+    action,
+    command: 'extensions',
+    extensionId,
+    migrateToId,
+    sourceArtifact,
+    sourceDirectory,
+    yes,
+  };
+}
+
+function parseExtensionIdMigrationArguments(arguments_) {
+  let fromId;
+  let sourceDirectory;
+  let toId;
+  let yes = false;
+
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--from') {
+      fromId = takeValue(arguments_, index, '--from');
+      index += 1;
+    } else if (argument === '--to') {
+      toId = takeValue(arguments_, index, '--to');
+      index += 1;
+    } else if (argument === '--yes') {
+      yes = true;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      assert(!sourceDirectory, 'Only one SB3 source directory may be specified.');
+      sourceDirectory = path.resolve(argument);
+    }
+  }
+  assert(sourceDirectory, 'The extensions migrate-id command requires SOURCE_DIR.');
+  assert(fromId, 'The extensions migrate-id command requires --from OLD_ID.');
+  assert(toId, 'The extensions migrate-id command requires --to NEW_ID.');
+  return {
+    action: 'migrate-id',
+    command: 'extensions',
+    fromId,
+    sourceDirectory,
+    toId,
+    yes,
+  };
 }
 
 function parseExtensionsArguments(arguments_) {
   const [action, ...actionArguments] = arguments_;
   assert(
-    action === 'status' || action === 'sync' || action === 'update',
-    'The extensions command requires status, sync, or update.',
+    action === 'migrate-id' || action === 'status' || action === 'sync' || action === 'update',
+    'The extensions command requires status, sync, update, or migrate-id.',
   );
   if (action === 'status') {
     assert(
@@ -151,6 +215,9 @@ function parseExtensionsArguments(arguments_) {
       command: 'extensions',
       sourceDirectory: path.resolve(actionArguments[0]),
     };
+  }
+  if (action === 'migrate-id') {
+    return parseExtensionIdMigrationArguments(actionArguments);
   }
   return parseExtensionMutationArguments(action, actionArguments);
 }
@@ -249,6 +316,25 @@ async function confirmExtensionReplacement({comparison, sourceDirectory}) {
   }
 }
 
+function logMigrationResult(result, log) {
+  const counts = Object.entries(result.counts)
+    .filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${kind}=${count}`)
+    .join(', ');
+  const action = result.applied ? 'Migrated' : 'Dry run';
+  log(
+    `${action}: ${result.fromId} -> ${result.toId}; ` +
+      `${result.totalChanges} classified changes (${counts || 'none'}); ` +
+      `artifact=${result.artifactReady ? 'ready' : 'requires-new-ID'}.`,
+  );
+  for (const reference of result.unclassifiedReferences) {
+    log(
+      `Unclassified ${reference.kind}: ${reference.file}${reference.path} = ` +
+        JSON.stringify(reference.value),
+    );
+  }
+}
+
 export async function runCli(
   arguments_,
   {fetch: fetchImplementation = globalThis.fetch, log = console.log} = {},
@@ -288,6 +374,17 @@ export async function runCli(
     return;
   }
   if (options.command === 'extensions') {
+    if (options.action === 'migrate-id') {
+      const result = await migrateExtensionId({
+        fromId: options.fromId,
+        sourceDirectory: options.sourceDirectory,
+        toId: options.toId,
+        yes: options.yes,
+      });
+      logMigrationResult(result, log);
+      if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+      return;
+    }
     if (options.action === 'status') {
       const statuses = await extensionStatus(options.sourceDirectory, {
         fetch: fetchImplementation,
@@ -315,12 +412,27 @@ export async function runCli(
     const result =
       options.action === 'sync'
         ? await syncExtensions(operationOptions)
-        : await updateExtensions({...operationOptions, extensionId: options.extensionId});
+        : await updateExtensions({
+            ...operationOptions,
+            extensionId: options.extensionId,
+            migrateToId: options.migrateToId,
+            sourceArtifact: options.sourceArtifact,
+          });
     const action = result.changed ? 'Updated' : 'Already up to date';
     log(
       `${action}: ${result.sourceDirectory} ` +
         `(${result.extensions.map((extension) => extension.id).join(', ')}).`,
     );
+    if (result.migration) {
+      logMigrationResult(
+        {
+          applied: result.changed,
+          artifactReady: true,
+          ...result.migration,
+        },
+        log,
+      );
+    }
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;
   }

@@ -6,15 +6,21 @@ import path from 'node:path';
 import {
   extensionHeaderId,
   extensionIntegrity,
+  validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
+import {rewriteExtensionIdDocuments, validateNewExtensionId} from './extension-id-migration.js';
 import {
   assertNoInterruptedRollback,
   compareDirectories,
   pathExists,
   replaceDirectoryTransactionally,
 } from './output-safety.js';
-import {inspectSb3SourceForExtensionSync, validateSb3Source} from './source.js';
+import {
+  createDeterministicSb3,
+  inspectSb3SourceForExtensionSync,
+  validateSb3Source,
+} from './source.js';
 
 export const defaultExtensionArtifactSizeLimit = 5 * 1024 * 1024;
 const githubApiResponseSizeLimit = 1024 * 1024;
@@ -143,7 +149,13 @@ async function resolveGithubCommit(extension, fetchImplementation) {
   return response.sha;
 }
 
-async function downloadExtension(extension, commit, fetchImplementation, maximumArtifactBytes) {
+async function downloadExtension(
+  extension,
+  commit,
+  fetchImplementation,
+  maximumArtifactBytes,
+  expectedId = extension.id,
+) {
   const contents = await fetchBytes(
     fetchImplementation,
     rawArtifactUrl(extension.source, commit),
@@ -153,9 +165,9 @@ async function downloadExtension(extension, commit, fetchImplementation, maximum
   );
   const actualId = extensionHeaderId(contents);
   assert(
-    actualId === extension.id,
+    actualId === expectedId,
     `Downloaded extension header ID mismatch for ${extension.id}: ` +
-      `expected ${extension.id}, got ${actualId ?? '(missing)'}`,
+      `expected ${expectedId}, got ${actualId ?? '(missing)'}`,
   );
   return contents;
 }
@@ -187,8 +199,18 @@ async function inspectExtensionSource(sourceDirectory, {willReplace = false} = {
   return inspectSb3SourceForExtensionSync(resolvedSourceDirectory);
 }
 
-async function installCandidate({candidateDirectory, confirmReplace, sourceDirectory, yes}) {
+async function installCandidate({
+  candidateDirectory,
+  confirmReplace,
+  initialSourceFingerprint,
+  sourceDirectory,
+  yes,
+}) {
   const comparison = await compareDirectories(sourceDirectory, candidateDirectory);
+  assert(
+    comparison.existingFingerprint === initialSourceFingerprint,
+    'SB3 source changed while extension artifacts were being fetched; refusing to replace it.',
+  );
   if (comparison.identical) {
     await rm(candidateDirectory, {recursive: true, force: true});
     return {changed: false, comparison, rollbackCleanupWarning: null};
@@ -221,8 +243,10 @@ async function updateCandidate({
   confirmReplace,
   fetchImplementation,
   maximumArtifactBytes,
+  migrateToId,
   mode,
   selectedExtensionId,
+  sourceArtifact,
   sourceDirectory,
   yes,
 }) {
@@ -231,6 +255,15 @@ async function updateCandidate({
     'maximumArtifactBytes must be a positive integer.',
   );
   const source = await inspectExtensionSource(sourceDirectory, {willReplace: true});
+  const initialComparison = await compareDirectories(
+    source.resolvedSourceDirectory,
+    source.resolvedSourceDirectory,
+  );
+  assert(
+    initialComparison.identical &&
+      initialComparison.existingFingerprint === initialComparison.candidateFingerprint,
+    'SB3 source changed while its initial state was being inspected.',
+  );
   const managed = managedExtensions(source);
   assert(managed.length > 0, 'No managed embedded extensions were found.');
   if (selectedExtensionId !== undefined) {
@@ -239,26 +272,62 @@ async function updateCandidate({
       `Managed extension was not found: ${selectedExtensionId}`,
     );
   }
+  if (migrateToId !== undefined) {
+    assert(mode === 'update', 'Extension ID migration is only available during update.');
+    assert(
+      selectedExtensionId !== undefined,
+      'Extension ID migration requires an explicit existing extension ID.',
+    );
+    validateNewExtensionId(migrateToId);
+  }
+  assert(
+    sourceArtifact === undefined || migrateToId !== undefined,
+    'A replacement artifact path requires an extension ID migration.',
+  );
   const selected = managed.filter(
     (extension) => selectedExtensionId === undefined || extension.id === selectedExtensionId,
   );
+  if (migrateToId !== undefined) {
+    const extensionManifest = JSON.parse(
+      await readFile(
+        path.join(source.resolvedSourceDirectory, source.sourceManifest.embeddedExtensions),
+        'utf8',
+      ),
+    );
+    rewriteExtensionIdDocuments({
+      extensionManifest,
+      newId: migrateToId,
+      oldId: selectedExtensionId,
+      project: source.project,
+      sourceArtifact,
+    });
+  }
 
   const downloads = await Promise.all(
     selected.map(async (extension) => {
+      const effectiveExtension =
+        sourceArtifact === undefined
+          ? extension
+          : {
+              ...extension,
+              source: {...extension.source, artifact: sourceArtifact},
+            };
+      validateExtensionSourceMetadata(effectiveExtension);
       const commit =
         mode === 'sync'
           ? extension.source.resolvedCommit
           : await resolveGithubCommit(extension, fetchImplementation);
       const contents = await downloadExtension(
-        extension,
+        effectiveExtension,
         commit,
         fetchImplementation,
         maximumArtifactBytes,
+        migrateToId ?? extension.id,
       );
       if (mode === 'sync') {
         validateManagedExtensionContents(extension, contents);
       }
-      return {commit, contents, extension};
+      return {commit, contents, effectiveExtension, extension};
     }),
   );
 
@@ -275,9 +344,31 @@ async function updateCandidate({
     });
     const manifestPath = path.join(candidateDirectory, source.sourceManifest.embeddedExtensions);
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const projectPath = path.join(candidateDirectory, source.sourceManifest.project);
     const entriesById = new Map(manifest.extensions.map((extension) => [extension.id, extension]));
     let manifestChanged = false;
-    for (const {commit, contents, extension} of downloads) {
+    let migration;
+    for (const {commit, contents, effectiveExtension, extension} of downloads) {
+      if (migrateToId !== undefined) {
+        const project = JSON.parse(await readFile(projectPath, 'utf8'));
+        migration = rewriteExtensionIdDocuments({
+          extensionManifest: manifest,
+          newId: migrateToId,
+          oldId: extension.id,
+          project,
+          sourceArtifact: effectiveExtension.source.artifact,
+        });
+        const migratedExtension = migration.extensionManifest.extensions[migration.extensionIndex];
+        migratedExtension.source.resolvedCommit = commit;
+        migratedExtension.source.integrity = extensionIntegrity(contents);
+        await Promise.all([
+          writeFile(projectPath, `${JSON.stringify(migration.project, null, 2)}\n`),
+          writeFile(manifestPath, `${JSON.stringify(migration.extensionManifest, null, 2)}\n`),
+          writeFile(path.join(candidateDirectory, migration.newPath), contents),
+        ]);
+        await rm(path.join(candidateDirectory, migration.oldPath));
+        continue;
+      }
       await writeFile(path.join(candidateDirectory, extension.path), contents);
       if (mode === 'update') {
         const candidateExtension = entriesById.get(extension.id);
@@ -291,13 +382,18 @@ async function updateCandidate({
         candidateExtension.source.integrity = integrity;
       }
     }
-    if (manifestChanged) {
+    if (manifestChanged && migrateToId === undefined) {
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     }
-    await validateSb3Source(candidateDirectory);
+    if (migration) {
+      await createDeterministicSb3(candidateDirectory);
+    } else {
+      await validateSb3Source(candidateDirectory);
+    }
     const result = await installCandidate({
       candidateDirectory,
       confirmReplace,
+      initialSourceFingerprint: initialComparison.existingFingerprint,
       sourceDirectory: source.resolvedSourceDirectory,
       yes,
     });
@@ -305,9 +401,20 @@ async function updateCandidate({
     return {
       ...result,
       extensions: downloads.map(({commit, extension}) => ({
-        id: extension.id,
+        id: migrateToId ?? extension.id,
+        previousId: migrateToId === undefined ? undefined : extension.id,
         resolvedCommit: commit,
       })),
+      migration:
+        migration === undefined
+          ? null
+          : {
+              counts: migration.counts,
+              fromId: selectedExtensionId,
+              toId: migrateToId,
+              totalChanges: migration.totalChanges,
+              unclassifiedReferences: migration.unclassifiedReferences,
+            },
       mode,
       sourceDirectory: source.resolvedSourceDirectory,
     };
@@ -356,8 +463,10 @@ export async function syncExtensions({
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,
+    migrateToId: undefined,
     mode: 'sync',
     selectedExtensionId: undefined,
+    sourceArtifact: undefined,
     sourceDirectory,
     yes,
   });
@@ -368,6 +477,8 @@ export async function updateExtensions({
   extensionId,
   fetch: fetchImplementation = globalThis.fetch,
   maximumArtifactBytes = defaultExtensionArtifactSizeLimit,
+  migrateToId,
+  sourceArtifact,
   sourceDirectory,
   yes = false,
 }) {
@@ -375,8 +486,10 @@ export async function updateExtensions({
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,
+    migrateToId,
     mode: 'update',
     selectedExtensionId: extensionId,
+    sourceArtifact,
     sourceDirectory,
     yes,
   });

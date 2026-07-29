@@ -88,6 +88,11 @@ embedded-extension:extensions/<extensionId>.js
 `integrity`を更新します。複数entryの取得と検証がすべて成功するまで、展開ソースは変更
 されません。
 
+拡張IDの変更では、manifestの`id`と`path`、`project.source.json`の既知参照、
+`extensions/<id>.js`を同じtransactionで移行します。管理対象拡張を`extensions update`
+と同時に移行した場合は、`artifact`（明示時）、`resolvedCommit`、`integrity`も新成果物に
+合わせて更新します。
+
 ## アセット
 
 `assets/`には`project.source.json`から参照されるコスチュームと音声を置きます。
