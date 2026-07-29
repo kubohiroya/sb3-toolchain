@@ -7,6 +7,7 @@ import process from 'node:process';
 import {strFromU8, unzipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive.js';
+import {validateManagedExtensionContents} from './extension-dependencies.js';
 import {
   assertNoInterruptedRollback,
   assertRecognizedOutputDirectory,
@@ -126,6 +127,46 @@ function extensionSourcePath(extensionId) {
   return `extensions/${extensionId}.js`;
 }
 
+async function readExistingExtensionSources(outputDirectory) {
+  if (!(await pathExists(outputDirectory))) {
+    return new Map();
+  }
+
+  const manifestPath = path.join(outputDirectory, 'embedded-extensions.json');
+  if (!(await pathExists(manifestPath))) {
+    return new Map();
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Existing embedded extension manifest is not valid JSON: ${manifestPath}`, {
+      cause: error,
+    });
+  }
+  assert(
+    manifest &&
+      typeof manifest === 'object' &&
+      !Array.isArray(manifest) &&
+      Array.isArray(manifest.extensions),
+    `Existing embedded extension manifest is invalid: ${manifestPath}`,
+  );
+
+  return new Map(
+    manifest.extensions
+      .filter(
+        (extension) =>
+          extension &&
+          typeof extension === 'object' &&
+          typeof extension.id === 'string' &&
+          typeof extension.path === 'string' &&
+          extension.source !== undefined,
+      )
+      .map((extension) => [`${extension.id}\u0000${extension.path}`, extension.source]),
+  );
+}
+
 export function decodeExtensionDataUrl(dataUrl) {
   assert(
     typeof dataUrl === 'string' && dataUrl.startsWith('data:'),
@@ -216,6 +257,7 @@ export async function importSb3({
     'SB3 project.json extensionURLs must be an object when present.',
   );
 
+  const existingExtensionSources = await readExistingExtensionSources(resolvedOutputDirectory);
   const embeddedExtensions = [];
   const decodedExtensionSources = [];
   for (const [extensionId, extensionUrl] of Object.entries(extensionUrls)) {
@@ -225,13 +267,19 @@ export async function importSb3({
     const sourcePath = extensionSourcePath(extensionId);
     const decoded = decodeExtensionDataUrl(extensionUrl);
     extensionUrls[extensionId] = `embedded-extension:${sourcePath}`;
-    embeddedExtensions.push({
+    const extension = {
       id: extensionId,
       path: sourcePath,
       mediaType: decoded.mediaType,
       parameters: decoded.parameters,
       encoding: decoded.encoding,
-    });
+    };
+    const existingSource = existingExtensionSources.get(`${extensionId}\u0000${sourcePath}`);
+    if (existingSource !== undefined) {
+      extension.source = structuredClone(existingSource);
+      validateManagedExtensionContents(extension, decoded.source);
+    }
+    embeddedExtensions.push(extension);
     decodedExtensionSources.push({path: sourcePath, source: decoded.source});
   }
 
@@ -284,7 +332,6 @@ export async function importSb3({
         `${JSON.stringify(sourceManifest, null, 2)}\n`,
       ),
     ]);
-
     decision = await authorizeOutputReplacement({
       candidateDirectory: temporaryDirectory,
       confirmReplace,

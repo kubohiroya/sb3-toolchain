@@ -7,6 +7,10 @@ import path from 'node:path';
 import {strToU8, zipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive.js';
+import {
+  validateExtensionSourceMetadata,
+  validateManagedExtensionContents,
+} from './extension-dependencies.js';
 
 export const sourceFormatVersion = 1;
 export const fixedZipTimestamp = new Date(1980, 0, 1, 0, 0, 0, 0);
@@ -186,6 +190,7 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
       extensionUrls[extension.id] === `embedded-extension:${extension.path}`,
       `project.source.json mapping does not match embedded extension ${extension.id}.`,
     );
+    validateExtensionSourceMetadata(extension);
     extensionsById.set(extension.id, extension);
     expectedFiles.push(`${extension.id}.js`);
   }
@@ -320,10 +325,9 @@ export async function validateSb3Source(sourceDirectory) {
   const extensionContents = new Map();
   await Promise.all(
     extensions.map(async (extension) => {
-      extensionContents.set(
-        extension.id,
-        await readFile(path.join(resolvedSourceDirectory, extension.path)),
-      );
+      const contents = await readFile(path.join(resolvedSourceDirectory, extension.path));
+      validateManagedExtensionContents(extension, contents);
+      extensionContents.set(extension.id, contents);
     }),
   );
 

@@ -3,6 +3,12 @@
 export {validateArchiveEntryName} from './archive.js';
 export {buildSb3} from './build.js';
 export {packageName, packageVersion} from './constants.js';
+export {
+  extensionHeaderId,
+  extensionIntegrity,
+  validateExtensionSourceMetadata,
+  validateManagedExtensionContents,
+} from './extension-dependencies.js';
 export {decodeExtensionDataUrl, importSb3} from './import.js';
 export {
   compareDirectories,
