@@ -26,7 +26,7 @@ TMPose紙芝居の台本変換、特定作品のデータ、TurboWarp Packager�
 再現可能な導入のため、npmで検証済みバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.1.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.1.1
 ```
 
 ## CLI
