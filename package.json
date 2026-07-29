@@ -18,7 +18,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "sb3-toolchain": "./bin/sb3-toolchain.mjs"
+    "sb3-toolchain": "bin/sb3-toolchain.mjs"
   },
   "files": [
     "bin/",
@@ -28,7 +28,8 @@
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "packageManager": "pnpm@11.11.0",
   "scripts": {
@@ -37,7 +38,9 @@
     "format:write": "prettier --write .github bin docs src test package.json README.md tsconfig.json",
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --test test/*.test.mjs",
-    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test",
+    "pack:check": "npm pack --dry-run --ignore-scripts",
+    "release:check": "npm publish --dry-run --access public",
+    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm pack:check",
     "prepack": "pnpm check"
   },
   "dependencies": {

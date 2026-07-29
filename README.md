@@ -23,11 +23,10 @@ TMPose紙芝居の台本変換、特定作品のデータ、TurboWarp Packager�
 
 ## インストール
 
-リリースタグを固定してインストールします。公開前の例では`VERSION`を利用するタグへ
-置き換えてください。
+再現可能な導入のため、npmで検証済みバージョンを固定します。
 
 ```bash
-pnpm add --save-dev github:kubohiroya/sb3-toolchain#VERSION
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.1.0
 ```
 
 ## CLI
