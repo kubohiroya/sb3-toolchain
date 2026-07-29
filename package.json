@@ -1,0 +1,62 @@
+{
+  "name": "@kubohiroya/sb3-toolchain",
+  "version": "0.1.0",
+  "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
+  "type": "module",
+  "license": "MPL-2.0",
+  "author": "Hiroya Kubo",
+  "homepage": "https://github.com/kubohiroya/sb3-toolchain#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubohiroya/sb3-toolchain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kubohiroya/sb3-toolchain/issues"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "sb3-toolchain": "./bin/sb3-toolchain.mjs"
+  },
+  "files": [
+    "bin/",
+    "docs/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.11.0",
+  "scripts": {
+    "lint": "eslint src bin test",
+    "format": "prettier --check .github bin docs src test package.json README.md tsconfig.json",
+    "format:write": "prettier --write .github bin docs src test package.json README.md tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test",
+    "prepack": "pnpm check"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "sb3",
+    "scratch",
+    "turbowarp",
+    "source-control",
+    "reproducible-builds"
+  ]
+}

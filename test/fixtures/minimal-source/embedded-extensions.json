@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "extensions": [
+    {
+      "id": "example",
+      "path": "extensions/example.js",
+      "mediaType": "text/javascript",
+      "parameters": [],
+      "encoding": "base64"
+    }
+  ]
+}
