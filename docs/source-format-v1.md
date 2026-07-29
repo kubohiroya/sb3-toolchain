@@ -82,6 +82,12 @@ embedded-extension:extensions/<extensionId>.js
 再importされた実ファイルが記録済みハッシュまたはIDと一致しない場合は、既存出力を変更
 しません。新規importは由来を推測できないため、`source`を自動生成しません。
 
+`extensions sync`は`resolvedCommit`を固定入力として`artifact`を取得し、既存の
+`integrity`とIDに一致する場合だけローカルファイルを復元します。`extensions update`は
+`ref`をGitHub APIで解決し、そのcommitから取得した成果物に合わせて`resolvedCommit`と
+`integrity`を更新します。複数entryの取得と検証がすべて成功するまで、展開ソースは変更
+されません。
+
 ## アセット
 
 `assets/`には`project.source.json`から参照されるコスチュームと音声を置きます。
@@ -105,3 +111,4 @@ embedded-extension:extensions/<extensionId>.js
 - Git管理中の差分は明示的な二段階指定なしに破棄しない
 - 置換中断時のロールバック領域を検出した場合は自動上書きしない
 - 管理対象の拡張は、ネットワークに依存せずcommit、SHA-256、拡張IDの整合性を検証
+- GitHub取得はHTTPS・redirect拒否・サイズ上限付きとし、取得したJavaScriptを実行しない

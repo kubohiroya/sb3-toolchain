@@ -6,6 +6,7 @@ import {createInterface} from 'node:readline/promises';
 
 import {buildSb3} from './build.js';
 import {packageVersion} from './constants.js';
+import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync.js';
 import {importSb3} from './import.js';
 import {validateSb3Source} from './source.js';
 
@@ -20,11 +21,15 @@ export function usage() {
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
   sb3-toolchain check SOURCE_DIR
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--yes]
+  sb3-toolchain extensions status SOURCE_DIR
+  sb3-toolchain extensions sync SOURCE_DIR [--yes]
+  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--yes]
 
 Commands:
-  import  Expand an SB3 into Git-friendly source files.
-  check   Validate an expanded SB3 source directory.
-  build   Build a deterministic SB3 from expanded sources.
+  import      Expand an SB3 into Git-friendly source files.
+  check       Validate an expanded SB3 source directory.
+  build       Build a deterministic SB3 from expanded sources.
+  extensions  Inspect, restore, or update managed embedded extensions.
 
 Replacement safety:
   Differing outputs require interactive confirmation or --yes.
@@ -102,6 +107,54 @@ function parseBuildArguments(arguments_) {
   return {command: 'build', outputPath, sourceDirectory, yes};
 }
 
+function parseExtensionMutationArguments(action, arguments_) {
+  let sourceDirectory;
+  let extensionId;
+  let yes = false;
+
+  for (const argument of arguments_) {
+    if (argument === '--yes') {
+      yes = true;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      if (!sourceDirectory) {
+        sourceDirectory = path.resolve(argument);
+      } else {
+        assert(action === 'update', `The extensions ${action} command accepts only SOURCE_DIR.`);
+        assert(!extensionId, 'Only one EXTENSION_ID may be specified.');
+        assert(
+          /^[A-Za-z0-9._-]+$/u.test(argument),
+          `Invalid embedded extension ID: ${JSON.stringify(argument)}`,
+        );
+        extensionId = argument;
+      }
+    }
+  }
+
+  assert(sourceDirectory, `The extensions ${action} command requires SOURCE_DIR.`);
+  return {action, command: 'extensions', extensionId, sourceDirectory, yes};
+}
+
+function parseExtensionsArguments(arguments_) {
+  const [action, ...actionArguments] = arguments_;
+  assert(
+    action === 'status' || action === 'sync' || action === 'update',
+    'The extensions command requires status, sync, or update.',
+  );
+  if (action === 'status') {
+    assert(
+      actionArguments.length === 1 && !actionArguments[0].startsWith('-'),
+      'The extensions status command requires exactly one SOURCE_DIR.',
+    );
+    return {
+      action,
+      command: 'extensions',
+      sourceDirectory: path.resolve(actionArguments[0]),
+    };
+  }
+  return parseExtensionMutationArguments(action, actionArguments);
+}
+
 export function parseCliArguments(arguments_) {
   const normalized = arguments_.filter((argument) => argument !== '--');
   if (normalized.length === 0 || normalized[0] === '--help' || normalized[0] === '-h') {
@@ -118,6 +171,7 @@ export function parseCliArguments(arguments_) {
   if (command === 'import') return parseImportArguments(commandArguments);
   if (command === 'check') return parseCheckArguments(commandArguments);
   if (command === 'build') return parseBuildArguments(commandArguments);
+  if (command === 'extensions') return parseExtensionsArguments(commandArguments);
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -175,7 +229,30 @@ async function confirmBuildReplacement(outputPath) {
   }
 }
 
-export async function runCli(arguments_, {log = console.log} = {}) {
+async function confirmExtensionReplacement({comparison, sourceDirectory}) {
+  assert(
+    process.stdin.isTTY && process.stdout.isTTY,
+    `Managed extension files differ in ${sourceDirectory}. ` +
+      'Non-interactive replacement requires --yes.',
+  );
+  const readline = createInterface({input: process.stdin, output: process.stdout});
+  try {
+    const answer = await readline.question(
+      `Managed extension changes will be installed:\n` +
+        `  ${sourceDirectory}\n` +
+        `${formatDifferenceLines(comparison.differences)}\n` +
+        'Replace these files? [y/N] ',
+    );
+    return /^(?:y|yes)$/iu.test(answer.trim());
+  } finally {
+    readline.close();
+  }
+}
+
+export async function runCli(
+  arguments_,
+  {fetch: fetchImplementation = globalThis.fetch, log = console.log} = {},
+) {
   const options = parseCliArguments(arguments_);
   if (options.command === 'help') {
     log(usage());
@@ -206,6 +283,43 @@ export async function runCli(arguments_, {log = console.log} = {}) {
     log(
       `${action}: ${result.outputPath} (${result.entryCount} entries, ` +
         `${result.assetCount} assets, ${result.embeddedExtensionCount} embedded extensions).`,
+    );
+    if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+    return;
+  }
+  if (options.command === 'extensions') {
+    if (options.action === 'status') {
+      const statuses = await extensionStatus(options.sourceDirectory, {
+        fetch: fetchImplementation,
+      });
+      if (statuses.length === 0) {
+        log(`No managed embedded extensions: ${options.sourceDirectory}`);
+        return;
+      }
+      for (const status of statuses) {
+        log(
+          `${status.id}: ${status.state}; local=${status.local}; ` +
+            `${status.ref} -> ${status.remoteCommit} ` +
+            `(installed ${status.resolvedCommit})`,
+        );
+      }
+      return;
+    }
+
+    const operationOptions = {
+      confirmReplace: confirmExtensionReplacement,
+      fetch: fetchImplementation,
+      sourceDirectory: options.sourceDirectory,
+      yes: options.yes,
+    };
+    const result =
+      options.action === 'sync'
+        ? await syncExtensions(operationOptions)
+        : await updateExtensions({...operationOptions, extensionId: options.extensionId});
+    const action = result.changed ? 'Updated' : 'Already up to date';
+    log(
+      `${action}: ${result.sourceDirectory} ` +
+        `(${result.extensions.map((extension) => extension.id).join(', ')}).`,
     );
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;

@@ -50,6 +50,26 @@ sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3
 ```
 
+管理対象の埋め込み拡張について、追跡中のGitHub refに更新があるか確認します。
+
+```bash
+sb3-toolchain extensions status app
+```
+
+記録済みの固定commitから実ファイルを復元します。refは解決せず、メタデータも変更しません。
+
+```bash
+sb3-toolchain extensions sync app
+```
+
+追跡中のrefを最新commitへ解決し、成果物と`resolvedCommit`／`integrity`を更新します。
+IDを省略すると、すべての管理対象拡張を一つのtransactionとして更新します。
+
+```bash
+sb3-toolchain extensions update app
+sb3-toolchain extensions update app example
+```
+
 既存出力と内容が同じ場合は更新時刻を変えません。異なる既存出力の置換には対話確認
 または`--yes`が必要です。import先に未コミット変更がある場合、`--yes`だけでは置換せず、
 明示的な`--discard-local-changes`も要求します。
@@ -63,7 +83,10 @@ import {
   buildSb3,
   createDeterministicSb3,
   extensionIntegrity,
+  extensionStatus,
   importSb3,
+  syncExtensions,
+  updateExtensions,
   validateSb3Source,
 } from '@kubohiroya/sb3-toolchain';
 
@@ -82,6 +105,14 @@ await buildSb3({
 const {archive} = await createDeterministicSb3('app');
 
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
+
+const statuses = await extensionStatus('app');
+await syncExtensions({sourceDirectory: 'app', yes: true});
+await updateExtensions({
+  sourceDirectory: 'app',
+  extensionId: 'example',
+  yes: true,
+});
 ```
 
 ## 管理対象の埋め込み拡張
@@ -95,6 +126,12 @@ GitHubリポジトリ、追跡するref、解決済みcommit、成果物パス�
 維持されます。SB3内の実ファイルが記録済みの内容から変わっている場合は、既存出力を
 変更せずにimportを拒否します。メタデータ形式は
 [`docs/source-format-v1.md`](docs/source-format-v1.md)を参照してください。
+
+`extensions sync`は`resolvedCommit`だけから取得するため、mutableなbranchやtagを
+再現処理に使いません。`extensions update`だけが`ref`を解決します。取得先はGitHubの
+HTTPS endpointに限定し、redirectと5 MiBを超える成果物を拒否します。取得したJavaScriptは
+実行せず、IDとSHA-256を検証してから展開ディレクトリを置換します。複数拡張の一部だけが
+失敗した場合は、ファイルもメタデータも変更しません。
 
 展開形式の詳細は[`docs/source-format-v1.md`](docs/source-format-v1.md)を参照してください。
 

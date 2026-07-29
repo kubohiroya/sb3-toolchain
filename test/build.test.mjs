@@ -259,8 +259,34 @@ test('parses build and check CLI options', () => {
     command: 'check',
     sourceDirectory: path.resolve('custom-source'),
   });
+  assert.deepEqual(parseCliArguments(['extensions', 'status', 'custom-source']), {
+    action: 'status',
+    command: 'extensions',
+    sourceDirectory: path.resolve('custom-source'),
+  });
+  assert.deepEqual(parseCliArguments(['extensions', 'sync', 'custom-source', '--yes']), {
+    action: 'sync',
+    command: 'extensions',
+    extensionId: undefined,
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  assert.deepEqual(
+    parseCliArguments(['extensions', 'update', 'custom-source', 'example', '--yes']),
+    {
+      action: 'update',
+      command: 'extensions',
+      extensionId: 'example',
+      sourceDirectory: path.resolve('custom-source'),
+      yes: true,
+    },
+  );
   assert.throws(
     () => parseCliArguments(['build', 'custom-source', '--output']),
     /requires a value/u,
+  );
+  assert.throws(
+    () => parseCliArguments(['extensions', 'sync', 'custom-source', 'extra']),
+    /accepts only SOURCE_DIR/u,
   );
 });

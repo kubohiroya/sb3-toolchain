@@ -255,7 +255,7 @@ function encodeExtensionDataUrl(extension, contents) {
   return `data:${metadata},${percentEncode(contents)}`;
 }
 
-export async function validateSb3Source(sourceDirectory) {
+async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
   const resolvedSourceDirectory = path.resolve(sourceDirectory);
   await assertDirectory(resolvedSourceDirectory, 'SB3 source');
   const sourceManifest = await readJson(
@@ -326,7 +326,9 @@ export async function validateSb3Source(sourceDirectory) {
   await Promise.all(
     extensions.map(async (extension) => {
       const contents = await readFile(path.join(resolvedSourceDirectory, extension.path));
-      validateManagedExtensionContents(extension, contents);
+      if (validateManagedExtensions) {
+        validateManagedExtensionContents(extension, contents);
+      }
       extensionContents.set(extension.id, contents);
     }),
   );
@@ -340,6 +342,14 @@ export async function validateSb3Source(sourceDirectory) {
     resolvedSourceDirectory,
     sourceManifest,
   };
+}
+
+export async function inspectSb3SourceForExtensionSync(sourceDirectory) {
+  return inspectSb3Source(sourceDirectory, false);
+}
+
+export async function validateSb3Source(sourceDirectory) {
+  return inspectSb3Source(sourceDirectory, true);
 }
 
 export async function createDeterministicSb3(sourceDirectory) {
