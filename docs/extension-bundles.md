@@ -5,6 +5,40 @@ run each extension. A static bundle keeps the individual extensions in the expan
 transforms only the generated SB3 into one composite extension, reducing the permission unit to
 one extension.
 
+## Overview
+
+```mermaid
+flowchart LR
+  subgraph Source["Expanded source (authoritative)"]
+    Project["project.source.json<br/>original opcodes"]
+    Alpha["extensions/alpha.js"]
+    Beta["extensions/beta.js"]
+  end
+
+  Build["sb3-toolchain build"]
+
+  subgraph Output["Generated bundled SB3"]
+    BundledProject["project.json<br/>namespaced opcodes"]
+    Composite["one composite extension<br/>one register() call"]
+    Capsule["recovery capsule<br/>original extension data"]
+  end
+
+  TurboWarp["TurboWarp Editor<br/>one permission prompt"]
+
+  Project --> Build
+  Alpha --> Build
+  Beta --> Build
+  Build --> BundledProject
+  Build --> Composite
+  Build --> Capsule
+  BundledProject --> TurboWarp
+  Composite --> TurboWarp
+```
+
+The expanded source always retains the individual extensions. Bundling changes only the generated
+SB3, and the recovery capsule makes that generated artifact reversible when its safety conditions
+remain satisfied.
+
 ## Compatibility and reversibility
 
 Bundle configuration is added only to `embedded-extensions.json`. The following authoritative
@@ -43,8 +77,11 @@ Two consecutive `---` separators divide member groups. A generated LABEL also ca
 machine-readable metadata:
 
 ```js
-sb3Toolchain: {
-  kind: ('bundle-member-heading', memberId);
+{
+  sb3Toolchain: {
+    kind: 'bundle-member-heading',
+    memberId,
+  },
 }
 ```
 
@@ -53,6 +90,22 @@ original positions. The decorated bundle heading and wider double separator ther
 visually distinct from an original heading or ordinary separator. A tool can identify the generated
 heading by its `sb3Toolchain` metadata and treat the two separators immediately before it as the
 bundle group boundary.
+
+The resulting palette has this visual hierarchy:
+
+```text
+┌─ Project Extension Bundle ─────────────────────────────┐
+│ ◆ Bundled extension: Alpha Tools [alpha] ◆            │ ← generated heading
+│   alpha block 1                                        │
+│   Alpha original heading                               │ ← original LABEL
+│                                                       │ ← original separator
+│   alpha block 2                                        │
+│                                                       │
+│                                                       │ ← generated double separator
+│ ◆ Bundled extension: Beta Tools [beta] ◆              │ ← generated heading
+│   beta block 1                                         │
+└────────────────────────────────────────────────────────┘
+```
 
 ## Configure a bundle
 
@@ -101,6 +154,25 @@ capsule records each original member data URL, member order, and the original `e
 `extensionURLs` order.
 
 ## Restore from expanded source
+
+Choose the restoration path based on which artifact is available:
+
+```mermaid
+flowchart TD
+  Start{"What do you have?"}
+  Source["Expanded source directory"]
+  SB3["Bundled SB3 only"]
+  SourceCommand["extensions unbundle SOURCE_DIR"]
+  ArchiveCommand["extensions unbundle INPUT.sb3<br/>--output OUTPUT.sb3"]
+  Rebuild["Rebuild from preserved<br/>project.source.json and member JS"]
+  Recover["Validate recovery capsule<br/>and reverse project transformations"]
+  Restored["SB3 with individual extensions"]
+
+  Start -->|"authoritative source"| Source
+  Start -->|"distribution artifact"| SB3
+  Source --> SourceCommand --> Rebuild --> Restored
+  SB3 --> ArchiveCommand --> Recover --> Restored
+```
 
 First inspect the unbundle plan with a dry run, then pass `--yes` to remove the bundle configuration.
 
@@ -153,6 +225,27 @@ bundles can be unbundled one bundle at a time in any order when every bundle has
 capsule and their member sets do not overlap.
 
 ### Conditions that make direct unbundling impossible
+
+```mermaid
+flowchart TD
+  Input["Bundled SB3"]
+  Capsule{"Valid recovery capsule?"}
+  Order{"Extension ID set and<br/>order still match?"}
+  Mapping{"Every bundle opcode maps<br/>to exactly one member?"}
+  Storage{"Storage uses reversible<br/>format 1 without collisions?"}
+  Write["Write unbundled SB3"]
+  Refuse["Refuse safely<br/>leave output unchanged"]
+
+  Input --> Capsule
+  Capsule -->|"yes"| Order
+  Capsule -->|"no"| Refuse
+  Order -->|"yes"| Mapping
+  Order -->|"no"| Refuse
+  Mapping -->|"yes"| Storage
+  Mapping -->|"no"| Refuse
+  Storage -->|"yes"| Write
+  Storage -->|"no"| Refuse
+```
 
 The tool refuses the operation without modifying the output instead of guessing when any of the
 following conditions apply:
