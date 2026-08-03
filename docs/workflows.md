@@ -1,27 +1,25 @@
-# SB3ソース管理ワークフロー
+# SB3 source-management workflows
 
-この文書は、Scratch 3／TurboWarp作品のSB3を展開ソースとしてGit管理し、検証済みの
-SB3を再構築するための共通手順です。作品固有の編集方法、テスト、配布先は各作品の
-リポジトリで定めます。
+This document describes the common workflow for managing a Scratch 3 or TurboWarp SB3 as expanded
+source in Git and rebuilding a validated SB3. Each project repository should define its own editing,
+testing, and distribution procedures.
 
-展開ディレクトリの構造と各ファイルの仕様は
-[`source-format-v1.md`](source-format-v1.md)を参照してください。
+See [`source-format-v1.md`](source-format-v1.md) for the expanded directory layout and file formats.
 
-## 基本方針
+## Principles
 
-- 展開ディレクトリをGit上の正本とし、生成したSB3はビルド成果物として扱う
-- TurboWarpエディターで編集したSB3は、差分を確認してから展開ディレクトリへimportする
-- commit前と配布前に`check`を実行する
-- CIと配布では、固定したtoolchainバージョンとcommit済みの展開ソースから`build`する
-- 管理対象の埋め込み拡張は、取得元commitとSHA-256を固定して再現する
+- Treat the expanded directory in Git as the source of truth and generated SB3 files as build artifacts
+- Import an SB3 edited in the TurboWarp Editor only after reviewing its differences
+- Run `check` before committing and before distribution
+- Build in CI and release workflows from a pinned toolchain version and committed expanded source
+- Reproduce managed embedded extensions from a pinned source commit and SHA-256
 
-以下では展開ディレクトリを`app/`、エディターから保存したSB3を
-`tmp/edited.sb3`、生成物を`dist/project.sb3`とします。実際のパスは作品側で
-決めてください。
+The examples below use `app/` for the expanded source, `tmp/edited.sb3` for an SB3 saved by the
+editor, and `dist/project.sb3` for generated output. Choose project-specific paths as needed.
 
-## 初回import
+## Initial import
 
-TurboWarpから保存したSB3を、Git管理しやすいファイルへ展開します。
+Expand an SB3 saved by TurboWarp into files suitable for Git.
 
 ```bash
 sb3-toolchain import tmp/edited.sb3 --output app
@@ -29,20 +27,19 @@ sb3-toolchain check app
 git status --short
 ```
 
-import後は、少なくとも次を確認します。
+After import, verify at least the following:
 
-- `project.source.json`の変更がエディターで行った操作に対応している
-- `assets/`の追加・削除が意図したものだけである
-- `extensions/`と`embedded-extensions.json`に予期しない変更がない
-- `sb3-toolchain check app`が成功する
+- Changes in `project.source.json` correspond to operations performed in the editor
+- Only intended assets were added to or removed from `assets/`
+- `extensions/` and `embedded-extensions.json` contain no unexpected changes
+- `sb3-toolchain check app` succeeds
 
-新規importでは、埋め込みJavaScriptの取得元を推測しません。GitHub上の拡張を
-管理対象にする場合は、後述の由来情報を明示します。
+A new import does not infer where embedded JavaScript came from. Add the provenance metadata described
+below when an extension hosted on GitHub should become managed.
 
-## 既存ソースへの再import
+## Re-import into existing source
 
-エディターで作品を変更した場合は、保存したSB3を既存の展開ディレクトリへimport
-します。
+After editing the project, import the saved SB3 into the existing expanded source directory.
 
 ```bash
 git status --short
@@ -51,9 +48,9 @@ sb3-toolchain check app
 git diff -- app
 ```
 
-既存の展開ディレクトリと内容が異なる場合は置換確認を求めます。非対話環境では
-`--yes`で確認を省略できますが、Git管理中の未コミット変更は破棄しません。
-その変更を破棄する場合だけ、差分を確認したうえで両方を指定します。
+The tool asks for replacement confirmation when the existing expanded source differs. In a
+non-interactive environment, `--yes` skips that confirmation but does not discard uncommitted
+Git-managed changes. Specify both options only after reviewing the changes that will be discarded.
 
 ```bash
 sb3-toolchain import tmp/edited.sb3 --output app \
@@ -61,67 +58,69 @@ sb3-toolchain import tmp/edited.sb3 --output app \
   --discard-local-changes
 ```
 
-`--discard-local-changes`は復旧手段ではありません。必要な差分をcommitまたは退避
-してから使用してください。`--force`オプションはありません。
+`--discard-local-changes` is not a recovery mechanism. Commit or otherwise preserve required changes
+before using it. There is no `--force` option.
 
-同じIDとパスを持つ管理対象拡張の由来情報は再import時に維持されます。SB3内の
-JavaScriptが記録済みのIDまたはSHA-256と異なる場合は、由来情報と実ファイルの
-食い違いを防ぐため、既存出力を変更せずにimportを拒否します。
+Provenance metadata for a managed extension with the same ID and path is preserved during re-import.
+If the JavaScript in the SB3 differs from the recorded ID or SHA-256, the import is rejected without
+changing the existing output, preventing provenance from becoming inconsistent with the actual file.
 
-## 検証とビルド
+## Validation and build
 
-展開ソースだけを検証する場合は`check`、SB3を生成する場合は`build`を使います。
+Use `check` to validate only the expanded source and `build` to generate an SB3.
 
 ```bash
 sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3
 ```
 
-`check`と`build`はネットワークへ接続しません。アセット参照、MD5、展開形式、
-埋め込み拡張のIDとSHA-256などをローカル入力だけで検証します。
+`check` and `build` do not access the network. They validate asset references, MD5 hashes, the
+expanded format, embedded extension IDs, and SHA-256 hashes using only local inputs.
 
-`build`はZIPエントリ順、タイムスタンプ、圧縮条件を固定します。同じtoolchain
-バージョンと同じ展開ソースからはbit-for-bitで同一のSB3を生成します。既存の出力と
-内容が同じ場合は更新時刻を変えず、異なる場合は置換確認または`--yes`を要求します。
+`build` fixes the ZIP entry order, timestamps, and compression settings. The same toolchain version
+and expanded source produce a bit-for-bit identical SB3. An identical existing output is left
+untouched. A differing output requires replacement confirmation or `--yes`.
 
-生成したSB3は、作品側のテストに加えてTurboWarpで開き、起動、主要操作、画像・音声、
-埋め込み拡張の動作を確認してください。
+In addition to project-specific tests, open the generated SB3 in TurboWarp and verify startup, primary
+operations, images, sounds, and embedded extension behavior.
 
-## 管理対象の埋め込み拡張
+## Managed embedded extensions
 
-`embedded-extensions.json`の`source`へ、GitHubリポジトリ、追跡するref、
-解決済みcommit、成果物パス、SHA-256を記録できます。完全なschemaは
-[`source-format-v1.md`](source-format-v1.md)を参照してください。
+The `source` object in `embedded-extensions.json` can record the GitHub repository, tracked ref,
+resolved commit, artifact path, and SHA-256. See [`source-format-v1.md`](source-format-v1.md) for the
+complete schema.
 
-各コマンドの役割は次のとおりです。
+The extension commands have the following roles:
 
-| コマンド                | ネットワーク | refの解決 | メタデータ更新 | 用途                               |
-| ----------------------- | ------------ | --------- | -------------- | ---------------------------------- |
-| `extensions status`     | 使用する     | する      | しない         | 追跡refに更新があるか確認する      |
-| `extensions sync`       | 使用する     | しない    | しない         | 固定commitから実ファイルを復元する |
-| `extensions update`     | 使用する     | する      | する           | refの最新commitへ明示的に更新する  |
-| `extensions migrate-id` | 使用しない   | しない    | IDと参照を更新 | 読み込み済み拡張IDを移行する       |
+| Command                 | Network | Resolve ref | Metadata update | Purpose                                     |
+| ----------------------- | ------- | ----------- | --------------- | ------------------------------------------- |
+| `extensions status`     | Yes     | Yes         | No              | Check whether a tracked ref has an update   |
+| `extensions sync`       | Yes     | No          | No              | Restore files from the pinned commit        |
+| `extensions update`     | Yes     | Yes         | Yes             | Explicitly update to the latest ref commit  |
+| `extensions migrate-id` | No      | No          | IDs/references  | Migrate an extension ID used by the project |
+| `extensions bundle`     | No      | No          | Bundle config   | Combine extensions into one permission unit |
+| `extensions unbundle`   | No      | No          | Config or SB3   | Restore output with individual extensions   |
 
-### 更新の確認
+### Check for updates
 
 ```bash
 sb3-toolchain extensions status app
 ```
 
-`status`はローカルファイルを変更しません。追跡refと`resolvedCommit`が異なる拡張を
-確認し、上流の変更内容をレビューしてから更新するか判断します。
+`status` does not change local files. Review upstream changes for extensions whose tracked ref differs
+from `resolvedCommit`, then decide whether to update.
 
-### 固定commitからの復元
+### Restore from a pinned commit
 
 ```bash
 sb3-toolchain extensions sync app
 sb3-toolchain check app
 ```
 
-`sync`はmutableなbranchやtagを解決せず、記録済み`resolvedCommit`から取得します。
-取得した成果物のIDとSHA-256が記録と一致する場合だけ、ローカルファイルを置換します。
+`sync` does not resolve a mutable branch or tag. It downloads from the recorded `resolvedCommit` and
+replaces a local file only when the artifact ID and SHA-256 match the recorded metadata.
 
-### 追跡refの更新
+### Update a tracked ref
 
 ```bash
 sb3-toolchain extensions update app
@@ -130,22 +129,22 @@ sb3-toolchain check app
 git diff -- app
 ```
 
-IDを省略すると、すべての管理対象拡張を一つのtransactionとして更新します。
-一部の取得または検証が失敗した場合は、ファイルもメタデータも変更しません。
+Omitting the ID updates all managed extensions as one transaction. If any download or validation
+fails, neither files nor metadata are changed.
 
-更新PRでは、`resolvedCommit`、`integrity`、JavaScript成果物を同時にレビューし、
-生成SB3上でも拡張の主要機能を確認します。
+In an update PR, review `resolvedCommit`, `integrity`, and the JavaScript artifact together, then test
+the extension's primary features in the generated SB3.
 
-## 拡張IDの移行
+## Migrate an extension ID
 
-拡張IDはopcodeやmonitorにも保存されるため、ファイル名やmanifestだけを手作業で
-変更してはいけません。まずdry-runで分類済みの参照と未分類参照を確認します。
+An extension ID is stored in opcodes and monitors, so do not change only its filename or manifest by
+hand. Start with a dry run and inspect both classified and unclassified references.
 
 ```bash
 sb3-toolchain extensions migrate-id app --from OLD_ID --to NEW_ID
 ```
 
-新IDを宣言するJavaScriptを用意し、結果を確認してから適用します。
+Prepare JavaScript declaring the new ID, review the result, and then apply it.
 
 ```bash
 sb3-toolchain extensions migrate-id app --from OLD_ID --to NEW_ID --yes
@@ -153,7 +152,7 @@ sb3-toolchain check app
 git diff -- app
 ```
 
-GitHub管理対象の拡張では、上流成果物の更新とID移行を一つのtransactionにできます。
+For a GitHub-managed extension, the upstream artifact update and ID migration can be one transaction.
 
 ```bash
 sb3-toolchain extensions update app OLD_ID \
@@ -161,29 +160,76 @@ sb3-toolchain extensions update app OLD_ID \
   --artifact dist/NEW_ID.js
 ```
 
-`--artifact`は上流の成果物パスも変わる場合だけ指定します。変更対象となるschema、
-collision判定、未分類参照、ロールバックの詳細は
-[`extension-id-migration.md`](extension-id-migration.md)を参照してください。
+Specify `--artifact` only when the upstream artifact path also changed. See
+[`extension-id-migration.md`](extension-id-migration.md) for the affected schema, collision checks,
+unclassified references, and rollback details.
 
-## CIと配布
+## Combine unsandboxed permission into one prompt
 
-CIでは依存バージョンを固定し、少なくとも次を実行します。
+A project containing several embedded extensions can opt in to a static bundle. Original JavaScript,
+IDs, opcodes, and provenance remain unchanged; only build output is transformed into one composite
+extension.
+
+```bash
+sb3-toolchain extensions bundle app \
+  --id projectbundle \
+  --name "Project Extension Bundle" \
+  extensionone extensiontwo
+sb3-toolchain extensions bundle app \
+  --id projectbundle \
+  --name "Project Extension Bundle" \
+  extensionone extensiontwo \
+  --yes
+sb3-toolchain check app
+sb3-toolchain build app --output dist/project.sb3 --yes
+```
+
+Use project-level automated tests and a real TurboWarp smoke test to verify equivalent behavior before
+and after bundling, a single permission prompt, and successful reload after saving. If there is a
+problem, restore the preserved individual extensions.
+
+```bash
+sb3-toolchain extensions unbundle app projectbundle
+sb3-toolchain extensions unbundle app projectbundle --yes
+sb3-toolchain check app
+sb3-toolchain build app --output dist/project.sb3 --yes
+```
+
+An SB3 generated by this version of the toolchain can also be unbundled directly when the expanded
+source is unavailable. The first command is a dry run; output is written only with `--yes`.
+
+```bash
+sb3-toolchain extensions unbundle \
+  dist/project.sb3 projectbundle \
+  --output dist/project.unbundled.sb3
+sb3-toolchain extensions unbundle \
+  dist/project.sb3 projectbundle \
+  --output dist/project.unbundled.sb3 \
+  --yes
+```
+
+See [`extension-bundles.md`](extension-bundles.md) for the compatibility contract, source comments,
+opcode and storage transformations, direct-unbundle limitations, and re-import precautions.
+
+## CI and distribution
+
+Pin dependency versions and run at least the following in CI:
 
 ```bash
 sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3 --yes
 ```
 
-作品側の自動テストと手動確認を通過したSB3だけを配布します。`sync`や`update`を
-配布ビルドへ暗黙に組み込むとネットワーク上の状態が入力になるため、更新は独立した
-レビュー可能な変更として実行し、固定済みの展開ソースを先にcommitしてください。
+Distribute only an SB3 that passed project-level automated tests and manual verification. Do not
+implicitly run `sync` or `update` as part of a release build because that would make network state an
+input. Perform updates as separate, reviewable changes and commit the pinned expanded source first.
 
-## 失敗時の扱い
+## Handling failures
 
-- コマンドが置換を拒否した場合は、再実行前に`git status`と対象差分を確認する
-- `.＜出力名＞.rollback-*`が残った場合は、削除前に元出力と比較して復旧対象を確定する
-- 途中で失敗した拡張更新は再実行前に`git diff`を確認する
-- マージ済みの変更は、作品側のcommitをrevertしてソース、成果物、由来情報を同時に戻す
-- 公開済みSB3を差し替える場合は、作品側のリリース方針に従い履歴を残す
+- If a command refuses replacement, inspect `git status` and the relevant differences before retrying
+- If `.<output-name>.rollback-*` remains, compare it with the current output before deciding what to restore or remove
+- After a partial extension update failure, inspect `git diff` before retrying
+- Roll back a merged change by reverting the project commit so source, artifacts, and provenance return together
+- When replacing a published SB3, follow the project's release policy and preserve history
 
-Git履歴を破壊して復旧せず、原因と影響範囲を確認できる状態を保ってください。
+Do not destroy Git history as a recovery shortcut. Keep the cause and affected scope inspectable.

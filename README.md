@@ -1,37 +1,39 @@
 # sb3-toolchain
 
-Scratch 3／TurboWarpの`.sb3`をGit差分可能な展開ソースとして管理し、同じ入力から
-bit-for-bitで同一のSB3を再生成するNode.jsツールチェーンです。
+A Node.js toolchain for managing Scratch 3 and TurboWarp `.sb3` projects as Git-diffable
+expanded sources and rebuilding bit-for-bit identical SB3 files from the same input.
 
-## 主な機能
+## Features
 
-- SB3を整形済み`project.source.json`、アセット、埋め込み拡張へ安全に展開
-- アセット参照、MD5、ZIPエントリ、埋め込み拡張対応を検証
-- GitHub由来の埋め込み拡張についてcommitとSHA-256を記録し、オフラインで検証
-- ZIPエントリ順、タイムスタンプ、圧縮条件を固定した決定的ビルド
-- Git管理中の未コミット変更を保護したimport
-- 既存出力を保護する原子的な置換とロールバック
-- CLIとJavaScript API
+- Safely expand an SB3 into formatted `project.source.json`, assets, and embedded extensions
+- Validate asset references, MD5 hashes, ZIP entries, and embedded extension mappings
+- Record commits and SHA-256 hashes for GitHub-hosted embedded extensions and verify them offline
+- Statically bundle multiple extensions into one permission unit without deleting their original
+  JavaScript, then restore them from either the expanded source or the bundled SB3
+- Produce deterministic builds with fixed ZIP entry order, timestamps, and compression settings
+- Protect uncommitted Git changes when importing
+- Protect existing output through transactional replacement and rollback
+- Provide both a CLI and a JavaScript API
 
-TMPose紙芝居の台本変換、特定作品のデータ、TurboWarp PackagerによるWebアプリ生成は
-このパッケージの対象外です。
+TMPose kamishibai script conversion, project-specific data, and web application generation with
+TurboWarp Packager are outside the scope of this package.
 
-## 必要な環境
+## Requirements
 
-- Node.js 22.12.0以上
+- Node.js 22.12.0 or later
 - pnpm 11
 
-## インストール
+## Installation
 
-再現可能な導入のため、npmで検証済みバージョンを固定します。
+Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.1.1
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.2.0
 ```
 
-## クイックスタート
+## Quick start
 
-TurboWarpで保存したSB3を展開し、検証して再構築します。
+Expand an SB3 saved by TurboWarp, validate it, and rebuild it.
 
 ```bash
 sb3-toolchain import tmp/project.sb3 --output app
@@ -39,8 +41,8 @@ sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3
 ```
 
-作品リポジトリでの正本、再import、上書き保護、拡張更新、CIの共通手順は
-[`docs/workflows.md`](docs/workflows.md)を参照してください。
+See [`docs/workflows.md`](docs/workflows.md) for the recommended source-of-truth, re-import,
+replacement protection, extension update, and CI workflows for a project repository.
 
 ## JavaScript API
 
@@ -49,6 +51,7 @@ import {readFile} from 'node:fs/promises';
 
 import {
   buildSb3,
+  bundleExtensions,
   createDeterministicSb3,
   extensionIntegrity,
   extensionStatus,
@@ -56,6 +59,8 @@ import {
   migrateExtensionId,
   planExtensionIdMigration,
   syncExtensions,
+  unbundleSb3,
+  unbundleExtensions,
   updateExtensions,
   validateSb3Source,
 } from '@kubohiroya/sb3-toolchain';
@@ -96,25 +101,44 @@ await updateExtensions({
   sourceArtifact: 'dist/newid.js',
   yes: true,
 });
+await bundleExtensions({
+  sourceDirectory: 'app',
+  bundleId: 'projectbundle',
+  bundleName: 'Project Extension Bundle',
+  extensionIds: ['extensionone', 'extensiontwo'],
+  yes: true,
+});
+await unbundleExtensions({
+  sourceDirectory: 'app',
+  bundleId: 'projectbundle',
+  yes: true,
+});
+await unbundleSb3({
+  inputPath: 'dist/project.sb3',
+  outputPath: 'dist/project.unbundled.sb3',
+  bundleId: 'projectbundle',
+  yes: true,
+});
 ```
 
-## ドキュメント
+## Documentation
 
-- [`docs/workflows.md`](docs/workflows.md): 作品リポジトリでのSB3ソース管理と拡張管理
-- [`docs/source-format-v1.md`](docs/source-format-v1.md): 展開ソース形式と決定的出力
-- [`docs/extension-id-migration.md`](docs/extension-id-migration.md): 読み込み済み拡張IDの移行
+- [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
+- [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
+- [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
+- [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling into one permission unit and reversible unbundling
 
-## 開発
+## Development
 
 ```bash
 pnpm install
 pnpm check
 ```
 
-## ライセンス
+## License
 
 [Mozilla Public License 2.0](LICENSE)
 
-本実装は
-[`kubohiroya/tmpose-kamishibai`](https://github.com/kubohiroya/tmpose-kamishibai)
-で開発したSB3ソース管理機構を、作品およびTMPose固有処理から分離したものです。
+This implementation extracts the general SB3 source-management mechanism developed for
+[`kubohiroya/tmpose-kamishibai`](https://github.com/kubohiroya/tmpose-kamishibai) from its
+project- and TMPose-specific processing.

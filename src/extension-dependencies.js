@@ -15,8 +15,21 @@ export function extensionIntegrity(contents) {
 }
 
 export function extensionHeaderId(contents) {
+  return extensionHeaderMetadata(contents).id;
+}
+
+export function extensionHeaderMetadata(contents) {
   const source = Buffer.from(contents).toString('utf8');
-  return source.match(/^\/\/ ID: ([A-Za-z0-9._-]+)\r?$/mu)?.[1] ?? null;
+  const readField = (field) =>
+    source.match(new RegExp(`^// ${field}: (.+)\\r?$`, 'mu'))?.[1]?.trim() ?? null;
+  const id = readField('ID');
+  return {
+    author: readField('By'),
+    description: readField('Description'),
+    id: id && /^[A-Za-z0-9._-]+$/u.test(id) ? id : null,
+    license: readField('License'),
+    name: readField('Name'),
+  };
 }
 
 export function validateExtensionSourceMetadata(extension) {

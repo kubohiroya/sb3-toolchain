@@ -5,10 +5,24 @@ export {buildSb3} from './build.js';
 export {packageName, packageVersion} from './constants.js';
 export {
   extensionHeaderId,
+  extensionHeaderMetadata,
   extensionIntegrity,
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
+export {
+  bundleExtensions,
+  planExtensionBundle,
+  planExtensionUnbundle,
+  unbundleExtensions,
+} from './extension-bundle-configuration.js';
+export {planBundledSb3Unbundle, unbundleSb3} from './extension-bundle-archive.js';
+export {
+  buildExtensionBundles,
+  createStaticExtensionBundle,
+  extensionBundleRecoveryMarker,
+  validateExtensionBundleConfigurations,
+} from './extension-bundle.js';
 export {
   migrateExtensionId,
   planExtensionIdMigration,
