@@ -29,7 +29,7 @@ TurboWarp Packager are outside the scope of this package.
 Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.2.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.3.0
 ```
 
 ## Quick start
