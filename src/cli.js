@@ -6,6 +6,8 @@ import {createInterface} from 'node:readline/promises';
 
 import {buildSb3} from './build.js';
 import {packageVersion} from './constants.js';
+import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration.js';
+import {unbundleSb3} from './extension-bundle-archive.js';
 import {migrateExtensionId} from './extension-id-migration.js';
 import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync.js';
 import {importSb3} from './import.js';
@@ -26,6 +28,9 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--yes]
+  sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
+  sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
 Commands:
   import      Expand an SB3 into Git-friendly source files.
@@ -199,11 +204,105 @@ function parseExtensionIdMigrationArguments(arguments_) {
   };
 }
 
+function parseExtensionBundleArguments(arguments_) {
+  let bundleId;
+  let bundleName;
+  let sourceDirectory;
+  const extensionIds = [];
+  let yes = false;
+
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--id') {
+      bundleId = takeValue(arguments_, index, '--id');
+      index += 1;
+    } else if (argument === '--name') {
+      bundleName = takeValue(arguments_, index, '--name');
+      index += 1;
+    } else if (argument === '--yes') {
+      yes = true;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      if (!sourceDirectory) {
+        sourceDirectory = path.resolve(argument);
+      } else {
+        assert(
+          /^[a-z0-9]+$/u.test(argument),
+          `Bundle member ID must use TurboWarp's [a-z0-9]+ format: ${JSON.stringify(argument)}`,
+        );
+        extensionIds.push(argument);
+      }
+    }
+  }
+  assert(sourceDirectory, 'The extensions bundle command requires SOURCE_DIR.');
+  assert(bundleId, 'The extensions bundle command requires --id BUNDLE_ID.');
+  assert(bundleName, 'The extensions bundle command requires --name NAME.');
+  return {
+    action: 'bundle',
+    bundleId,
+    bundleName,
+    command: 'extensions',
+    extensionIds,
+    sourceDirectory,
+    yes,
+  };
+}
+
+function parseExtensionUnbundleArguments(arguments_) {
+  let bundleId;
+  let input;
+  let outputPath;
+  let yes = false;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--yes') {
+      yes = true;
+    } else if (argument === '--output') {
+      outputPath = path.resolve(takeValue(arguments_, index, '--output'));
+      index += 1;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      if (!input) {
+        input = path.resolve(argument);
+      } else {
+        assert(!bundleId, 'Only one BUNDLE_ID may be specified.');
+        bundleId = argument;
+      }
+    }
+  }
+  assert(input, 'The extensions unbundle command requires SOURCE_DIR or INPUT.sb3.');
+  assert(bundleId, 'The extensions unbundle command requires BUNDLE_ID.');
+  if (path.extname(input).toLowerCase() === '.sb3') {
+    assert(outputPath, 'SB3 unbundle requires --output OUTPUT.sb3.');
+    return {
+      action: 'unbundle',
+      bundleId,
+      command: 'extensions',
+      inputPath: input,
+      outputPath,
+      yes,
+    };
+  }
+  assert(!outputPath, '--output is only valid when unbundling an SB3 file.');
+  return {
+    action: 'unbundle',
+    bundleId,
+    command: 'extensions',
+    sourceDirectory: input,
+    yes,
+  };
+}
+
 function parseExtensionsArguments(arguments_) {
   const [action, ...actionArguments] = arguments_;
   assert(
-    action === 'migrate-id' || action === 'status' || action === 'sync' || action === 'update',
-    'The extensions command requires status, sync, update, or migrate-id.',
+    action === 'bundle' ||
+      action === 'migrate-id' ||
+      action === 'status' ||
+      action === 'sync' ||
+      action === 'unbundle' ||
+      action === 'update',
+    'The extensions command requires status, sync, update, migrate-id, bundle, or unbundle.',
   );
   if (action === 'status') {
     assert(
@@ -218,6 +317,12 @@ function parseExtensionsArguments(arguments_) {
   }
   if (action === 'migrate-id') {
     return parseExtensionIdMigrationArguments(actionArguments);
+  }
+  if (action === 'bundle') {
+    return parseExtensionBundleArguments(actionArguments);
+  }
+  if (action === 'unbundle') {
+    return parseExtensionUnbundleArguments(actionArguments);
   }
   return parseExtensionMutationArguments(action, actionArguments);
 }
@@ -374,6 +479,48 @@ export async function runCli(
     return;
   }
   if (options.command === 'extensions') {
+    if (options.action === 'bundle') {
+      const result = await bundleExtensions({
+        bundleId: options.bundleId,
+        bundleName: options.bundleName,
+        extensionIds: options.extensionIds,
+        sourceDirectory: options.sourceDirectory,
+        yes: options.yes,
+      });
+      log(
+        `${result.applied ? 'Configured' : 'Dry run'} extension bundle: ${result.bundleId} ` +
+          `(${result.members.join(', ')}).`,
+      );
+      if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+      return;
+    }
+    if (options.action === 'unbundle') {
+      if ('inputPath' in options) {
+        const result = await unbundleSb3({
+          bundleId: options.bundleId,
+          inputPath: options.inputPath,
+          outputPath: options.outputPath,
+          yes: options.yes,
+        });
+        log(
+          `${result.applied ? 'Wrote' : 'Dry run'} unbundled SB3: ${result.bundleId} ` +
+            `(${result.members.join(', ')}) -> ${result.outputPath}.`,
+        );
+        if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+        return;
+      }
+      const result = await unbundleExtensions({
+        bundleId: options.bundleId,
+        sourceDirectory: options.sourceDirectory,
+        yes: options.yes,
+      });
+      log(
+        `${result.applied ? 'Removed' : 'Dry run'} extension bundle: ${result.bundleId} ` +
+          `(${result.members.join(', ')}).`,
+      );
+      if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+      return;
+    }
     if (options.action === 'migrate-id') {
       const result = await migrateExtensionId({
         fromId: options.fromId,

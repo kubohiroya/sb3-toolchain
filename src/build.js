@@ -103,8 +103,13 @@ async function installArchiveTransactionally(archive, outputPath, expectedOutput
   }
 }
 
-export async function buildSb3({confirmReplace, outputPath, sourceDirectory, yes = false}) {
-  assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
+export async function writeSb3Archive({
+  archive,
+  confirmReplace = undefined,
+  outputPath,
+  yes = false,
+}) {
+  assert(archive instanceof Uint8Array, 'SB3 archive contents are required.');
   assert(typeof outputPath === 'string', 'SB3 output path is required.');
   const resolvedOutputPath = path.resolve(outputPath);
   assert(
@@ -112,12 +117,10 @@ export async function buildSb3({confirmReplace, outputPath, sourceDirectory, yes
     `SB3 output path must use the .sb3 extension: ${resolvedOutputPath}`,
   );
   await assertNoInterruptedRollback(resolvedOutputPath);
-  const built = await createDeterministicSb3(sourceDirectory);
   const existingOutput = await inspectOutput(resolvedOutputPath);
   if (existingOutput.exists) {
-    if (Buffer.compare(existingOutput.contents, Buffer.from(built.archive)) === 0) {
+    if (Buffer.compare(existingOutput.contents, Buffer.from(archive)) === 0) {
       return {
-        ...built,
         changed: false,
         outputPath: resolvedOutputPath,
         rollbackCleanupWarning: null,
@@ -138,14 +141,25 @@ export async function buildSb3({confirmReplace, outputPath, sourceDirectory, yes
 
   await mkdir(path.dirname(resolvedOutputPath), {recursive: true});
   const rollbackCleanupWarning = await installArchiveTransactionally(
-    built.archive,
+    archive,
     resolvedOutputPath,
     existingOutput,
   );
   return {
-    ...built,
     changed: true,
     outputPath: resolvedOutputPath,
     rollbackCleanupWarning,
   };
+}
+
+export async function buildSb3({confirmReplace, outputPath, sourceDirectory, yes = false}) {
+  assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
+  const built = await createDeterministicSb3(sourceDirectory);
+  const written = await writeSb3Archive({
+    archive: built.archive,
+    confirmReplace,
+    outputPath,
+    yes,
+  });
+  return {...built, ...written};
 }

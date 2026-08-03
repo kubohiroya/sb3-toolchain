@@ -10,6 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {
   createDeterministicSb3,
   extensionHeaderId,
+  extensionHeaderMetadata,
   extensionIntegrity,
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
@@ -47,8 +48,18 @@ function managedExtension(contents) {
 }
 
 test('computes extension integrity and reads Extension Gallery metadata', () => {
-  const contents = Buffer.from('// Name: Example\n// ID: example\n');
+  const contents = Buffer.from(
+    '// Name: Example\n// ID: example\n// Description: Example extension.\n' +
+      '// By: Example Author\n// License: MPL-2.0\n',
+  );
   assert.equal(extensionHeaderId(contents), 'example');
+  assert.deepEqual(extensionHeaderMetadata(contents), {
+    author: 'Example Author',
+    description: 'Example extension.',
+    id: 'example',
+    license: 'MPL-2.0',
+    name: 'Example',
+  });
   assert.equal(extensionHeaderId(Buffer.from('const id = "example";\n')), null);
   assert.match(extensionIntegrity(contents), /^sha256-[A-Za-z0-9+/]{43}=$/u);
   assert.deepEqual(validateManagedExtensionContents(managedExtension(contents), contents), {

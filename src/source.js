@@ -7,6 +7,7 @@ import path from 'node:path';
 import {strToU8, zipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive.js';
+import {buildExtensionBundles, validateExtensionBundleConfigurations} from './extension-bundle.js';
 import {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
@@ -209,7 +210,13 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
   }
 
   assertSameFileSet(extensionFiles, expectedFiles, 'Embedded extension files');
-  return extensionManifest.extensions;
+  return {
+    extensionBundles: validateExtensionBundleConfigurations(
+      extensionManifest.extensionBundles,
+      extensionManifest.extensions,
+    ),
+    extensions: extensionManifest.extensions,
+  };
 }
 
 function collectAssetReferences(project) {
@@ -283,7 +290,11 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
     listRegularFiles(extensionsDirectory, 'Extensions directory'),
   ]);
   assertSameFileSet(assetFiles, assetEntries, 'Asset files');
-  const extensions = validateExtensionManifest(extensionManifest, project, extensionFiles);
+  const {extensionBundles, extensions} = validateExtensionManifest(
+    extensionManifest,
+    project,
+    extensionFiles,
+  );
 
   const assetContents = new Map();
   await Promise.all(
@@ -337,6 +348,7 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
     assetContents,
     assetReferenceCount: references.length,
     extensions,
+    extensionBundles,
     extensionContents,
     project,
     resolvedSourceDirectory,
@@ -349,16 +361,29 @@ export async function inspectSb3SourceForExtensionSync(sourceDirectory) {
 }
 
 export async function validateSb3Source(sourceDirectory) {
-  return inspectSb3Source(sourceDirectory, true);
+  const source = await inspectSb3Source(sourceDirectory, true);
+  buildExtensionBundles({
+    extensionBundles: source.extensionBundles,
+    extensionContents: source.extensionContents,
+    extensions: source.extensions,
+    project: source.project,
+  });
+  return source;
 }
 
 export async function createDeterministicSb3(sourceDirectory) {
   const source = await validateSb3Source(sourceDirectory);
-  const project = structuredClone(source.project);
-  for (const extension of source.extensions) {
+  const bundled = buildExtensionBundles({
+    extensionBundles: source.extensionBundles,
+    extensionContents: source.extensionContents,
+    extensions: source.extensions,
+    project: source.project,
+  });
+  const project = structuredClone(bundled.project);
+  for (const extension of bundled.extensions) {
     project.extensionURLs[extension.id] = encodeExtensionDataUrl(
       extension,
-      source.extensionContents.get(extension.id),
+      bundled.extensionContents.get(extension.id),
     );
   }
 
@@ -379,7 +404,8 @@ export async function createDeterministicSb3(sourceDirectory) {
     archive,
     assetCount: source.assetContents.size,
     assetReferenceCount: source.assetReferenceCount,
-    embeddedExtensionCount: source.extensions.length,
+    bundlePlans: bundled.bundlePlans,
+    embeddedExtensionCount: bundled.extensions.length,
     entryCount: source.sourceManifest.archiveEntries.length,
     source,
   };

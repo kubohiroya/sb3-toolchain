@@ -1,6 +1,6 @@
-# SB3展開ソース形式 v1
+# SB3 expanded source format v1
 
-## 構成
+## Layout
 
 ```text
 SOURCE_DIR/
@@ -13,7 +13,8 @@ SOURCE_DIR/
     └── <extensionId>.js
 ```
 
-`sb3-source.json`は形式バージョン、各構成要素のパス、元SB3のZIPエントリ順を保持します。
+`sb3-source.json` records the format version, paths to each component, and the ZIP entry order of the
+original SB3.
 
 ```json
 {
@@ -27,21 +28,21 @@ SOURCE_DIR/
 
 ## `project.source.json`
 
-元SB3の`project.json`を2スペースで整形したJSONです。配列とオブジェクトの順序は
-意味のある入力として保持します。data URLで埋め込まれていたTurboWarp拡張は次の参照へ
-置き換えます。
+This file is the original SB3 `project.json` formatted as two-space-indented JSON. Array and object
+order are preserved as meaningful input. A TurboWarp extension that was embedded as a data URL is
+replaced by this reference:
 
 ```text
 embedded-extension:extensions/<extensionId>.js
 ```
 
-ビルド時には`embedded-extensions.json`のメディアタイプ、パラメーター、エンコーディングを
-使ってdata URLへ戻します。
+During a build, the media type, parameters, and encoding from `embedded-extensions.json` are used to
+reconstruct the data URL.
 
 ## `embedded-extensions.json`
 
-埋め込み拡張のdata URL情報と展開先を保持します。GitHub上で管理する拡張には、任意の
-`source`メタデータを追加できます。
+This file records embedded extension data URL information and extraction paths. Optional `source`
+metadata can be added for an extension managed from GitHub.
 
 ```json
 {
@@ -66,54 +67,104 @@ embedded-extension:extensions/<extensionId>.js
 }
 ```
 
-- `repository`: `<owner>/<repository>`形式のGitHubリポジトリ
-- `ref`: 更新候補を追跡するbranch、tag、またはcommit
-- `resolvedCommit`: 現在の実ファイルを取得した小文字40桁のcommit SHA
-- `artifact`: リポジトリルートから見たJavaScript成果物の相対パス
-- `integrity`: 現在の実ファイルに対するSRI形式のSHA-256
+- `repository`: GitHub repository in `<owner>/<repository>` form
+- `ref`: branch, tag, or commit to track for update candidates
+- `resolvedCommit`: lowercase 40-character commit SHA used to obtain the current file
+- `artifact`: JavaScript artifact path relative to the repository root
+- `integrity`: SRI-form SHA-256 of the current file
 
-`source`を持つ拡張について、検証とビルドはネットワークへ接続せず、次を確認します。
+Validation and builds verify managed extensions without accessing the network:
 
-- 実ファイルのSHA-256が`integrity`と一致する
-- 実ファイルの`// ID: <extensionId>`ヘッダーが`id`と一致する
-- リポジトリ、ref、commit、成果物パスが安全な形式である
+- The actual file SHA-256 matches `integrity`
+- The file's `// ID: <extensionId>` header matches `id`
+- The repository, ref, commit, and artifact path use safe forms
 
-既存の展開ディレクトリへSB3を再importすると、同じIDとパスに対応する`source`を維持します。
-再importされた実ファイルが記録済みハッシュまたはIDと一致しない場合は、既存出力を変更
-しません。新規importは由来を推測できないため、`source`を自動生成しません。
+Re-importing an SB3 into an existing expanded source directory preserves `source` metadata for the
+same ID and path. If the imported file does not match the recorded hash or ID, the import is rejected
+without changing the existing output. A new import cannot infer provenance, so it does not create
+`source` automatically.
 
-`extensions sync`は`resolvedCommit`を固定入力として`artifact`を取得し、既存の
-`integrity`とIDに一致する場合だけローカルファイルを復元します。`extensions update`は
-`ref`をGitHub APIで解決し、そのcommitから取得した成果物に合わせて`resolvedCommit`と
-`integrity`を更新します。複数entryの取得と検証がすべて成功するまで、展開ソースは変更
-されません。
+`extensions sync` downloads `artifact` using the immutable `resolvedCommit` and restores the local
+file only when the downloaded ID and hash match the existing metadata. `extensions update` resolves
+`ref` through the GitHub API and updates `resolvedCommit` and `integrity` to match the artifact from
+that commit. The expanded source is not changed until every selected entry has been downloaded and
+validated successfully.
 
-拡張IDの変更では、manifestの`id`と`path`、`project.source.json`の既知参照、
-`extensions/<id>.js`を同じtransactionで移行します。管理対象拡張を`extensions update`
-と同時に移行した場合は、`artifact`（明示時）、`resolvedCommit`、`integrity`も新成果物に
-合わせて更新します。
+An extension ID migration changes the manifest `id` and `path`, known references in
+`project.source.json`, and `extensions/<id>.js` in one transaction. When a managed extension is
+migrated as part of `extensions update`, `artifact` when explicitly supplied, `resolvedCommit`, and
+`integrity` are also updated for the new artifact.
 
-## アセット
+### `extensionBundles`
 
-`assets/`には`project.source.json`から参照されるコスチュームと音声を置きます。
-各ファイル名は`<assetId>.<dataFormat>`であり、`assetId`は内容のMD5と一致しなければ
-なりません。未参照、欠損、余分なファイルは検証エラーです。
+Add the optional `extensionBundles` array to make multiple individual extensions one permission unit
+only in the generated SB3.
 
-## 決定的出力
+```json
+{
+  "formatVersion": 1,
+  "extensions": [
+    {
+      "id": "extensionone",
+      "path": "extensions/extensionone.js",
+      "mediaType": "text/javascript",
+      "parameters": [],
+      "encoding": "base64"
+    },
+    {
+      "id": "extensiontwo",
+      "path": "extensions/extensiontwo.js",
+      "mediaType": "text/javascript",
+      "parameters": [],
+      "encoding": "base64"
+    }
+  ],
+  "extensionBundles": [
+    {
+      "id": "projectbundle",
+      "name": "Project Extension Bundle",
+      "members": ["extensionone", "extensiontwo"]
+    }
+  ]
+}
+```
 
-- ZIPエントリ順は`archiveEntries`に従う
-- ZIPタイムスタンプは1980-01-01 00:00:00に固定
-- 圧縮レベルは6に固定
-- `project.json`は末尾改行付きの最小JSONとして格納
-- 同じソース形式バージョン、入力ファイル、ツールバージョンから同じバイト列を生成
+- `id`: composite extension ID in TurboWarp's `[a-z0-9]+` form that does not collide with an individual extension
+- `name`: single-line name displayed in the permission prompt and extension category
+- `members`: two or more individual extension IDs; their order defines block and menu composition order. The palette receives a decorated, metadata-bearing bundle LABEL heading and a double separator between groups, while LABEL entries and separators from the original extensions remain unchanged
 
-## 安全性
+A member cannot belong to more than one bundle. Individual entries, individual JavaScript, `source`,
+and `project.source.json` remain authoritative. `build` adds `memberId + "__"` to each original opcode
+and changes only the output `project.json` opcodes, `extensions`, `extensionURLs`, and extension storage
+to the bundle ID. It embeds one bundle JavaScript data URL.
 
-- 絶対パス、`\`、空要素、`.`、`..`を含むZIPエントリを拒否
-- シンボリックリンクまたは特殊ファイルをソースとして受理しない
-- import先のファイルシステムルート、Gitリポジトリルート、その祖先、`.git/`を拒否
-- 認識できない既存ディレクトリを上書きしない
-- Git管理中の差分は明示的な二段階指定なしに破棄しない
-- 置換中断時のロールバック領域を検出した場合は自動上書きしない
-- 管理対象の拡張は、ネットワークに依存せずcommit、SHA-256、拡張IDの整合性を検証
-- GitHub取得はHTTPS・redirect拒否・サイズ上限付きとし、取得したJavaScriptを実行しない
+The end of the bundle JavaScript contains a format 1 recovery capsule with the original individual
+data URLs and extension order. Removing the configuration or running `extensions unbundle` against a
+generated SB3 containing that capsule restores the ordinary output. See
+[`extension-bundles.md`](extension-bundles.md) for the compatibility contract and restoration steps.
+
+## Assets
+
+`assets/` contains costumes and sounds referenced by `project.source.json`. Each filename is
+`<assetId>.<dataFormat>`, and `assetId` must match the MD5 of its contents. An unreferenced, missing,
+or extra file is a validation error.
+
+## Deterministic output
+
+- ZIP entries follow `archiveEntries`
+- ZIP timestamps are fixed at 1980-01-01 00:00:00
+- Compression level is fixed at 6
+- `project.json` is stored as minimal JSON with a trailing newline
+- The same source format version, input files, and tool version produce the same byte sequence
+
+## Safety
+
+- Reject ZIP entries containing absolute paths, `\`, empty components, `.`, or `..`
+- Reject symbolic links and special files as source input
+- Reject a filesystem root, Git repository root, its ancestor, or `.git/` as an import destination
+- Never overwrite an unrecognized existing directory
+- Never discard Git-managed changes without the explicit two-stage override
+- Never overwrite automatically when an interrupted replacement rollback area is present
+- Verify managed extensions offline against their commit, SHA-256, and extension ID
+- Preserve individual JavaScript and provenance during bundling and reject contracts whose compatibility cannot be established
+- Fetch from GitHub only over HTTPS with redirects rejected and a size limit, and never execute downloaded JavaScript
