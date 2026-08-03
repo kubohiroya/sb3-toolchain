@@ -235,6 +235,86 @@ test('preserves managed extension source metadata during import and rejects cont
   });
 });
 
+test('validates a matching API manifest path before reading it', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    await initializeGitRepository(directory);
+    const inputPath = path.join(directory, 'input.sb3');
+    const outputDirectory = path.join(directory, 'app');
+    const extensionSource =
+      '// Name: Managed\n// ID: managed\nScratch.extensions.register(new Managed());\n';
+    await writeProjectSb3(inputPath, {
+      extensionURLs: {
+        managed: `data:text/javascript;base64,${Buffer.from(extensionSource).toString('base64')}`,
+      },
+    });
+    await importSb3({inputPath, outputDirectory});
+
+    const manifestPath = path.join(outputDirectory, 'embedded-extensions.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.extensions[0].source = {
+      provider: 'github',
+      repository: 'example/managed-extension',
+      ref: 'main',
+      resolvedCommit: '1'.repeat(40),
+      artifact: 'dist/managed.js',
+      integrity: extensionIntegrity(Buffer.from(extensionSource)),
+      apiManifest: {
+        artifact: 'dist/extension-manifest.json',
+        formatVersion: 1,
+        integrity: `sha256-${'A'.repeat(43)}=`,
+        path: '../outside.json',
+      },
+    };
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await commitOutput(directory);
+
+    await assert.rejects(
+      importSb3({inputPath, outputDirectory, yes: true}),
+      /API manifest path must match its ID/u,
+    );
+  });
+});
+
+test('does not read API manifest metadata for an extension absent from the imported SB3', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    await initializeGitRepository(directory);
+    const inputPath = path.join(directory, 'input.sb3');
+    const outputDirectory = path.join(directory, 'app');
+    await writeProjectSb3(inputPath);
+    await importSb3({inputPath, outputDirectory});
+
+    const manifestPath = path.join(outputDirectory, 'embedded-extensions.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.extensions.push({
+      id: 'stale',
+      path: 'extensions/stale.js',
+      mediaType: 'text/javascript',
+      parameters: [],
+      encoding: 'base64',
+      source: {
+        provider: 'github',
+        repository: 'example/stale-extension',
+        ref: 'main',
+        resolvedCommit: '1'.repeat(40),
+        artifact: 'dist/stale.js',
+        integrity: `sha256-${'A'.repeat(43)}=`,
+        apiManifest: {
+          artifact: 'dist/extension-manifest.json',
+          formatVersion: 1,
+          integrity: `sha256-${'A'.repeat(43)}=`,
+          path: '../should-not-be-read.json',
+        },
+      },
+    });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await commitOutput(directory);
+
+    const result = await importSb3({inputPath, outputDirectory, yes: true});
+    assert.equal(result.changed, true);
+    assert.deepEqual(JSON.parse(await readFile(manifestPath, 'utf8')).extensions, []);
+  });
+});
+
 test('replaces differing Git-clean output with --yes', async () => {
   await withTemporaryDirectory(async (directory) => {
     await initializeGitRepository(directory);

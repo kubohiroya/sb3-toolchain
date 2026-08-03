@@ -135,8 +135,9 @@ fails, neither files nor metadata are changed.
 
 When `source.apiManifest` is present, the update downloads JavaScript and the API manifest from the
 same resolved commit. Compatible additions are reported. A removed block, changed block type,
-argument-contract change, removed menu, or `acceptReporters` change is rejected before installation.
-After reviewing every reported path, an intentionally breaking update requires both flags:
+argument-contract change, removed referenced menu, or `acceptReporters` change is rejected before
+installation. Removing an unreferenced menu is compatible. After reviewing every reported path, an
+intentionally breaking update requires both flags:
 
 ```bash
 sb3-toolchain extensions update app EXTENSION_ID --allow-breaking-api --yes

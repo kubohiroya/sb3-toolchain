@@ -91,11 +91,12 @@ not use manifest order to build the palette.
 | ---------------------------- | -------------- | ---------------------------------------------------- |
 | Add a block                  | Compatible     | Existing saved blocks keep their handler             |
 | Add an unreferenced menu     | Compatible     | No existing argument contract changes                |
+| Remove an unreferenced menu  | Compatible     | No saved argument refers to the menu                 |
 | Remove a block               | Breaking       | Saved opcodes lose their handler                     |
 | Change a block type          | Breaking       | Saved block shape or evaluation changes              |
 | Add or remove an argument    | Breaking       | Manifest v1 cannot prove a safe default or migration |
 | Change argument type or menu | Breaking       | Saved input interpretation changes                   |
-| Remove a menu                | Breaking       | Existing menu references can no longer resolve       |
+| Remove a referenced menu     | Breaking       | Existing menu references can no longer resolve       |
 | Change `acceptReporters`     | Breaking       | Accepted saved input shapes change                   |
 
 Compatibility reports use stable paths such as:
@@ -108,6 +109,16 @@ Compatibility reports use stable paths such as:
 
 An ID migration explicitly normalizes the old and new top-level IDs before comparing the remaining
 contract. Any other API difference follows the same policy.
+
+If the remote manifest filename changes with the extension ID, supply the new path explicitly:
+
+```bash
+sb3-toolchain extensions update app OLD_ID --migrate-id NEW_ID \
+  --artifact dist/newid.js \
+  --api-manifest-artifact dist/newid.manifest.json
+```
+
+Both artifact paths and their integrity values are updated in the same transaction.
 
 ## Status, sync, and update
 
@@ -140,7 +151,9 @@ enter `project.json` or the SB3 ZIP, so opting in does not change the generated 
 
 Re-importing an unchanged SB3 into an existing managed expanded source preserves both
 `source.apiManifest` and its installed manifest file. A new import cannot infer GitHub provenance or
-manifest metadata, so it does not enable the feature automatically.
+manifest metadata, so it does not enable the feature automatically. Existing manifest metadata is
+read only for an extension with the same imported ID and path, and its local path is validated before
+the manifest file is opened.
 
 ## Rollback
 

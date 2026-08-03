@@ -179,3 +179,52 @@ test('classifies compatible additions and breaking API changes with stable paths
     ],
   );
 });
+
+test('classifies removal of an unreferenced menu as compatible', () => {
+  const installed = parseExtensionApiManifest(
+    contents(
+      manifest({
+        menus: [
+          {id: 'unused', acceptReporters: false},
+          {id: 'voices', acceptReporters: true},
+        ],
+      }),
+    ),
+  );
+  const candidate = parseExtensionApiManifest(contents());
+  assert.deepEqual(
+    compareExtensionApiManifests(installed, candidate).map(({breaking, kind, path}) => ({
+      breaking,
+      kind,
+      path,
+    })),
+    [{breaking: false, kind: 'menu-removed', path: '/menus/unused'}],
+  );
+});
+
+test('classifies removal of a referenced menu as breaking', () => {
+  const installed = parseExtensionApiManifest(contents());
+  const candidate = parseExtensionApiManifest(
+    contents(
+      manifest({
+        blocks: [
+          {
+            opcode: 'speak',
+            blockType: 'REPORTER',
+            arguments: [
+              {id: 'VOICE', type: 'STRING'},
+              {id: 'MESSAGE', type: 'STRING'},
+            ],
+          },
+        ],
+        menus: [],
+      }),
+    ),
+  );
+  assert.equal(
+    compareExtensionApiManifests(installed, candidate).find(
+      (change) => change.kind === 'menu-removed',
+    ).breaking,
+    true,
+  );
+});

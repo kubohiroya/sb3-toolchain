@@ -100,6 +100,7 @@ await updateExtensions({
   extensionId: 'oldId',
   migrateToId: 'newid',
   sourceArtifact: 'dist/newid.js',
+  apiManifestArtifact: 'dist/newid.manifest.json',
   yes: true,
 });
 // After reviewing a reported breaking API change, opt in explicitly:

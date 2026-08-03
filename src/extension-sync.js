@@ -270,6 +270,7 @@ async function installCandidate({
 
 async function updateCandidate({
   allowBreakingApi,
+  apiManifestArtifact,
   confirmReplace,
   fetchImplementation,
   maximumArtifactBytes,
@@ -320,6 +321,10 @@ async function updateCandidate({
     sourceArtifact === undefined || migrateToId !== undefined,
     'A replacement artifact path requires an extension ID migration.',
   );
+  assert(
+    apiManifestArtifact === undefined || migrateToId !== undefined,
+    'A replacement API manifest artifact path requires an extension ID migration.',
+  );
   const selected = managed.filter(
     (extension) => selectedExtensionId === undefined || extension.id === selectedExtensionId,
   );
@@ -331,6 +336,7 @@ async function updateCandidate({
       ),
     );
     rewriteExtensionIdDocuments({
+      apiManifestArtifact,
       extensionManifest,
       newId: migrateToId,
       oldId: selectedExtensionId,
@@ -341,13 +347,22 @@ async function updateCandidate({
 
   const downloads = await Promise.all(
     selected.map(async (extension) => {
-      const effectiveExtension =
-        sourceArtifact === undefined
-          ? extension
-          : {
-              ...extension,
-              source: {...extension.source, artifact: sourceArtifact},
-            };
+      let effectiveExtension = extension;
+      if (sourceArtifact !== undefined || apiManifestArtifact !== undefined) {
+        const effectiveSource = {...extension.source};
+        if (sourceArtifact !== undefined) effectiveSource.artifact = sourceArtifact;
+        if (apiManifestArtifact !== undefined) {
+          assert(
+            effectiveSource.apiManifest,
+            `Extension ${extension.id} has no managed API manifest metadata.`,
+          );
+          effectiveSource.apiManifest = {
+            ...effectiveSource.apiManifest,
+            artifact: apiManifestArtifact,
+          };
+        }
+        effectiveExtension = {...extension, source: effectiveSource};
+      }
       validateExtensionSourceMetadata(effectiveExtension);
       const commit =
         mode === 'sync'
@@ -450,6 +465,7 @@ async function updateCandidate({
       if (migrateToId !== undefined) {
         const project = JSON.parse(await readFile(projectPath, 'utf8'));
         migration = rewriteExtensionIdDocuments({
+          apiManifestArtifact,
           extensionManifest: manifest,
           newId: migrateToId,
           oldId: extension.id,
@@ -605,6 +621,7 @@ export async function syncExtensions({
 }) {
   return updateCandidate({
     allowBreakingApi: false,
+    apiManifestArtifact: undefined,
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,
@@ -620,6 +637,7 @@ export async function syncExtensions({
 
 export async function updateExtensions({
   allowBreakingApi = false,
+  apiManifestArtifact,
   confirmReplace,
   extensionId,
   fetch: fetchImplementation = globalThis.fetch,
@@ -632,6 +650,7 @@ export async function updateExtensions({
 }) {
   return updateCandidate({
     allowBreakingApi,
+    apiManifestArtifact,
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,

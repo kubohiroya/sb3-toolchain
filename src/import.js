@@ -165,17 +165,7 @@ async function readExistingExtensionSources(outputDirectory) {
     ) {
       continue;
     }
-    let apiManifestContents = null;
-    if (extension.source.apiManifest) {
-      apiManifestContents = await readFile(
-        path.join(outputDirectory, extension.source.apiManifest.path),
-      );
-      validateManagedExtensionApiManifest(extension, apiManifestContents);
-    }
-    sources.set(`${extension.id}\u0000${extension.path}`, {
-      apiManifestContents,
-      source: extension.source,
-    });
+    sources.set(`${extension.id}\u0000${extension.path}`, extension.source);
   }
   return sources;
 }
@@ -288,16 +278,23 @@ export async function importSb3({
       encoding: decoded.encoding,
     };
     const existingSource = existingExtensionSources.get(`${extensionId}\u0000${sourcePath}`);
+    let existingApiManifestContents = null;
     if (existingSource !== undefined) {
-      extension.source = structuredClone(existingSource.source);
+      extension.source = structuredClone(existingSource);
       validateManagedExtensionContents(extension, decoded.source);
+      if (extension.source.apiManifest) {
+        existingApiManifestContents = await readFile(
+          path.join(resolvedOutputDirectory, extension.source.apiManifest.path),
+        );
+        validateManagedExtensionApiManifest(extension, existingApiManifestContents);
+      }
     }
     embeddedExtensions.push(extension);
     decodedExtensionSources.push({path: sourcePath, source: decoded.source});
-    if (existingSource?.apiManifestContents) {
+    if (existingApiManifestContents) {
       decodedExtensionSources.push({
         path: extension.source.apiManifest.path,
-        source: existingSource.apiManifestContents,
+        source: existingApiManifestContents,
       });
     }
   }

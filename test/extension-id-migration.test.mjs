@@ -142,6 +142,7 @@ test('plans schema-aware changes and reports strings it will not rewrite', async
     });
     assert.equal(plan.artifactReady, false);
     assert.deepEqual(plan.counts, {
+      apiManifestArtifacts: 0,
       blockOpcodes: 2,
       extensionFiles: 1,
       extensionUrlKeys: 1,

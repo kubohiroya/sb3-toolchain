@@ -26,7 +26,7 @@ export function usage() {
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
-  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--allow-breaking-api --yes]
+  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
   sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
@@ -116,6 +116,7 @@ function parseBuildArguments(arguments_) {
 
 function parseExtensionMutationArguments(action, arguments_) {
   let allowBreakingApi = false;
+  let apiManifestArtifact;
   let sourceDirectory;
   let extensionId;
   let migrateToId;
@@ -136,6 +137,10 @@ function parseExtensionMutationArguments(action, arguments_) {
     } else if (argument === '--artifact') {
       assert(action === 'update', '--artifact is only valid for extensions update.');
       sourceArtifact = takeValue(arguments_, index, '--artifact');
+      index += 1;
+    } else if (argument === '--api-manifest-artifact') {
+      assert(action === 'update', '--api-manifest-artifact is only valid for extensions update.');
+      apiManifestArtifact = takeValue(arguments_, index, '--api-manifest-artifact');
       index += 1;
     } else {
       assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
@@ -162,10 +167,15 @@ function parseExtensionMutationArguments(action, arguments_) {
     sourceArtifact === undefined || migrateToId !== undefined,
     '--artifact requires --migrate-id.',
   );
+  assert(
+    apiManifestArtifact === undefined || migrateToId !== undefined,
+    '--api-manifest-artifact requires --migrate-id.',
+  );
   assert(!allowBreakingApi || yes, '--allow-breaking-api requires --yes.');
   return {
     action,
     ...(allowBreakingApi ? {allowBreakingApi} : {}),
+    ...(apiManifestArtifact ? {apiManifestArtifact} : {}),
     command: 'extensions',
     extensionId,
     migrateToId,
@@ -568,6 +578,7 @@ export async function runCli(
         : await updateExtensions({
             ...operationOptions,
             allowBreakingApi: options.allowBreakingApi,
+            apiManifestArtifact: options.apiManifestArtifact,
             extensionId: options.extensionId,
             migrateToId: options.migrateToId,
             sourceArtifact: options.sourceArtifact,

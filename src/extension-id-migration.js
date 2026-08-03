@@ -79,6 +79,7 @@ export function validateNewExtensionId(newId) {
 }
 
 export function rewriteExtensionIdDocuments({
+  apiManifestArtifact = undefined,
   extensionManifest,
   newId,
   oldId,
@@ -134,6 +135,7 @@ export function rewriteExtensionIdDocuments({
   }
 
   const counts = {
+    apiManifestArtifacts: 0,
     blockOpcodes: 0,
     extensionFiles: 1,
     extensionUrlKeys: 0,
@@ -223,6 +225,12 @@ export function rewriteExtensionIdDocuments({
   );
   let oldApiManifestPath = null;
   let newApiManifestPath = null;
+  if (apiManifestArtifact !== undefined) {
+    assert(
+      extension.source?.apiManifest,
+      `Extension ${oldId} has no managed API manifest metadata.`,
+    );
+  }
   if (extension.source?.apiManifest) {
     oldApiManifestPath = `extensions/${oldId}.manifest.json`;
     newApiManifestPath = `extensions/${newId}.manifest.json`;
@@ -239,6 +247,20 @@ export function rewriteExtensionIdDocuments({
         `/extensions/${extensionIndex}/source/apiManifest/path`,
       ),
     );
+    if (
+      apiManifestArtifact !== undefined &&
+      extension.source.apiManifest.artifact !== apiManifestArtifact
+    ) {
+      extension.source.apiManifest.artifact = apiManifestArtifact;
+      counts.apiManifestArtifacts += 1;
+      manifestClassified.add(
+        referenceKey(
+          'embedded-extensions.json',
+          'value',
+          `/extensions/${extensionIndex}/source/apiManifest/artifact`,
+        ),
+      );
+    }
   }
   if (sourceArtifact !== undefined) {
     assert(extension.source, `Extension ${oldId} has no managed source metadata.`);

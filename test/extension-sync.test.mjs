@@ -74,13 +74,18 @@ function apiManifestContents(id, overrides = {}) {
   return Buffer.from(`${JSON.stringify(apiManifest(id, overrides), null, 2)}\n`);
 }
 
-async function addApiManifest(sourceDirectory, id, contents = apiManifestContents(id)) {
+async function addApiManifest(
+  sourceDirectory,
+  id,
+  contents = apiManifestContents(id),
+  artifact = 'dist/extension-manifest.json',
+) {
   const embeddedManifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
   const embeddedManifest = await readJson(embeddedManifestPath);
   const extension = embeddedManifest.extensions.find((entry) => entry.id === id);
   assert(extension);
   extension.source.apiManifest = {
-    artifact: 'dist/extension-manifest.json',
+    artifact,
     formatVersion: 1,
     integrity: extensionApiManifestIntegrity(contents),
     path: `extensions/${id}.manifest.json`,
@@ -546,19 +551,25 @@ test('normalizes the manifest ID during a managed extension ID migration', async
   await withTemporaryDirectory(async (directory) => {
     const sourceDirectory = path.join(directory, 'source');
     await writeManagedSource(sourceDirectory, ['oldext']);
-    await addApiManifest(sourceDirectory, 'oldext');
+    await addApiManifest(
+      sourceDirectory,
+      'oldext',
+      apiManifestContents('oldext'),
+      'dist/oldext.manifest.json',
+    );
     const updatedExtension = extensionContents('newext', 'V2');
     const updatedApiManifest = apiManifestContents('newext');
     const github = mockGithub({
       artifacts: new Map([
         [rawPath('example/oldext-extension', updatedCommit, 'dist/newext.js'), updatedExtension],
         [
-          rawPath('example/oldext-extension', updatedCommit, 'dist/extension-manifest.json'),
+          rawPath('example/oldext-extension', updatedCommit, 'dist/newext.manifest.json'),
           updatedApiManifest,
         ],
       ]),
     });
     const result = await updateExtensions({
+      apiManifestArtifact: 'dist/newext.manifest.json',
       extensionId: 'oldext',
       fetch: github.fetch,
       migrateToId: 'newext',
@@ -567,6 +578,7 @@ test('normalizes the manifest ID during a managed extension ID migration', async
       yes: true,
     });
     assert.deepEqual(result.apiCompatibility[0].changes, []);
+    assert.equal(result.migration.counts.apiManifestArtifacts, 1);
     await assert.rejects(
       readFile(path.join(sourceDirectory, 'extensions/oldext.manifest.json')),
       (error) => error?.code === 'ENOENT',
@@ -580,6 +592,10 @@ test('normalizes the manifest ID during a managed extension ID migration', async
     assert.equal(
       embeddedManifest.extensions[0].source.apiManifest.path,
       'extensions/newext.manifest.json',
+    );
+    assert.equal(
+      embeddedManifest.extensions[0].source.apiManifest.artifact,
+      'dist/newext.manifest.json',
     );
   });
 });

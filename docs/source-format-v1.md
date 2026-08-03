@@ -108,7 +108,8 @@ An extension ID migration changes the manifest `id` and `path`, known references
 migrated as part of `extensions update`, `artifact` when explicitly supplied, `resolvedCommit`, and
 `integrity` are also updated for the new artifact. An opt-in API manifest is compared after
 normalizing the explicit old and new top-level IDs, saved under the new ID, and updated in the same
-transaction.
+transaction. If its remote filename also changes, `--api-manifest-artifact` updates
+`source.apiManifest.artifact` explicitly.
 
 API manifest files are expanded-source validation inputs, not SB3 archive entries. They do not
 change deterministic SB3 bytes. See

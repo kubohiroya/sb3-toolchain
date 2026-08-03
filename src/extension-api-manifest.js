@@ -292,11 +292,17 @@ export function compareExtensionApiManifests(installed, candidate) {
 
   const installedMenus = new Map(installed.menus.map((menu) => [menu.id, menu]));
   const candidateMenus = new Map(candidate.menus.map((menu) => [menu.id, menu]));
+  const referencedInstalledMenus = new Set();
+  for (const block of installed.blocks) {
+    for (const argument of block.arguments) {
+      if (argument.menu !== undefined) referencedInstalledMenus.add(argument.menu);
+    }
+  }
   for (const [menuId, menu] of installedMenus) {
     const path = `/menus/${escapeJsonPointer(menuId)}`;
     const replacement = candidateMenus.get(menuId);
     if (!replacement) {
-      addChange(changes, 'menu-removed', path, menu, null, true);
+      addChange(changes, 'menu-removed', path, menu, null, referencedInstalledMenus.has(menuId));
     } else if (menu.acceptReporters !== replacement.acceptReporters) {
       addChange(
         changes,
