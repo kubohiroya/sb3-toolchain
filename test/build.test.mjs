@@ -291,15 +291,38 @@ test('parses build and check CLI options', () => {
       'extensions',
       'update',
       'custom-source',
+      'example',
+      '--allow-breaking-api',
+      '--yes',
+    ]),
+    {
+      action: 'update',
+      allowBreakingApi: true,
+      command: 'extensions',
+      extensionId: 'example',
+      migrateToId: undefined,
+      sourceArtifact: undefined,
+      sourceDirectory: path.resolve('custom-source'),
+      yes: true,
+    },
+  );
+  assert.deepEqual(
+    parseCliArguments([
+      'extensions',
+      'update',
+      'custom-source',
       'oldId',
       '--migrate-id',
       'newid',
       '--artifact',
       'dist/newid.js',
+      '--api-manifest-artifact',
+      'dist/newid.manifest.json',
       '--yes',
     ]),
     {
       action: 'update',
+      apiManifestArtifact: 'dist/newid.manifest.json',
       command: 'extensions',
       extensionId: 'oldId',
       migrateToId: 'newid',
@@ -335,6 +358,21 @@ test('parses build and check CLI options', () => {
   assert.throws(
     () => parseCliArguments(['extensions', 'sync', 'custom-source', 'extra']),
     /accepts only SOURCE_DIR/u,
+  );
+  assert.throws(
+    () => parseCliArguments(['extensions', 'update', 'custom-source', '--allow-breaking-api']),
+    /requires --yes/u,
+  );
+  assert.throws(
+    () =>
+      parseCliArguments([
+        'extensions',
+        'update',
+        'custom-source',
+        '--api-manifest-artifact',
+        'dist/newid.manifest.json',
+      ]),
+    /requires --migrate-id/u,
   );
 });
 

@@ -60,7 +60,13 @@ metadata can be added for an extension managed from GitHub.
         "ref": "main",
         "resolvedCommit": "0123456789abcdef0123456789abcdef01234567",
         "artifact": "dist/example.js",
-        "integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        "integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "apiManifest": {
+          "artifact": "dist/extension-manifest.json",
+          "path": "extensions/example.manifest.json",
+          "formatVersion": 1,
+          "integrity": "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        }
       }
     }
   ]
@@ -72,28 +78,43 @@ metadata can be added for an extension managed from GitHub.
 - `resolvedCommit`: lowercase 40-character commit SHA used to obtain the current file
 - `artifact`: JavaScript artifact path relative to the repository root
 - `integrity`: SRI-form SHA-256 of the current file
+- `apiManifest`: optional, opt-in API compatibility metadata
+  - `artifact`: API manifest path relative to the same GitHub repository
+  - `path`: required local path `extensions/<extensionId>.manifest.json`
+  - `formatVersion`: supported manifest format, currently `1`
+  - `integrity`: SRI-form SHA-256 of the installed manifest
 
 Validation and builds verify managed extensions without accessing the network:
 
 - The actual file SHA-256 matches `integrity`
 - The file's `// ID: <extensionId>` header matches `id`
 - The repository, ref, commit, and artifact path use safe forms
+- When `apiManifest` exists, its JSON schema, ID, format version, path, and SHA-256 are valid
 
 Re-importing an SB3 into an existing expanded source directory preserves `source` metadata for the
 same ID and path. If the imported file does not match the recorded hash or ID, the import is rejected
 without changing the existing output. A new import cannot infer provenance, so it does not create
 `source` automatically.
 
-`extensions sync` downloads `artifact` using the immutable `resolvedCommit` and restores the local
-file only when the downloaded ID and hash match the existing metadata. `extensions update` resolves
-`ref` through the GitHub API and updates `resolvedCommit` and `integrity` to match the artifact from
-that commit. The expanded source is not changed until every selected entry has been downloaded and
-validated successfully.
+`extensions sync` downloads the JavaScript and optional API manifest using the immutable
+`resolvedCommit` and restores local files only when their IDs and hashes match the existing metadata.
+`extensions update` resolves `ref` through the GitHub API, downloads both artifacts from that same
+commit, and compares a candidate API manifest with the installed contract. It updates
+`resolvedCommit` and both integrity values only after compatibility and content validation succeed.
+The expanded source is not changed until every selected entry has been downloaded and validated.
 
 An extension ID migration changes the manifest `id` and `path`, known references in
 `project.source.json`, and `extensions/<id>.js` in one transaction. When a managed extension is
 migrated as part of `extensions update`, `artifact` when explicitly supplied, `resolvedCommit`, and
-`integrity` are also updated for the new artifact.
+`integrity` are also updated for the new artifact. An opt-in API manifest is compared after
+normalizing the explicit old and new top-level IDs, saved under the new ID, and updated in the same
+transaction. If its remote filename also changes, `--api-manifest-artifact` updates
+`source.apiManifest.artifact` explicitly.
+
+API manifest files are expanded-source validation inputs, not SB3 archive entries. They do not
+change deterministic SB3 bytes. See
+[`extension-api-compatibility.md`](extension-api-compatibility.md) for manifest v1, compatibility
+classification, the explicit breaking-change override, and rollback.
 
 ### `extensionBundles`
 

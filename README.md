@@ -8,6 +8,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Safely expand an SB3 into formatted `project.source.json`, assets, and embedded extensions
 - Validate asset references, MD5 hashes, ZIP entries, and embedded extension mappings
 - Record commits and SHA-256 hashes for GitHub-hosted embedded extensions and verify them offline
+- Optionally compare versioned extension API manifests before replacing embedded JavaScript
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
 - Produce deterministic builds with fixed ZIP entry order, timestamps, and compression settings
@@ -99,8 +100,11 @@ await updateExtensions({
   extensionId: 'oldId',
   migrateToId: 'newid',
   sourceArtifact: 'dist/newid.js',
+  apiManifestArtifact: 'dist/newid.manifest.json',
   yes: true,
 });
+// After reviewing a reported breaking API change, opt in explicitly:
+await updateExtensions({sourceDirectory: 'app', allowBreakingApi: true, yes: true});
 await bundleExtensions({
   sourceDirectory: 'app',
   bundleId: 'projectbundle',
@@ -126,6 +130,7 @@ await unbundleSb3({
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
 - [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
+- [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates
 - [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling into one permission unit and reversible unbundling
 
 ## Development

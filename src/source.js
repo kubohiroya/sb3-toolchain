@@ -7,6 +7,7 @@ import path from 'node:path';
 import {strToU8, zipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive.js';
+import {validateManagedExtensionApiManifest} from './extension-api-manifest.js';
 import {buildExtensionBundles, validateExtensionBundleConfigurations} from './extension-bundle.js';
 import {
   validateExtensionSourceMetadata,
@@ -194,6 +195,9 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
     validateExtensionSourceMetadata(extension);
     extensionsById.set(extension.id, extension);
     expectedFiles.push(`${extension.id}.js`);
+    if (extension.source?.apiManifest) {
+      expectedFiles.push(path.posix.relative('extensions', extension.source.apiManifest.path));
+    }
   }
 
   for (const [extensionId, extensionUrl] of Object.entries(extensionUrls)) {
@@ -334,6 +338,7 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
   );
 
   const extensionContents = new Map();
+  const extensionApiManifestContents = new Map();
   await Promise.all(
     extensions.map(async (extension) => {
       const contents = await readFile(path.join(resolvedSourceDirectory, extension.path));
@@ -341,6 +346,15 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
         validateManagedExtensionContents(extension, contents);
       }
       extensionContents.set(extension.id, contents);
+      if (extension.source?.apiManifest) {
+        const apiManifestContents = await readFile(
+          path.join(resolvedSourceDirectory, extension.source.apiManifest.path),
+        );
+        if (validateManagedExtensions) {
+          validateManagedExtensionApiManifest(extension, apiManifestContents);
+        }
+        extensionApiManifestContents.set(extension.id, apiManifestContents);
+      }
     }),
   );
 
@@ -348,6 +362,7 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
     assetContents,
     assetReferenceCount: references.length,
     extensions,
+    extensionApiManifestContents,
     extensionBundles,
     extensionContents,
     project,

@@ -3,6 +3,10 @@
 import {cp, lstat, mkdtemp, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
+import {
+  extensionApiManifestIntegrity,
+  parseExtensionApiManifest,
+} from './extension-api-manifest.js';
 import {extensionHeaderId, extensionIntegrity} from './extension-dependencies.js';
 import {
   assertNoInterruptedRollback,
@@ -75,6 +79,7 @@ export function validateNewExtensionId(newId) {
 }
 
 export function rewriteExtensionIdDocuments({
+  apiManifestArtifact = undefined,
   extensionManifest,
   newId,
   oldId,
@@ -130,6 +135,7 @@ export function rewriteExtensionIdDocuments({
   }
 
   const counts = {
+    apiManifestArtifacts: 0,
     blockOpcodes: 0,
     extensionFiles: 1,
     extensionUrlKeys: 0,
@@ -217,6 +223,45 @@ export function rewriteExtensionIdDocuments({
   manifestClassified.add(
     referenceKey('embedded-extensions.json', 'value', `/extensions/${extensionIndex}/path`),
   );
+  let oldApiManifestPath = null;
+  let newApiManifestPath = null;
+  if (apiManifestArtifact !== undefined) {
+    assert(
+      extension.source?.apiManifest,
+      `Extension ${oldId} has no managed API manifest metadata.`,
+    );
+  }
+  if (extension.source?.apiManifest) {
+    oldApiManifestPath = `extensions/${oldId}.manifest.json`;
+    newApiManifestPath = `extensions/${newId}.manifest.json`;
+    assert(
+      extension.source.apiManifest.path === oldApiManifestPath,
+      `Extension API manifest path mismatch for ${oldId}: ${extension.source.apiManifest.path}`,
+    );
+    extension.source.apiManifest.path = newApiManifestPath;
+    counts.manifestPaths += 1;
+    manifestClassified.add(
+      referenceKey(
+        'embedded-extensions.json',
+        'value',
+        `/extensions/${extensionIndex}/source/apiManifest/path`,
+      ),
+    );
+    if (
+      apiManifestArtifact !== undefined &&
+      extension.source.apiManifest.artifact !== apiManifestArtifact
+    ) {
+      extension.source.apiManifest.artifact = apiManifestArtifact;
+      counts.apiManifestArtifacts += 1;
+      manifestClassified.add(
+        referenceKey(
+          'embedded-extensions.json',
+          'value',
+          `/extensions/${extensionIndex}/source/apiManifest/artifact`,
+        ),
+      );
+    }
+  }
   if (sourceArtifact !== undefined) {
     assert(extension.source, `Extension ${oldId} has no managed source metadata.`);
     if (extension.source.artifact !== sourceArtifact) {
@@ -251,7 +296,9 @@ export function rewriteExtensionIdDocuments({
     counts,
     extensionIndex,
     extensionManifest: migratedManifest,
+    newApiManifestPath,
     newPath: `extensions/${newId}.js`,
+    oldApiManifestPath,
     oldPath,
     project: migratedProject,
     totalChanges,
@@ -297,8 +344,23 @@ async function migrationContext(sourceDirectory, oldId, newId, willReplace) {
   });
   const extension = source.extensions[rewrite.extensionIndex];
   const contents = source.extensionContents.get(oldId);
+  const apiManifestContents = source.extensionApiManifestContents.get(oldId) ?? null;
+  let apiManifestReady = true;
+  if (extension.source?.apiManifest) {
+    apiManifestReady =
+      apiManifestContents !== null &&
+      extensionApiManifestIntegrity(apiManifestContents) === extension.source.apiManifest.integrity;
+    if (apiManifestReady) {
+      try {
+        parseExtensionApiManifest(apiManifestContents, {expectedId: newId});
+      } catch {
+        apiManifestReady = false;
+      }
+    }
+  }
   return {
-    artifactReady: extensionHeaderId(contents) === newId,
+    apiManifestContents,
+    artifactReady: extensionHeaderId(contents) === newId && apiManifestReady,
     contents,
     extension,
     rewrite,
@@ -372,7 +434,7 @@ export async function migrateExtensionId({fromId, sourceDirectory, toId, yes = f
       recursive: true,
       verbatimSymlinks: true,
     });
-    await Promise.all([
+    const replacements = [
       writeFile(
         path.join(candidateDirectory, context.source.sourceManifest.project),
         `${JSON.stringify(context.rewrite.project, null, 2)}\n`,
@@ -385,7 +447,16 @@ export async function migrateExtensionId({fromId, sourceDirectory, toId, yes = f
         path.join(candidateDirectory, context.rewrite.oldPath),
         path.join(candidateDirectory, context.rewrite.newPath),
       ),
-    ]);
+    ];
+    if (context.rewrite.oldApiManifestPath && context.rewrite.newApiManifestPath) {
+      replacements.push(
+        rename(
+          path.join(candidateDirectory, context.rewrite.oldApiManifestPath),
+          path.join(candidateDirectory, context.rewrite.newApiManifestPath),
+        ),
+      );
+    }
+    await Promise.all(replacements);
     await createDeterministicSb3(candidateDirectory);
     const comparison = await compareDirectories(
       context.source.resolvedSourceDirectory,

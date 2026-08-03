@@ -46,12 +46,21 @@ upstream repository publishes an artifact declaring the new ID.
 ```bash
 sb3-toolchain extensions update app twOld \
   --migrate-id newext \
-  --artifact dist/newext.js
+  --artifact dist/newext.js \
+  --api-manifest-artifact dist/newext.manifest.json
 ```
 
-Specify `--artifact` only when the upstream artifact path also changed. The tool resolves the tracked
-ref to an immutable commit and downloads the new artifact from that commit. It rejects an artifact
-that does not declare `// ID: newext`, a collision, or an invalid new ID before changing local files.
+Specify `--artifact` only when the upstream JavaScript artifact path changed. Specify
+`--api-manifest-artifact` only when an opt-in manifest artifact path also changed. The tool resolves
+the tracked ref to an immutable commit and downloads the new artifacts from that commit. It rejects
+an artifact that does not declare `// ID: newext`, a collision, or an invalid new ID before changing
+local files.
+
+If the managed extension has `source.apiManifest`, the tool downloads the candidate manifest from
+the same commit, normalizes only the explicit old and new top-level IDs, and applies the ordinary API
+compatibility policy to every remaining field. JavaScript, the renamed local manifest, provenance,
+both remote artifact paths when supplied, and both integrity values change in one transaction. See
+[`extension-api-compatibility.md`](extension-api-compatibility.md).
 
 ## Validation and rollback
 

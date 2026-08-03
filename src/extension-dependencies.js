@@ -3,6 +3,7 @@
 import {createHash} from 'node:crypto';
 
 import {validateArchiveEntryName} from './archive.js';
+import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -74,6 +75,7 @@ export function validateExtensionSourceMetadata(extension) {
     typeof source.integrity === 'string' && /^sha256-[A-Za-z0-9+/]{43}=$/u.test(source.integrity),
     `Managed extension ${extension.id} requires SHA-256 integrity.`,
   );
+  validateExtensionApiManifestSourceMetadata(extension);
   return source;
 }
 

@@ -8,6 +8,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 import {
+  extensionApiManifestIntegrity,
   extensionIntegrity,
   extensionStatus,
   syncExtensions,
@@ -51,6 +52,49 @@ function sourceMetadata(id, contents, repository = `example/${id}-extension`) {
     artifact: `dist/${id}.js`,
     integrity: extensionIntegrity(contents),
   };
+}
+
+function apiManifest(id, overrides = {}) {
+  return {
+    formatVersion: 1,
+    id,
+    blocks: [
+      {
+        opcode: 'value',
+        blockType: 'REPORTER',
+        arguments: [{id: 'INPUT', type: 'STRING'}],
+      },
+    ],
+    menus: [],
+    ...overrides,
+  };
+}
+
+function apiManifestContents(id, overrides = {}) {
+  return Buffer.from(`${JSON.stringify(apiManifest(id, overrides), null, 2)}\n`);
+}
+
+async function addApiManifest(
+  sourceDirectory,
+  id,
+  contents = apiManifestContents(id),
+  artifact = 'dist/extension-manifest.json',
+) {
+  const embeddedManifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+  const embeddedManifest = await readJson(embeddedManifestPath);
+  const extension = embeddedManifest.extensions.find((entry) => entry.id === id);
+  assert(extension);
+  extension.source.apiManifest = {
+    artifact,
+    formatVersion: 1,
+    integrity: extensionApiManifestIntegrity(contents),
+    path: `extensions/${id}.manifest.json`,
+  };
+  await Promise.all([
+    writeJson(embeddedManifestPath, embeddedManifest),
+    writeFile(path.join(sourceDirectory, extension.source.apiManifest.path), contents),
+  ]);
+  return contents;
 }
 
 async function writeManagedSource(sourceDirectory, extensionIds = ['example']) {
@@ -294,5 +338,264 @@ test('updates multiple extensions and metadata as one transaction', async () => 
       assert.equal(extension.source.resolvedCommit, updatedCommit);
       assert.equal(extension.source.integrity, extensionIntegrity(contents));
     }
+  });
+});
+
+test('syncs and compatibly updates an opt-in extension API manifest', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const contentsById = await writeManagedSource(sourceDirectory);
+    const installedExtension = contentsById.get('example');
+    const installedApiManifest = await addApiManifest(sourceDirectory, 'example');
+    const apiManifestPath = path.join(sourceDirectory, 'extensions/example.manifest.json');
+    await writeFile(apiManifestPath, Buffer.from('{}\n'));
+
+    const syncGithub = mockGithub({
+      artifacts: new Map([
+        [
+          rawPath('example/example-extension', installedCommit, 'dist/example.js'),
+          installedExtension,
+        ],
+        [
+          rawPath('example/example-extension', installedCommit, 'dist/extension-manifest.json'),
+          installedApiManifest,
+        ],
+      ]),
+    });
+    assert.equal(
+      (await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local,
+      'modified',
+    );
+    const synchronized = await syncExtensions({
+      fetch: syncGithub.fetch,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(synchronized.changed, true);
+    assert.deepEqual(await readFile(apiManifestPath), installedApiManifest);
+    assert.equal(
+      (await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local,
+      'valid',
+    );
+
+    const updatedExtension = extensionContents('example', 'V2');
+    const updatedApiManifest = apiManifestContents('example', {
+      blocks: [
+        ...apiManifest('example').blocks,
+        {opcode: 'clear', blockType: 'COMMAND', arguments: []},
+      ],
+    });
+    const updateGithub = mockGithub({
+      artifacts: new Map([
+        [rawPath('example/example-extension', updatedCommit, 'dist/example.js'), updatedExtension],
+        [
+          rawPath('example/example-extension', updatedCommit, 'dist/extension-manifest.json'),
+          updatedApiManifest,
+        ],
+      ]),
+    });
+    const updated = await updateExtensions({
+      fetch: updateGithub.fetch,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(updated.changed, true);
+    assert.deepEqual(
+      updated.apiCompatibility[0].changes.map(({breaking, kind, path: changePath}) => ({
+        breaking,
+        kind,
+        path: changePath,
+      })),
+      [{breaking: false, kind: 'block-added', path: '/blocks/clear'}],
+    );
+    assert.deepEqual(await readFile(apiManifestPath), updatedApiManifest);
+    const embeddedManifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
+    assert.equal(embeddedManifest.extensions[0].source.resolvedCommit, updatedCommit);
+    assert.equal(
+      embeddedManifest.extensions[0].source.apiManifest.integrity,
+      extensionApiManifestIntegrity(updatedApiManifest),
+    );
+  });
+});
+
+test('rejects breaking API updates unless both explicit overrides are present', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const contentsById = await writeManagedSource(sourceDirectory);
+    await addApiManifest(sourceDirectory, 'example');
+    const originalExtension = contentsById.get('example');
+    const originalManifest = await readFile(
+      path.join(sourceDirectory, 'extensions/example.manifest.json'),
+    );
+    const updatedExtension = extensionContents('example', 'V2');
+    const breakingManifest = apiManifestContents('example', {
+      blocks: [
+        {
+          opcode: 'value',
+          blockType: 'COMMAND',
+          arguments: [{id: 'INPUT', type: 'STRING'}],
+        },
+      ],
+    });
+    const github = mockGithub({
+      artifacts: new Map([
+        [rawPath('example/example-extension', updatedCommit, 'dist/example.js'), updatedExtension],
+        [
+          rawPath('example/example-extension', updatedCommit, 'dist/extension-manifest.json'),
+          breakingManifest,
+        ],
+      ]),
+    });
+    await assert.rejects(
+      updateExtensions({fetch: github.fetch, sourceDirectory, yes: true}),
+      /breaking.*block-type-changed.*\/blocks\/value\/blockType/su,
+    );
+    assert.deepEqual(
+      await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+      originalExtension,
+    );
+    assert.deepEqual(
+      await readFile(path.join(sourceDirectory, 'extensions/example.manifest.json')),
+      originalManifest,
+    );
+    await assert.rejects(
+      updateExtensions({
+        allowBreakingApi: true,
+        fetch: github.fetch,
+        sourceDirectory,
+      }),
+      /requires --yes/u,
+    );
+    const updated = await updateExtensions({
+      allowBreakingApi: true,
+      fetch: github.fetch,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(updated.changed, true);
+    assert.equal(updated.apiCompatibility[0].changes[0].breaking, true);
+  });
+});
+
+test('rejects unsafe API manifest downloads without changing the source', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeManagedSource(sourceDirectory);
+    const installedApiManifest = await addApiManifest(sourceDirectory, 'example');
+    const installedExtension = await readFile(path.join(sourceDirectory, 'extensions/example.js'));
+    const extensionPath = rawPath('example/example-extension', updatedCommit, 'dist/example.js');
+    const manifestPath = rawPath(
+      'example/example-extension',
+      updatedCommit,
+      'dist/extension-manifest.json',
+    );
+    for (const [response, message, maximumManifestBytes] of [
+      [Buffer.from('{'), /not valid JSON/u, 1024],
+      [apiManifestContents('example', {formatVersion: 2}), /Unsupported.*formatVersion/u, 1024],
+      [apiManifestContents('another'), /ID mismatch/u, 1024],
+      [new Response(Buffer.alloc(65), {headers: {'content-length': '65'}}), /64-byte limit/u, 64],
+      [
+        new Response(null, {headers: {location: 'https://example.com/'}, status: 302}),
+        /HTTP 302/u,
+        1024,
+      ],
+    ]) {
+      const github = mockGithub({
+        artifacts: new Map([
+          [extensionPath, extensionContents('example', 'V2')],
+          [manifestPath, response],
+        ]),
+      });
+      await assert.rejects(
+        updateExtensions({
+          fetch: github.fetch,
+          maximumManifestBytes,
+          sourceDirectory,
+          yes: true,
+        }),
+        message,
+      );
+      assert.deepEqual(
+        await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+        installedExtension,
+      );
+      assert.deepEqual(
+        await readFile(path.join(sourceDirectory, 'extensions/example.manifest.json')),
+        installedApiManifest,
+      );
+    }
+
+    const corruptedManifest = apiManifestContents('example', {
+      blocks: [{opcode: 'changed', blockType: 'COMMAND', arguments: []}],
+    });
+    const syncGithub = mockGithub({
+      artifacts: new Map([
+        [
+          rawPath('example/example-extension', installedCommit, 'dist/example.js'),
+          installedExtension,
+        ],
+        [
+          rawPath('example/example-extension', installedCommit, 'dist/extension-manifest.json'),
+          corruptedManifest,
+        ],
+      ]),
+    });
+    await assert.rejects(
+      syncExtensions({fetch: syncGithub.fetch, sourceDirectory, yes: true}),
+      /API manifest integrity mismatch/u,
+    );
+  });
+});
+
+test('normalizes the manifest ID during a managed extension ID migration', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeManagedSource(sourceDirectory, ['oldext']);
+    await addApiManifest(
+      sourceDirectory,
+      'oldext',
+      apiManifestContents('oldext'),
+      'dist/oldext.manifest.json',
+    );
+    const updatedExtension = extensionContents('newext', 'V2');
+    const updatedApiManifest = apiManifestContents('newext');
+    const github = mockGithub({
+      artifacts: new Map([
+        [rawPath('example/oldext-extension', updatedCommit, 'dist/newext.js'), updatedExtension],
+        [
+          rawPath('example/oldext-extension', updatedCommit, 'dist/newext.manifest.json'),
+          updatedApiManifest,
+        ],
+      ]),
+    });
+    const result = await updateExtensions({
+      apiManifestArtifact: 'dist/newext.manifest.json',
+      extensionId: 'oldext',
+      fetch: github.fetch,
+      migrateToId: 'newext',
+      sourceArtifact: 'dist/newext.js',
+      sourceDirectory,
+      yes: true,
+    });
+    assert.deepEqual(result.apiCompatibility[0].changes, []);
+    assert.equal(result.migration.counts.apiManifestArtifacts, 1);
+    await assert.rejects(
+      readFile(path.join(sourceDirectory, 'extensions/oldext.manifest.json')),
+      (error) => error?.code === 'ENOENT',
+    );
+    assert.deepEqual(
+      await readFile(path.join(sourceDirectory, 'extensions/newext.manifest.json')),
+      updatedApiManifest,
+    );
+    const embeddedManifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
+    assert.equal(embeddedManifest.extensions[0].id, 'newext');
+    assert.equal(
+      embeddedManifest.extensions[0].source.apiManifest.path,
+      'extensions/newext.manifest.json',
+    );
+    assert.equal(
+      embeddedManifest.extensions[0].source.apiManifest.artifact,
+      'dist/newext.manifest.json',
+    );
   });
 });
