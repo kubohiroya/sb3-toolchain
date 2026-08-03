@@ -1,5 +1,7 @@
 # sb3-toolchain
 
+[日本語](README.ja.md)
+
 A Node.js toolchain for managing Scratch 3 and TurboWarp `.sb3` projects as Git-diffable
 expanded sources and rebuilding bit-for-bit identical SB3 files from the same input.
 
@@ -15,9 +17,6 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Protect uncommitted Git changes when importing
 - Protect existing output through transactional replacement and rollback
 - Provide both a CLI and a JavaScript API
-
-TMPose kamishibai script conversion, project-specific data, and web application generation with
-TurboWarp Packager are outside the scope of this package.
 
 ## Requirements
 

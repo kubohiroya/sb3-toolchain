@@ -1,5 +1,7 @@
 # Static bundles for embedded extensions
 
+[日本語版](ja/extension-bundles.md)
+
 When a newly opened SB3 contains several unsandboxed extensions, TurboWarp asks for permission to
 run each extension. A static bundle keeps the individual extensions in the expanded source but
 transforms only the generated SB3 into one composite extension, reducing the permission unit to

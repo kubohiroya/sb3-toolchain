@@ -1,5 +1,7 @@
 # SB3 source-management workflows
 
+[日本語版](ja/workflows.md)
+
 This document describes the common workflow for managing a Scratch 3 or TurboWarp SB3 as expanded
 source in Git and rebuilding a validated SB3. Each project repository should define its own editing,
 testing, and distribution procedures.
