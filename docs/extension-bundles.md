@@ -39,6 +39,163 @@ The expanded source always retains the individual extensions. Bundling changes o
 SB3, and the recovery capsule makes that generated artifact reversible when its safety conditions
 remain satisfied.
 
+## What problem it solves
+
+TurboWarp grants unsandboxed execution permission per loaded custom extension. A project with three
+embedded extensions therefore presents three prompts even when all three are maintained and shipped
+as one project. The bundle changes the loading boundary, not the security decision itself.
+
+```mermaid
+flowchart LR
+  subgraph Before["Without a bundle"]
+    BeforeSB3["SB3"] --> PromptA["Allow extension A?"]
+    PromptA --> PromptB["Allow extension B?"]
+    PromptB --> PromptC["Allow extension C?"]
+    PromptC --> RunBefore["Run project"]
+  end
+
+  subgraph After["With a static bundle"]
+    AfterSB3["SB3"] --> BundlePrompt["Allow project bundle?"]
+    BundlePrompt --> Members["Extension A + B + C"]
+    Members --> RunAfter["Run project"]
+  end
+```
+
+The user still reviews and authorizes unsandboxed JavaScript. The difference is that the generated
+SB3 exposes one composite extension ID and one embedded extension URL, so TurboWarp has one custom
+extension to authorize and load.
+
+### What it is and what it is not
+
+| This feature does                                                 | This feature does not                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| Create one composite runtime extension from several members       | Disable or bypass TurboWarp's permission prompt              |
+| Rewrite generated project references to collision-free namespaces | Rewrite the authoritative source project in place            |
+| Preserve and delegate each member's original implementation       | Flatten all member classes into one manually merged class    |
+| Embed recovery data for direct SB3 unbundling                     | Guarantee compatibility for arbitrary dynamic extension code |
+| Reject transformations that cannot be classified safely           | Execute extension JavaScript during the build                |
+
+## Internal architecture
+
+Bundling has separate build-time and runtime layers. Build time validates and rewrites data without
+executing extension JavaScript. Runtime uses a generated wrapper to capture each member registration,
+combine its metadata, and delegate calls.
+
+```mermaid
+flowchart TB
+  subgraph BuildTime["Build time: Node.js toolchain"]
+    Config["extensionBundles configuration"]
+    Sources["Individual member JavaScript"]
+    SourceProject["Original project.source.json"]
+    Validator["Static contract validator"]
+    Generator["Bundle source generator"]
+    Rewriter["Project reference rewriter"]
+    BundleJS["Generated composite JavaScript"]
+    BundledProject["Generated project.json"]
+    Archive["Deterministic SB3 archive"]
+
+    Config --> Validator
+    Sources --> Validator
+    Validator --> Generator
+    SourceProject --> Rewriter
+    Config --> Rewriter
+    Generator --> BundleJS
+    Rewriter --> BundledProject
+    BundleJS --> Archive
+    BundledProject --> Archive
+  end
+
+  subgraph Runtime["Runtime: TurboWarp"]
+    Manager["Extension manager"]
+    Wrapper["Generated bundle wrapper"]
+    Captured["Captured member instances"]
+    Composite["StaticExtensionBundle"]
+    Palette["One palette category"]
+    VM["Scratch VM execution"]
+
+    Manager -->|"load one data URL"| Wrapper
+    Wrapper -->|"execute members with Scratch proxy"| Captured
+    Captured -->|"compose getInfo() and delegates"| Composite
+    Composite -->|"register once"| Manager
+    Manager --> Palette
+    VM -->|"namespaced opcode"| Composite
+    Composite -->|"delegate"| Captured
+  end
+
+  Archive --> Manager
+```
+
+### Anatomy of the generated JavaScript
+
+The generated data URL is a self-contained classic extension script with these layers:
+
+```text
+projectbundle.js
+├── human-readable bundle header
+│   └── member name, ID, author, description, and license
+├── runtime adapter
+│   ├── Scratch proxy for each member
+│   ├── synchronous register() capture
+│   ├── opcode, menu, custom-field, and hat namespaces
+│   └── global and target storage aliases
+├── original member source A
+├── original member source B
+├── StaticExtensionBundle
+│   ├── combined getInfo()
+│   ├── generated palette headings and separators
+│   └── handlers that delegate to captured member instances
+├── one real Scratch.extensions.register() call
+└── SB3-Toolchain-Reversible-Bundle-v1 recovery capsule
+```
+
+The original scripts still execute their normal initialization code at runtime. Their calls to
+`Scratch.extensions.register()` are intercepted by a member-specific Scratch proxy instead of being
+sent to TurboWarp. After every member registers exactly once, the wrapper registers the composite
+extension with the real API.
+
+### Runtime call flow
+
+```mermaid
+sequenceDiagram
+  participant VM as TurboWarp VM
+  participant W as Bundle wrapper
+  participant A as Member alpha
+  participant B as Member beta
+  participant C as Composite extension
+
+  VM->>W: Load projectbundle data URL
+  W->>A: Execute with proxied Scratch
+  A-->>W: register(alpha instance) captured
+  W->>B: Execute with proxied Scratch
+  B-->>W: register(beta instance) captured
+  W->>C: Construct combined getInfo() and delegates
+  W->>VM: register(composite) once
+
+  VM->>C: Call alpha__doSomething(args, util)
+  C->>A: Call original doSomething(args, util)
+  A-->>C: Result
+  C-->>VM: Result
+
+  A->>W: startHats("alpha_whenReady")
+  W->>VM: startHats("projectbundle_alpha__whenReady")
+```
+
+### Data transformations
+
+| Concern                     | Before bundling                           | Generated bundled SB3                         |
+| --------------------------- | ----------------------------------------- | --------------------------------------------- |
+| Loaded extension IDs        | `alpha`, `beta`                           | `projectbundle`                               |
+| Embedded data URLs          | One per member                            | One composite data URL                        |
+| Member `getInfo()` opcode   | `doSomething`                             | `alpha__doSomething`                          |
+| Stored project opcode       | `alpha_doSomething`                       | `projectbundle_alpha__doSomething`            |
+| Menu and custom-field names | Member-local names                        | `memberId__` namespace                        |
+| `startHats()` opcode        | `alpha_whenReady`                         | `projectbundle_alpha__whenReady`              |
+| Extension storage           | `storage.alpha`, `storage.beta`           | `storage.projectbundle.components.alpha/beta` |
+| Block IDs and graph links   | Original IDs and `next`/`parent`/`inputs` | Unchanged                                     |
+
+This split is why existing scripts continue to call their original methods while the saved project
+uses the composite extension ID expected by TurboWarp.
+
 ## Compatibility and reversibility
 
 Bundle configuration is added only to `embedded-extensions.json`. The following authoritative
