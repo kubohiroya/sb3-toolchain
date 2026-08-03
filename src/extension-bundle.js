@@ -205,6 +205,14 @@ export function createStaticExtensionBundle(bundle, components, originalProject 
       : opcode;
   };
 
+  const xmlEscape = (value) => String(value).replace(/[<>&'"]/gu, (character) => ({
+    '<': '&lt;',
+    '>': '&gt;',
+    '&': '&amp;',
+    "'": '&apos;',
+    '"': '&quot;',
+  })[character]);
+
   const installStorageAliases = (storage) => {
     if (!storage || typeof storage !== 'object') return;
     const hasBundleStorage = Object.prototype.hasOwnProperty.call(storage, BUNDLE_ID);
@@ -348,8 +356,20 @@ ${loaders}
         result.blocks.push({
           blockType: Scratch.BlockType.LABEL,
           sb3Toolchain: {kind: 'bundle-member-heading', memberId: componentId},
-          text: '◆ Bundled extension: ' + info.name + ' [' + componentId + '] ◆',
+          text: '◆ ' + info.name + ' [' + componentId + '] ◆',
         });
+        if (info.docsURI) {
+          const docsURI = String(info.docsURI);
+          result.blocks.push({
+            blockType: Scratch.BlockType.XML,
+            sb3Toolchain: {
+              docsURI,
+              kind: 'bundle-member-docs',
+              memberId: componentId,
+            },
+            xml: '<button text="Open Documentation" callbackKey="OPEN_EXTENSION_DOCS" callbackData="' + xmlEscape(docsURI) + '"></button>',
+          });
+        }
         for (const block of info.blocks || []) {
           if (block === '---') {
             result.blocks.push(block);

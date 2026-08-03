@@ -38,6 +38,7 @@ const alphaSource = `// Name: Alpha Tools
       return {
         id: 'alpha',
         name: 'Alpha Tools',
+        docsURI: 'https://example.com/alpha?a=1&b="two"',
         blocks: [
           {
             opcode: 'value',
@@ -325,10 +326,14 @@ test('builds one reversible composite extension without deleting original source
             ? block.sb3Toolchain?.kind === 'bundle-member-heading'
               ? `bundle-label:${block.sb3Toolchain.memberId}:${block.text}`
               : `original-label:${block.text}`
-            : block.opcode,
+            : block.blockType === runtime.Scratch.BlockType.XML &&
+                block.sb3Toolchain?.kind === 'bundle-member-docs'
+              ? `bundle-docs:${block.sb3Toolchain.memberId}:${block.sb3Toolchain.docsURI}`
+              : block.opcode,
       ),
       [
-        'bundle-label:alpha:◆ Bundled extension: Alpha Tools [alpha] ◆',
+        'bundle-label:alpha:◆ Alpha Tools [alpha] ◆',
+        'bundle-docs:alpha:https://example.com/alpha?a=1&b="two"',
         'alpha__value',
         'original-label:Alpha original heading',
         'separator',
@@ -337,9 +342,26 @@ test('builds one reversible composite extension without deleting original source
         'alpha__whenReady',
         'separator',
         'separator',
-        'bundle-label:beta:◆ Bundled extension: Beta Tools [beta] ◆',
+        'bundle-label:beta:◆ Beta Tools [beta] ◆',
         'beta__value',
       ],
+    );
+    const alphaDocs = info.blocks.find(
+      (block) =>
+        block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
+        block.sb3Toolchain.memberId === 'alpha',
+    );
+    assert.equal(
+      alphaDocs.xml,
+      '<button text="Open Documentation" callbackKey="OPEN_EXTENSION_DOCS" callbackData="https://example.com/alpha?a=1&amp;b=&quot;two&quot;"></button>',
+    );
+    assert.equal(
+      info.blocks.some(
+        (block) =>
+          block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
+          block.sb3Toolchain.memberId === 'beta',
+      ),
+      false,
     );
     assert.equal(composite.alpha__value(), 'alpha:1');
     assert.equal(project.extensionStorage.projectbundle.components.alpha.calls, 1);

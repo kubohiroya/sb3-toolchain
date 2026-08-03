@@ -223,11 +223,11 @@ bundleは、マニフェストの`members`順と、各メンバーの`getInfo().
 TurboWarp Editorのパレットでは、各グループが次の形式の装飾済みLABEL見出しから始まります。
 
 ```text
-◆ Bundled extension: <name> [<memberId>] ◆
+◆ <name> [<memberId>] ◆
 ```
 
-メンバーグループは、連続する2つの`---` separatorで区切られます。生成LABELには、次の機械可読メタデータも
-含まれます。
+メンバー名を先頭へ置くことで、幅の狭いTurboWarpパレットでも名前が見えるようにします。メンバーグループは、
+連続する2つの`---` separatorで区切られます。生成LABELには、次の機械可読メタデータも含まれます。
 
 ```js
 {
@@ -238,6 +238,24 @@ TurboWarp Editorのパレットでは、各グループが次の形式の装飾�
 }
 ```
 
+メンバーの`getInfo()`が空でない文字列[`docsURI`](https://docs.turbowarp.org/development/extensions/assorted-apis#docsuri)を返す場合、
+bundleはそのメンバー見出しの直後に`Open Documentation`ボタンを挿入します。機能拡張コードへの委譲ではなく、TurboWarp標準の
+`OPEN_EXTENSION_DOCS` callbackを使用するため、通常の`docsURI`と同じ動作を保持します。生成ボタンには別の
+メタデータを付け、URIを安全にXML escapeします。
+
+```js
+{
+  sb3Toolchain: {
+    docsURI,
+    kind: 'bundle-member-docs',
+    memberId,
+  },
+}
+```
+
+`docsURI`を持たないメンバーにはボタンを追加しません。メンバー自身が定義するXMLブロックは引き続き非対応で、
+ツールが生成するXMLはこの限定されたドキュメントボタンだけです。
+
 メンバーが元から定義しているLABELエントリとseparatorは、位置も含めて変更せず保持されます。そのため、
 装飾済みbundle見出しと幅の広い二重separatorは、元の見出しや通常のseparatorと視覚的に区別できます。
 ツールは`sb3Toolchain`メタデータで生成見出しを識別し、その直前にある2つのseparatorをbundleグループ境界として
@@ -247,14 +265,15 @@ TurboWarp Editorのパレットでは、各グループが次の形式の装飾�
 
 ```text
 ┌─ Project Extension Bundle ─────────────────────────────┐
-│ ◆ Bundled extension: Alpha Tools [alpha] ◆            │ ← 生成見出し
+│ ◆ Alpha Tools [alpha] ◆                               │ ← 生成見出し
+│   Open Documentation                                   │ ← 生成されたdocsURIボタン
 │   alpha block 1                                        │
 │   Alpha original heading                               │ ← 元のLABEL
 │                                                       │ ← 元のseparator
 │   alpha block 2                                        │
 │                                                       │
 │                                                       │ ← 生成された二重separator
-│ ◆ Bundled extension: Beta Tools [beta] ◆              │ ← 生成見出し
+│ ◆ Beta Tools [beta] ◆                                 │ ← 生成見出し
 │   beta block 1                                         │
 └────────────────────────────────────────────────────────┘
 ```
