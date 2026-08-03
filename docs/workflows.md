@@ -87,8 +87,8 @@ operations, images, sounds, and embedded extension behavior.
 ## Managed embedded extensions
 
 The `source` object in `embedded-extensions.json` can record the GitHub repository, tracked ref,
-resolved commit, artifact path, and SHA-256. See [`source-format-v1.md`](source-format-v1.md) for the
-complete schema.
+resolved commit, artifact path, and SHA-256. It can also opt in to a versioned API manifest for static
+update compatibility checks. See [`source-format-v1.md`](source-format-v1.md) for the complete schema.
 
 The extension commands have the following roles:
 
@@ -118,7 +118,8 @@ sb3-toolchain check app
 ```
 
 `sync` does not resolve a mutable branch or tag. It downloads from the recorded `resolvedCommit` and
-replaces a local file only when the artifact ID and SHA-256 match the recorded metadata.
+replaces local files only when JavaScript and an optional API manifest match their recorded IDs and
+SHA-256 values.
 
 ### Update a tracked ref
 
@@ -132,8 +133,20 @@ git diff -- app
 Omitting the ID updates all managed extensions as one transaction. If any download or validation
 fails, neither files nor metadata are changed.
 
-In an update PR, review `resolvedCommit`, `integrity`, and the JavaScript artifact together, then test
-the extension's primary features in the generated SB3.
+When `source.apiManifest` is present, the update downloads JavaScript and the API manifest from the
+same resolved commit. Compatible additions are reported. A removed block, changed block type,
+argument-contract change, removed menu, or `acceptReporters` change is rejected before installation.
+After reviewing every reported path, an intentionally breaking update requires both flags:
+
+```bash
+sb3-toolchain extensions update app EXTENSION_ID --allow-breaking-api --yes
+```
+
+See [`extension-api-compatibility.md`](extension-api-compatibility.md) for the versioned manifest
+contract, classification table, default-off behavior, and rollback.
+
+In an update PR, review `resolvedCommit`, JavaScript and manifest integrity, compatibility paths, and
+both artifacts together, then test the extension's primary features in the generated SB3.
 
 ## Migrate an extension ID
 

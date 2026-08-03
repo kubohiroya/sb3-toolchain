@@ -12,6 +12,7 @@ import {strToU8, zipSync} from 'fflate';
 import {parseCliArguments} from '../src/cli.js';
 import {
   decodeExtensionDataUrl,
+  extensionApiManifestIntegrity,
   extensionIntegrity,
   importSb3,
   validateArchiveEntryName,
@@ -182,6 +183,9 @@ test('preserves managed extension source metadata during import and rejects cont
 
     const manifestPath = path.join(outputDirectory, 'embedded-extensions.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const apiManifestContents = Buffer.from(
+      `${JSON.stringify({formatVersion: 1, id: 'managed', blocks: [], menus: []}, null, 2)}\n`,
+    );
     manifest.extensions[0].source = {
       provider: 'github',
       repository: 'example/managed-extension',
@@ -189,8 +193,20 @@ test('preserves managed extension source metadata during import and rejects cont
       resolvedCommit: '1234567890abcdef1234567890abcdef12345678',
       artifact: 'dist/managed.js',
       integrity: extensionIntegrity(Buffer.from(extensionSource)),
+      apiManifest: {
+        artifact: 'dist/extension-manifest.json',
+        formatVersion: 1,
+        integrity: extensionApiManifestIntegrity(apiManifestContents),
+        path: 'extensions/managed.manifest.json',
+      },
     };
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await Promise.all([
+      writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`),
+      writeFile(
+        path.join(outputDirectory, 'extensions/managed.manifest.json'),
+        apiManifestContents,
+      ),
+    ]);
     await commitOutput(directory);
 
     const unchanged = await importSb3({inputPath, outputDirectory});
@@ -198,6 +214,10 @@ test('preserves managed extension source metadata during import and rejects cont
     assert.deepEqual(
       JSON.parse(await readFile(manifestPath, 'utf8')).extensions[0].source,
       manifest.extensions[0].source,
+    );
+    assert.deepEqual(
+      await readFile(path.join(outputDirectory, 'extensions/managed.manifest.json')),
+      apiManifestContents,
     );
 
     const changedExtensionSource =

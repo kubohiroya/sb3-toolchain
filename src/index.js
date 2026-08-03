@@ -11,6 +11,17 @@ export {
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
 export {
+  compareExtensionApiManifests,
+  defaultExtensionApiManifestSizeLimit,
+  extensionApiManifestFormatVersion,
+  extensionApiManifestIntegrity,
+  extensionApiManifestLocalPath,
+  formatExtensionApiCompatibilityChanges,
+  parseExtensionApiManifest,
+  validateExtensionApiManifestSourceMetadata,
+  validateManagedExtensionApiManifest,
+} from './extension-api-manifest.js';
+export {
   bundleExtensions,
   planExtensionBundle,
   planExtensionUnbundle,

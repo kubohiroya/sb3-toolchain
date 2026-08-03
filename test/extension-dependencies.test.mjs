@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 import {
   createDeterministicSb3,
+  extensionApiManifestIntegrity,
   extensionHeaderId,
   extensionHeaderMetadata,
   extensionIntegrity,
@@ -120,5 +121,55 @@ test('rejects managed extension content or ID drift without changing unmanaged s
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     await writeFile(extensionPath, wrongIdContents);
     await assert.rejects(validateSb3Source(sourceDirectory), /header ID mismatch/u);
+  });
+});
+
+test('validates an opt-in API manifest offline without changing the generated SB3', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
+    const extensionPath = path.join(sourceDirectory, 'extensions/example.js');
+    const extensionContents = Buffer.from(
+      '// ID: example\nScratch.extensions.register(new ExampleExtension());\n',
+    );
+    await writeFile(extensionPath, extensionContents);
+    const embeddedManifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+    const embeddedManifest = JSON.parse(await readFile(embeddedManifestPath, 'utf8'));
+    embeddedManifest.extensions[0].source = {
+      provider: 'github',
+      repository: 'example/example-extension',
+      ref: 'main',
+      resolvedCommit: '1'.repeat(40),
+      artifact: 'dist/example.js',
+      integrity: extensionIntegrity(extensionContents),
+    };
+    await writeFile(embeddedManifestPath, `${JSON.stringify(embeddedManifest, null, 2)}\n`);
+    const withoutApiManifest = await createDeterministicSb3(sourceDirectory);
+
+    const apiManifestContents = Buffer.from(
+      `${JSON.stringify({formatVersion: 1, id: 'example', blocks: [], menus: []}, null, 2)}\n`,
+    );
+    embeddedManifest.extensions[0].source.apiManifest = {
+      artifact: 'dist/extension-manifest.json',
+      formatVersion: 1,
+      integrity: extensionApiManifestIntegrity(apiManifestContents),
+      path: 'extensions/example.manifest.json',
+    };
+    await Promise.all([
+      writeFile(embeddedManifestPath, `${JSON.stringify(embeddedManifest, null, 2)}\n`),
+      writeFile(
+        path.join(sourceDirectory, 'extensions/example.manifest.json'),
+        apiManifestContents,
+      ),
+    ]);
+    await validateSb3Source(sourceDirectory);
+    const withApiManifest = await createDeterministicSb3(sourceDirectory);
+    assert.deepEqual(withApiManifest.archive, withoutApiManifest.archive);
+
+    await writeFile(
+      path.join(sourceDirectory, 'extensions/example.manifest.json'),
+      Buffer.from('{}\n'),
+    );
+    await assert.rejects(validateSb3Source(sourceDirectory), /API manifest integrity mismatch/u);
   });
 });

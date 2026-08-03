@@ -7,6 +7,7 @@ import process from 'node:process';
 import {strFromU8, unzipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive.js';
+import {validateManagedExtensionApiManifest} from './extension-api-manifest.js';
 import {validateManagedExtensionContents} from './extension-dependencies.js';
 import {
   assertNoInterruptedRollback,
@@ -153,18 +154,30 @@ async function readExistingExtensionSources(outputDirectory) {
     `Existing embedded extension manifest is invalid: ${manifestPath}`,
   );
 
-  return new Map(
-    manifest.extensions
-      .filter(
-        (extension) =>
-          extension &&
-          typeof extension === 'object' &&
-          typeof extension.id === 'string' &&
-          typeof extension.path === 'string' &&
-          extension.source !== undefined,
-      )
-      .map((extension) => [`${extension.id}\u0000${extension.path}`, extension.source]),
-  );
+  const sources = new Map();
+  for (const extension of manifest.extensions) {
+    if (
+      !extension ||
+      typeof extension !== 'object' ||
+      typeof extension.id !== 'string' ||
+      typeof extension.path !== 'string' ||
+      extension.source === undefined
+    ) {
+      continue;
+    }
+    let apiManifestContents = null;
+    if (extension.source.apiManifest) {
+      apiManifestContents = await readFile(
+        path.join(outputDirectory, extension.source.apiManifest.path),
+      );
+      validateManagedExtensionApiManifest(extension, apiManifestContents);
+    }
+    sources.set(`${extension.id}\u0000${extension.path}`, {
+      apiManifestContents,
+      source: extension.source,
+    });
+  }
+  return sources;
 }
 
 export function decodeExtensionDataUrl(dataUrl) {
@@ -276,11 +289,17 @@ export async function importSb3({
     };
     const existingSource = existingExtensionSources.get(`${extensionId}\u0000${sourcePath}`);
     if (existingSource !== undefined) {
-      extension.source = structuredClone(existingSource);
+      extension.source = structuredClone(existingSource.source);
       validateManagedExtensionContents(extension, decoded.source);
     }
     embeddedExtensions.push(extension);
     decodedExtensionSources.push({path: sourcePath, source: decoded.source});
+    if (existingSource?.apiManifestContents) {
+      decodedExtensionSources.push({
+        path: extension.source.apiManifest.path,
+        source: existingSource.apiManifestContents,
+      });
+    }
   }
 
   const outputParent = path.dirname(resolvedOutputDirectory);

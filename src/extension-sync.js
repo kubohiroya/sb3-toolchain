@@ -4,6 +4,15 @@ import {cp, lstat, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  compareExtensionApiManifests,
+  defaultExtensionApiManifestSizeLimit,
+  extensionApiManifestIntegrity,
+  formatExtensionApiCompatibilityChanges,
+  parseExtensionApiManifest,
+  validateExtensionApiManifestSourceMetadata,
+  validateManagedExtensionApiManifest,
+} from './extension-api-manifest.js';
+import {
   extensionHeaderId,
   extensionIntegrity,
   validateExtensionSourceMetadata,
@@ -47,12 +56,32 @@ function githubHeaders(accept) {
   };
 }
 
-function rawArtifactUrl(source, commit) {
-  const artifact = source.artifact
+function rawArtifactUrl(source, commit, artifactPath = source.artifact) {
+  const artifact = artifactPath
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/');
   return `https://raw.githubusercontent.com/${source.repository}/${commit}/${artifact}`;
+}
+
+async function downloadExtensionApiManifest(
+  extension,
+  commit,
+  fetchImplementation,
+  maximumManifestBytes,
+  expectedId = extension.id,
+) {
+  const metadata = validateExtensionApiManifestSourceMetadata(extension);
+  if (!metadata) return null;
+  const contents = await fetchBytes(
+    fetchImplementation,
+    rawArtifactUrl(extension.source, commit, metadata.artifact),
+    maximumManifestBytes,
+    `GitHub extension API manifest download for ${extension.id}`,
+    'application/json',
+  );
+  const manifest = parseExtensionApiManifest(contents, {expectedId});
+  return {contents, manifest};
 }
 
 function githubCommitUrl(source) {
@@ -240,9 +269,11 @@ async function installCandidate({
 }
 
 async function updateCandidate({
+  allowBreakingApi,
   confirmReplace,
   fetchImplementation,
   maximumArtifactBytes,
+  maximumManifestBytes,
   migrateToId,
   mode,
   selectedExtensionId,
@@ -254,6 +285,11 @@ async function updateCandidate({
     Number.isSafeInteger(maximumArtifactBytes) && maximumArtifactBytes > 0,
     'maximumArtifactBytes must be a positive integer.',
   );
+  assert(
+    Number.isSafeInteger(maximumManifestBytes) && maximumManifestBytes > 0,
+    'maximumManifestBytes must be a positive integer.',
+  );
+  assert(!allowBreakingApi || yes, '--allow-breaking-api requires --yes.');
   const source = await inspectExtensionSource(sourceDirectory, {willReplace: true});
   const initialComparison = await compareDirectories(
     source.resolvedSourceDirectory,
@@ -317,19 +353,75 @@ async function updateCandidate({
         mode === 'sync'
           ? extension.source.resolvedCommit
           : await resolveGithubCommit(extension, fetchImplementation);
-      const contents = await downloadExtension(
-        effectiveExtension,
-        commit,
-        fetchImplementation,
-        maximumArtifactBytes,
-        migrateToId ?? extension.id,
-      );
+      const expectedId = migrateToId ?? extension.id;
+      const [contents, apiManifestDownload] = await Promise.all([
+        downloadExtension(
+          effectiveExtension,
+          commit,
+          fetchImplementation,
+          maximumArtifactBytes,
+          expectedId,
+        ),
+        downloadExtensionApiManifest(
+          effectiveExtension,
+          commit,
+          fetchImplementation,
+          maximumManifestBytes,
+          expectedId,
+        ),
+      ]);
+      let compatibilityChanges = [];
       if (mode === 'sync') {
         validateManagedExtensionContents(extension, contents);
+        if (apiManifestDownload) {
+          validateManagedExtensionApiManifest(extension, apiManifestDownload.contents);
+        }
+      } else if (apiManifestDownload) {
+        const installedApiManifestContents = source.extensionApiManifestContents.get(extension.id);
+        assert(
+          installedApiManifestContents,
+          `Managed extension API manifest is missing for ${extension.id}.`,
+        );
+        const installedApiManifest = validateManagedExtensionApiManifest(
+          extension,
+          installedApiManifestContents,
+        ).manifest;
+        compatibilityChanges = compareExtensionApiManifests(
+          installedApiManifest,
+          apiManifestDownload.manifest,
+        );
       }
-      return {commit, contents, effectiveExtension, extension};
+      return {
+        apiManifestDownload,
+        commit,
+        compatibilityChanges,
+        contents,
+        effectiveExtension,
+        extension,
+      };
     }),
   );
+  const breakingApiChanges = downloads.flatMap((download) =>
+    download.compatibilityChanges
+      .filter((change) => change.breaking)
+      .map((change) => ({...change, extensionId: download.extension.id})),
+  );
+  if (breakingApiChanges.length > 0 && !allowBreakingApi) {
+    const details = downloads
+      .filter((download) => download.compatibilityChanges.some((change) => change.breaking))
+      .map((download) =>
+        formatExtensionApiCompatibilityChanges(
+          download.extension.id,
+          download.compatibilityChanges.filter((change) => change.breaking),
+        ),
+      )
+      .join('\n');
+    throw new Error(
+      `Extension API update contains ${breakingApiChanges.length} breaking change(s). ` +
+        'Review the reported paths, then use --allow-breaking-api with --yes to apply.\n' +
+        details,
+    );
+  }
 
   const parentDirectory = path.dirname(source.resolvedSourceDirectory);
   const candidateDirectory = await mkdtemp(
@@ -348,7 +440,13 @@ async function updateCandidate({
     const entriesById = new Map(manifest.extensions.map((extension) => [extension.id, extension]));
     let manifestChanged = false;
     let migration;
-    for (const {commit, contents, effectiveExtension, extension} of downloads) {
+    for (const {
+      apiManifestDownload,
+      commit,
+      contents,
+      effectiveExtension,
+      extension,
+    } of downloads) {
       if (migrateToId !== undefined) {
         const project = JSON.parse(await readFile(projectPath, 'utf8'));
         migration = rewriteExtensionIdDocuments({
@@ -361,15 +459,38 @@ async function updateCandidate({
         const migratedExtension = migration.extensionManifest.extensions[migration.extensionIndex];
         migratedExtension.source.resolvedCommit = commit;
         migratedExtension.source.integrity = extensionIntegrity(contents);
-        await Promise.all([
+        if (apiManifestDownload) {
+          migratedExtension.source.apiManifest.integrity = extensionApiManifestIntegrity(
+            apiManifestDownload.contents,
+          );
+        }
+        const writes = [
           writeFile(projectPath, `${JSON.stringify(migration.project, null, 2)}\n`),
           writeFile(manifestPath, `${JSON.stringify(migration.extensionManifest, null, 2)}\n`),
           writeFile(path.join(candidateDirectory, migration.newPath), contents),
-        ]);
+        ];
+        if (apiManifestDownload && migration.newApiManifestPath) {
+          writes.push(
+            writeFile(
+              path.join(candidateDirectory, migration.newApiManifestPath),
+              apiManifestDownload.contents,
+            ),
+          );
+        }
+        await Promise.all(writes);
         await rm(path.join(candidateDirectory, migration.oldPath));
+        if (migration.oldApiManifestPath) {
+          await rm(path.join(candidateDirectory, migration.oldApiManifestPath));
+        }
         continue;
       }
       await writeFile(path.join(candidateDirectory, extension.path), contents);
+      if (apiManifestDownload) {
+        await writeFile(
+          path.join(candidateDirectory, extension.source.apiManifest.path),
+          apiManifestDownload.contents,
+        );
+      }
       if (mode === 'update') {
         const candidateExtension = entriesById.get(extension.id);
         assert(candidateExtension, `Extension manifest entry disappeared: ${extension.id}`);
@@ -380,6 +501,15 @@ async function updateCandidate({
           candidateExtension.source.integrity !== integrity;
         candidateExtension.source.resolvedCommit = commit;
         candidateExtension.source.integrity = integrity;
+        if (apiManifestDownload) {
+          const apiManifestIntegrity = extensionApiManifestIntegrity(apiManifestDownload.contents);
+          manifestChanged =
+            manifestChanged ||
+            candidateExtension.source.apiManifest.integrity !== apiManifestIntegrity;
+          candidateExtension.source.apiManifest.integrity = apiManifestIntegrity;
+          candidateExtension.source.apiManifest.formatVersion =
+            apiManifestDownload.manifest.formatVersion;
+        }
       }
     }
     if (manifestChanged && migrateToId === undefined) {
@@ -400,6 +530,13 @@ async function updateCandidate({
     installed = true;
     return {
       ...result,
+      apiCompatibility: downloads
+        .filter(({apiManifestDownload}) => apiManifestDownload !== null)
+        .map(({compatibilityChanges, extension}) => ({
+          changes: compatibilityChanges,
+          id: migrateToId ?? extension.id,
+          previousId: migrateToId === undefined ? undefined : extension.id,
+        })),
       extensions: downloads.map(({commit, extension}) => ({
         id: migrateToId ?? extension.id,
         previousId: migrateToId === undefined ? undefined : extension.id,
@@ -437,6 +574,12 @@ export async function extensionStatus(
       let local = 'valid';
       try {
         validateManagedExtensionContents(extension, source.extensionContents.get(extension.id));
+        if (extension.source.apiManifest) {
+          validateManagedExtensionApiManifest(
+            extension,
+            source.extensionApiManifestContents.get(extension.id),
+          );
+        }
       } catch {
         local = 'modified';
       }
@@ -456,13 +599,16 @@ export async function syncExtensions({
   confirmReplace,
   fetch: fetchImplementation = globalThis.fetch,
   maximumArtifactBytes = defaultExtensionArtifactSizeLimit,
+  maximumManifestBytes = defaultExtensionApiManifestSizeLimit,
   sourceDirectory,
   yes = false,
 }) {
   return updateCandidate({
+    allowBreakingApi: false,
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,
+    maximumManifestBytes,
     migrateToId: undefined,
     mode: 'sync',
     selectedExtensionId: undefined,
@@ -473,19 +619,23 @@ export async function syncExtensions({
 }
 
 export async function updateExtensions({
+  allowBreakingApi = false,
   confirmReplace,
   extensionId,
   fetch: fetchImplementation = globalThis.fetch,
   maximumArtifactBytes = defaultExtensionArtifactSizeLimit,
+  maximumManifestBytes = defaultExtensionApiManifestSizeLimit,
   migrateToId,
   sourceArtifact,
   sourceDirectory,
   yes = false,
 }) {
   return updateCandidate({
+    allowBreakingApi,
     confirmReplace,
     fetchImplementation: assertFetch(fetchImplementation),
     maximumArtifactBytes,
+    maximumManifestBytes,
     migrateToId,
     mode: 'update',
     selectedExtensionId: extensionId,

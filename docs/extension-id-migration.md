@@ -53,6 +53,12 @@ Specify `--artifact` only when the upstream artifact path also changed. The tool
 ref to an immutable commit and downloads the new artifact from that commit. It rejects an artifact
 that does not declare `// ID: newext`, a collision, or an invalid new ID before changing local files.
 
+If the managed extension has `source.apiManifest`, the tool downloads the candidate manifest from
+the same commit, normalizes only the explicit old and new top-level IDs, and applies the ordinary API
+compatibility policy to every remaining field. JavaScript, the renamed local manifest, provenance,
+and both integrity values change in one transaction. See
+[`extension-api-compatibility.md`](extension-api-compatibility.md).
+
 ## Validation and rollback
 
 The tool completes normal source validation and a deterministic candidate SB3 build before replacing

@@ -26,7 +26,7 @@ export function usage() {
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
-  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--yes]
+  sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
   sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
@@ -115,6 +115,7 @@ function parseBuildArguments(arguments_) {
 }
 
 function parseExtensionMutationArguments(action, arguments_) {
+  let allowBreakingApi = false;
   let sourceDirectory;
   let extensionId;
   let migrateToId;
@@ -125,6 +126,9 @@ function parseExtensionMutationArguments(action, arguments_) {
     const argument = arguments_[index];
     if (argument === '--yes') {
       yes = true;
+    } else if (argument === '--allow-breaking-api') {
+      assert(action === 'update', '--allow-breaking-api is only valid for extensions update.');
+      allowBreakingApi = true;
     } else if (argument === '--migrate-id') {
       assert(action === 'update', '--migrate-id is only valid for extensions update.');
       migrateToId = takeValue(arguments_, index, '--migrate-id');
@@ -158,8 +162,10 @@ function parseExtensionMutationArguments(action, arguments_) {
     sourceArtifact === undefined || migrateToId !== undefined,
     '--artifact requires --migrate-id.',
   );
+  assert(!allowBreakingApi || yes, '--allow-breaking-api requires --yes.');
   return {
     action,
+    ...(allowBreakingApi ? {allowBreakingApi} : {}),
     command: 'extensions',
     extensionId,
     migrateToId,
@@ -561,6 +567,7 @@ export async function runCli(
         ? await syncExtensions(operationOptions)
         : await updateExtensions({
             ...operationOptions,
+            allowBreakingApi: options.allowBreakingApi,
             extensionId: options.extensionId,
             migrateToId: options.migrateToId,
             sourceArtifact: options.sourceArtifact,
@@ -579,6 +586,14 @@ export async function runCli(
         },
         log,
       );
+    }
+    for (const compatibility of result.apiCompatibility) {
+      for (const change of compatibility.changes) {
+        log(
+          `API ${compatibility.id}: ${change.breaking ? 'breaking' : 'compatible'} ` +
+            `${change.kind} ${change.path}`,
+        );
+      }
     }
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;
