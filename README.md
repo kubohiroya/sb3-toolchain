@@ -129,7 +129,7 @@ await unbundleSb3({
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
 - [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
-- [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md): opt-in static API compatibility checks for extension updates
+- [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates
 - [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling into one permission unit and reversible unbundling
 
 ## Development

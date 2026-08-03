@@ -1,5 +1,7 @@
 # Extension API compatibility manifests
 
+[日本語版](ja/extension-api-compatibility.md)
+
 An embedded extension can opt in to a versioned API manifest so that `sb3-toolchain` checks the
 saved-project contract before replacing its JavaScript. The manifest is validation metadata: it is
 kept in expanded source, fetched from the same immutable commit as the JavaScript, and never embedded
