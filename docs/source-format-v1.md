@@ -1,5 +1,7 @@
 # SB3 expanded source format v1
 
+[日本語版](ja/source-format-v1.md)
+
 ## Layout
 
 ```text

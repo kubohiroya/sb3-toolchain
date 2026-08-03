@@ -1,5 +1,7 @@
 # Migrating embedded extension IDs
 
+[日本語版](ja/extension-id-migration.md)
+
 TurboWarp stores the IDs of loaded extensions in project opcodes and monitors. `extensions migrate-id`
 does not perform a global string replacement. It changes only references whose meaning is defined by
 SB3 source format v1.

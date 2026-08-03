@@ -25,6 +25,7 @@
     "docs/",
     "src/",
     "README.md",
+    "README.ja.md",
     "LICENSE"
   ],
   "publishConfig": {
@@ -34,8 +35,8 @@
   "packageManager": "pnpm@11.11.0",
   "scripts": {
     "lint": "eslint src bin test",
-    "format": "prettier --check .github bin docs src test package.json README.md tsconfig.json",
-    "format:write": "prettier --write .github bin docs src test package.json README.md tsconfig.json",
+    "format": "prettier --check .github bin docs src test package.json README.md README.ja.md tsconfig.json",
+    "format:write": "prettier --write .github bin docs src test package.json README.md README.ja.md tsconfig.json",
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --test test/*.test.mjs",
     "pack:check": "npm pack --dry-run --ignore-scripts",
