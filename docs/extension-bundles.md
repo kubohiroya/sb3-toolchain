@@ -229,11 +229,12 @@ each member's `getInfo().blocks`. In the TurboWarp Editor palette, each group be
 LABEL heading in this form:
 
 ```text
-◆ Bundled extension: <name> [<memberId>] ◆
+◆ <name> [<memberId>] ◆
 ```
 
-Two consecutive `---` separators divide member groups. A generated LABEL also carries the following
-machine-readable metadata:
+Putting the member name first keeps it visible in TurboWarp's narrow palette. Two consecutive `---`
+separators divide member groups. A generated LABEL also carries the following machine-readable
+metadata:
 
 ```js
 {
@@ -243,6 +244,24 @@ machine-readable metadata:
   },
 }
 ```
+
+When a member's `getInfo()` returns a non-empty string [`docsURI`](https://docs.turbowarp.org/development/extensions/assorted-apis#docsuri),
+the bundle inserts an `Open Documentation` button immediately after that member's heading. It uses TurboWarp's native
+`OPEN_EXTENSION_DOCS` callback, so it preserves the normal `docsURI` behavior instead of delegating
+to extension code. The generated button carries separate metadata and safely XML-escapes the URI:
+
+```js
+{
+  sb3Toolchain: {
+    docsURI,
+    kind: 'bundle-member-docs',
+    memberId,
+  },
+}
+```
+
+No button is inserted for a member without `docsURI`. Member-provided XML blocks remain unsupported;
+the tool generates only this narrowly defined documentation button XML.
 
 LABEL entries and separators originally defined by a member are preserved unchanged and in their
 original positions. The decorated bundle heading and wider double separator therefore remain
@@ -254,14 +273,15 @@ The resulting palette has this visual hierarchy:
 
 ```text
 ┌─ Project Extension Bundle ─────────────────────────────┐
-│ ◆ Bundled extension: Alpha Tools [alpha] ◆            │ ← generated heading
+│ ◆ Alpha Tools [alpha] ◆                               │ ← generated heading
+│   Open Documentation                                   │ ← generated docsURI button
 │   alpha block 1                                        │
 │   Alpha original heading                               │ ← original LABEL
 │                                                       │ ← original separator
 │   alpha block 2                                        │
 │                                                       │
 │                                                       │ ← generated double separator
-│ ◆ Bundled extension: Beta Tools [beta] ◆              │ ← generated heading
+│ ◆ Beta Tools [beta] ◆                                 │ ← generated heading
 │   beta block 1                                         │
 └────────────────────────────────────────────────────────┘
 ```
