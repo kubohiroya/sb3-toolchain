@@ -176,6 +176,13 @@ sequenceDiagram
 
   A->>W: startHats("alpha_whenReady")
   W->>VM: startHats("projectbundle_alpha__whenReady")
+
+  A->>W: getOpcodeFunction("beta_echo")
+  W->>VM: getOpcodeFunction("projectbundle_beta__echo")
+  VM-->>A: bundle済みopcodeのhandler
+  A->>C: handler(args, util)を呼び出す
+  C->>B: 元のecho(args, util)を呼び出す
+  B-->>A: 結果またはPromise
 ```
 
 ### データ変換
@@ -188,6 +195,7 @@ sequenceDiagram
 | 保存されるプロジェクトopcode   | `alpha_doSomething`                | `projectbundle_alpha__doSomething`            |
 | メニューとカスタムフィールド名 | メンバー内の名前                   | `memberId__`名前空間                          |
 | `startHats()`のopcode          | `alpha_whenReady`                  | `projectbundle_alpha__whenReady`              |
+| `getOpcodeFunction()`          | `beta_echo`                        | `projectbundle_beta__echo`                    |
 | 機能拡張ストレージ             | `storage.alpha`、`storage.beta`    | `storage.projectbundle.components.alpha/beta` |
 | ブロックIDとグラフリンク       | 元のIDと`next`／`parent`／`inputs` | 変更なし                                      |
 
@@ -217,7 +225,15 @@ bundle設定は`embedded-extensions.json`だけに追加されます。信頼で
 
 bundleは、通常のcommand、reporter、boolean、event、button、label、静的および動的メニュー、
 カスタムフィールド、グローバルおよびターゲット機能拡張ストレージを名前空間化します。子機能拡張からの
-`runtime.startHats`呼び出しもbundle済みopcodeへ変換します。
+`runtime.startHats`呼び出しもbundle済みopcodeへ変換します。メンバーが`runtime.getOpcodeFunction()`を
+呼び出した場合は、同じbundleに含まれるいずれかのメンバーIDで始まるopcodeをランタイムで変換します。
+これにより、自身のopcode参照だけでなく、Asset ManagerメンバーがAnimated Textメンバーのhandlerを
+解決するようなmember間呼び出しにも対応します。
+
+変換するのは`getOpcodeFunction()`へ渡すopcodeだけです。VMが返す関数は変更せずそのまま返すため、関数の
+束縛、handlerの引数、同期的な戻り値、Promiseの戻り値は保持されます。先頭部分がbundle member IDではない
+core、外部機能拡張、未知のopcodeは変更せずVMへ渡します。opcode文字列を受け取るほかのAPIは、個別に明記
+されていない限り、この互換性契約の対象外です。
 
 bundleは、マニフェストの`members`順と、各メンバーの`getInfo().blocks`内のブロック定義順を保持します。
 TurboWarp Editorのパレットでは、各グループが次の形式の装飾済みLABEL見出しから始まります。

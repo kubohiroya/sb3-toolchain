@@ -205,6 +205,14 @@ export function createStaticExtensionBundle(bundle, components, originalProject 
       : opcode;
   };
 
+  const rewriteBundleOpcode = (opcode) => {
+    for (const componentId of COMPONENT_IDS) {
+      const rewritten = rewriteOpcode(componentId, opcode);
+      if (rewritten !== opcode) return rewritten;
+    }
+    return opcode;
+  };
+
   const xmlEscape = (value) => String(value).replace(/[<>&'"]/gu, (character) => ({
     '<': '&lt;',
     '>': '&gt;',
@@ -260,6 +268,9 @@ export function createStaticExtensionBundle(bundle, components, originalProject 
       get(target, property) {
         if (property === 'startHats') {
           return (opcode, ...args) => target.startHats(rewriteOpcode(componentId, opcode), ...args);
+        }
+        if (property === 'getOpcodeFunction') {
+          return (opcode, ...args) => target.getOpcodeFunction(rewriteBundleOpcode(opcode), ...args);
         }
         const value = Reflect.get(target, property, target);
         return typeof value === 'function' ? value.bind(target) : value;

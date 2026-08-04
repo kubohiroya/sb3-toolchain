@@ -180,6 +180,13 @@ sequenceDiagram
 
   A->>W: startHats("alpha_whenReady")
   W->>VM: startHats("projectbundle_alpha__whenReady")
+
+  A->>W: getOpcodeFunction("beta_echo")
+  W->>VM: getOpcodeFunction("projectbundle_beta__echo")
+  VM-->>A: Bundled opcode handler
+  A->>C: Call handler(args, util)
+  C->>B: Call original echo(args, util)
+  B-->>A: Result or Promise
 ```
 
 ### Data transformations
@@ -192,6 +199,7 @@ sequenceDiagram
 | Stored project opcode       | `alpha_doSomething`                       | `projectbundle_alpha__doSomething`            |
 | Menu and custom-field names | Member-local names                        | `memberId__` namespace                        |
 | `startHats()` opcode        | `alpha_whenReady`                         | `projectbundle_alpha__whenReady`              |
+| `getOpcodeFunction()`       | `beta_echo`                               | `projectbundle_beta__echo`                    |
 | Extension storage           | `storage.alpha`, `storage.beta`           | `storage.projectbundle.components.alpha/beta` |
 | Block IDs and graph links   | Original IDs and `next`/`parent`/`inputs` | Unchanged                                     |
 
@@ -222,7 +230,16 @@ behavior. The current static-bundle contract requires all of the following:
 
 The bundle namespaces ordinary commands, reporters, booleans, events, buttons, labels, static and
 dynamic menus, custom fields, and global and target extension storage. Calls from child extensions
-to `runtime.startHats` are also translated to bundled opcodes.
+to `runtime.startHats` are also translated to bundled opcodes. When a member calls
+`runtime.getOpcodeFunction()`, an opcode beginning with any member ID in the same bundle is
+translated at runtime. This supports both self references and calls to another member, such as an
+Asset Manager member resolving an Animated Text member's handler.
+
+Only the opcode passed to `getOpcodeFunction()` is adapted. The function returned by the VM is
+passed through unchanged, so its binding, handler arguments, synchronous result, or Promise result
+are preserved. Core, external-extension, and unknown opcodes whose prefix is not a bundle member ID
+are passed to the VM unchanged. Other APIs that carry opcode strings are outside this compatibility
+contract unless documented separately.
 
 The bundle preserves the `members` order from the manifest and the block-definition order within
 each member's `getInfo().blocks`. In the TurboWarp Editor palette, each group begins with a decorated

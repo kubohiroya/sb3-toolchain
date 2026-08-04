@@ -68,6 +68,14 @@ const alphaSource = `// Name: Alpha Tools
             blockType: Scratch.BlockType.EVENT,
             text: 'when alpha is ready',
           },
+          {
+            opcode: 'callOpcode',
+            blockType: Scratch.BlockType.REPORTER,
+            text: 'call opcode [OPCODE]',
+            arguments: {
+              OPCODE: {type: Scratch.ArgumentType.STRING},
+            },
+          },
         ],
         menus: {ITEMS: {acceptReporters: true, items: 'getItems'}},
       };
@@ -85,6 +93,10 @@ const alphaSource = `// Name: Alpha Tools
     }
     getItems() {
       return ['one', 'two'];
+    }
+    callOpcode(args, util) {
+      const opcodeFunction = Scratch.vm.runtime.getOpcodeFunction(args.OPCODE, args.LOOKUP);
+      return opcodeFunction ? opcodeFunction(args.PAYLOAD, util) : undefined;
     }
   }
   Scratch.extensions.register(new AlphaExtension());
@@ -110,11 +122,23 @@ const betaSource = `// Name: Beta Tools
             blockType: Scratch.BlockType.REPORTER,
             text: 'beta value',
           },
+          {
+            opcode: 'echo',
+            blockType: Scratch.BlockType.REPORTER,
+            text: 'echo [VALUE]',
+            arguments: {
+              VALUE: {type: Scratch.ArgumentType.STRING},
+            },
+          },
         ],
       };
     }
     value() {
       return 'beta';
+    }
+    async echo(args, util) {
+      await Promise.resolve();
+      return 'beta:' + args.VALUE + ':' + util.marker;
     }
   }
   Scratch.extensions.register(new BetaExtension());
@@ -201,8 +225,11 @@ function archiveWithProject(archive, project) {
 }
 
 function evaluateBundle(source, extensionStorage) {
+  const opcodeFunctions = new Map();
+  const opcodeLookups = [];
   const registrations = [];
   const startedHats = [];
+  let runtime;
   const Scratch = {
     ArgumentType: {STRING: 'string'},
     BlockType: {
@@ -219,18 +246,22 @@ function evaluateBundle(source, extensionStorage) {
       },
       unsandboxed: true,
     },
-    vm: {
-      runtime: {
-        extensionStorage,
-        startHats(opcode) {
-          startedHats.push(opcode);
-        },
-        targets: [],
-      },
-    },
+    vm: {},
   };
+  runtime = {
+    extensionStorage,
+    getOpcodeFunction(opcode, ...args) {
+      opcodeLookups.push({args, opcode, receiver: this});
+      return opcodeFunctions.get(opcode);
+    },
+    startHats(opcode) {
+      startedHats.push(opcode);
+    },
+    targets: [],
+  };
+  Scratch.vm.runtime = runtime;
   vm.runInNewContext(source, {Scratch}, {filename: 'static-extension-bundle.js'});
-  return {registrations, Scratch, startedHats};
+  return {opcodeFunctions, opcodeLookups, registrations, runtime, Scratch, startedHats};
 }
 
 test('builds one reversible composite extension without deleting original sources', async () => {
@@ -340,10 +371,12 @@ test('builds one reversible composite extension without deleting original source
         'alpha__selected',
         'alpha__fire',
         'alpha__whenReady',
+        'alpha__callOpcode',
         'separator',
         'separator',
         'bundle-label:beta:◆ Beta Tools [beta] ◆',
         'beta__value',
+        'beta__echo',
       ],
     );
     const alphaDocs = info.blocks.find(
@@ -368,6 +401,80 @@ test('builds one reversible composite extension without deleting original source
     assert.deepEqual(Array.from(composite.alpha__menu__ITEMS()), ['one', 'two']);
     composite.alpha__fire();
     assert.deepEqual(runtime.startedHats, ['projectbundle_alpha__whenReady']);
+
+    runtime.opcodeFunctions.set('projectbundle_alpha__selected', (args, util) =>
+      composite.alpha__selected(args, util),
+    );
+    const selfPayload = {ITEM: 'self member'};
+    const selfUtil = {marker: 'self'};
+    assert.equal(
+      composite.alpha__callOpcode(
+        {
+          LOOKUP: 'self lookup',
+          OPCODE: 'alpha_selected',
+          PAYLOAD: selfPayload,
+        },
+        selfUtil,
+      ),
+      'self member',
+    );
+
+    let crossMemberArguments;
+    let crossMemberReceiver;
+    let crossMemberPromise;
+    const expectedReceiver = {id: 'registered-opcode-handler'};
+    runtime.opcodeFunctions.set(
+      'projectbundle_beta__echo',
+      function (args, util) {
+        crossMemberArguments = {args, util};
+        crossMemberReceiver = this;
+        crossMemberPromise = composite.beta__echo(args, util);
+        return crossMemberPromise;
+      }.bind(expectedReceiver),
+    );
+    const crossMemberPayload = {VALUE: 'Fish1'};
+    const crossMemberUtil = {marker: 'asset-manager'};
+    const dynamicResult = composite.alpha__callOpcode(
+      {
+        LOOKUP: 'cross-member lookup',
+        OPCODE: 'beta_echo',
+        PAYLOAD: crossMemberPayload,
+      },
+      crossMemberUtil,
+    );
+    assert.equal(dynamicResult, crossMemberPromise);
+    assert.equal(crossMemberArguments.args, crossMemberPayload);
+    assert.equal(crossMemberArguments.util, crossMemberUtil);
+    assert.equal(crossMemberReceiver, expectedReceiver);
+    assert.equal(await dynamicResult, 'beta:Fish1:asset-manager');
+
+    runtime.opcodeFunctions.set('pen_clear', () => 'core opcode');
+    assert.equal(composite.alpha__callOpcode({OPCODE: 'pen_clear'}), 'core opcode');
+    runtime.opcodeFunctions.set('external_ping', () => 'external opcode');
+    assert.equal(composite.alpha__callOpcode({OPCODE: 'external_ping'}), 'external opcode');
+    assert.equal(composite.alpha__callOpcode({OPCODE: 'unknown_opcode'}), undefined);
+    assert.deepEqual(
+      runtime.opcodeLookups.map(({args, opcode, receiver}) => ({
+        args: Array.from(args),
+        opcode,
+        receiverIsRuntime: receiver === runtime.runtime,
+      })),
+      [
+        {
+          args: ['self lookup'],
+          opcode: 'projectbundle_alpha__selected',
+          receiverIsRuntime: true,
+        },
+        {
+          args: ['cross-member lookup'],
+          opcode: 'projectbundle_beta__echo',
+          receiverIsRuntime: true,
+        },
+        {args: [undefined], opcode: 'pen_clear', receiverIsRuntime: true},
+        {args: [undefined], opcode: 'external_ping', receiverIsRuntime: true},
+        {args: [undefined], opcode: 'unknown_opcode', receiverIsRuntime: true},
+      ],
+    );
 
     const bundledSb3Path = path.join(directory, 'bundled.sb3');
     const unbundledSb3Path = path.join(directory, 'unbundled.sb3');
