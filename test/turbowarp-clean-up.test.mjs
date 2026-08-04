@@ -161,6 +161,72 @@ test('lays out every target without deleting project data or changing the input'
   assert.equal(repeated.movedCommentCount, 0);
 });
 
+test('handles large linear stacks without depending on the JavaScript call stack', () => {
+  const blockCount = 5000;
+  const blocks = {};
+  for (let index = 0; index < blockCount; index += 1) {
+    const blockId = `block-${index}`;
+    blocks[blockId] = block({
+      next: index + 1 < blockCount ? `block-${index + 1}` : null,
+      opcode: 'looks_show',
+      parent: index === 0 ? null : `block-${index - 1}`,
+      topLevel: index === 0,
+      x: 100,
+      y: 200,
+    });
+  }
+
+  const result = cleanUpTurboWarpBlocks({
+    targets: [{blocks, comments: {}, isStage: true, name: 'Stage'}],
+  });
+  assert.equal(result.scriptCount, 1);
+  assert.deepEqual(
+    {
+      x: result.project.targets[0].blocks['block-0'].x,
+      y: result.project.targets[0].blocks['block-0'].y,
+    },
+    {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
+  );
+});
+
+test('reserves column width for attached comments and inline primitive values', () => {
+  const commentBlocks = {
+    left: block({opcode: 'event_whenflagclicked', topLevel: true, x: 0, y: 0}),
+    right: block({opcode: 'event_whenflagclicked', topLevel: true, x: 500, y: 0}),
+  };
+  const inlineBlocks = {
+    left: block({opcode: 'looks_say', topLevel: true, x: 0, y: 0}),
+    right: block({opcode: 'event_whenflagclicked', topLevel: true, x: 500, y: 0}),
+  };
+  inlineBlocks.left.inputs.MESSAGE = [1, [10, 'x'.repeat(200)]];
+  const result = cleanUpTurboWarpBlocks({
+    targets: [
+      {
+        blocks: commentBlocks,
+        comments: {
+          wide: {
+            blockId: 'left',
+            height: 100,
+            minimized: false,
+            text: 'Wide comment',
+            width: 1000,
+            x: 300,
+            y: 0,
+          },
+        },
+        isStage: true,
+        name: 'Stage',
+      },
+      {blocks: inlineBlocks, comments: {}, isStage: false, name: 'Sprite1'},
+    ],
+  });
+
+  const [commentTarget, inlineTarget] = result.project.targets;
+  const commentRight = commentTarget.comments.wide.x + commentTarget.comments.wide.width;
+  assert.equal(commentTarget.blocks.right.x - commentRight, turboWarpCleanUpLayout.columnGap);
+  assert.ok(inlineTarget.blocks.right.x - inlineTarget.blocks.left.x > 200 * 8);
+});
+
 test('builds an opt-in cleaned archive without modifying expanded sources', async () => {
   await withTemporaryDirectory(async (directory) => {
     const sourceDirectory = path.join(directory, 'source');
