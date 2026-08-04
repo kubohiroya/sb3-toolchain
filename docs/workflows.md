@@ -100,17 +100,18 @@ operations, images, sounds, and embedded extension behavior.
 
 ## Managed embedded extensions
 
-The `source` object in `embedded-extensions.json` can record the GitHub repository, tracked ref,
-resolved commit, artifact path, and SHA-256. It can also opt in to a versioned API manifest for static
-update compatibility checks. See [`source-format-v1.md`](source-format-v1.md) for the complete schema.
+The `source` object in `embedded-extensions.json` can record either GitHub commit provenance or an
+exact installed npm package version, together with its artifact path and SHA-256. It can also opt in
+to a versioned API manifest for static update compatibility checks. See
+[`source-format-v1.md`](source-format-v1.md) for the complete schema.
 
 The extension commands have the following roles:
 
 | Command                 | Network | Resolve ref | Metadata update | Purpose                                     |
 | ----------------------- | ------- | ----------- | --------------- | ------------------------------------------- |
-| `extensions status`     | Yes     | Yes         | No              | Check whether a tracked ref has an update   |
-| `extensions sync`       | Yes     | No          | No              | Restore files from the pinned commit        |
-| `extensions update`     | Yes     | Yes         | Yes             | Explicitly update to the latest ref commit  |
+| `extensions status`     | GitHub  | GitHub      | No              | Check the upstream or installed package     |
+| `extensions sync`       | GitHub  | No          | No              | Restore files from the declared source      |
+| `extensions update`     | GitHub  | GitHub      | Yes             | Adopt the upstream or installed package     |
 | `extensions migrate-id` | No      | No          | IDs/references  | Migrate an extension ID used by the project |
 | `extensions bundle`     | No      | No          | Bundle config   | Combine extensions into one permission unit |
 | `extensions unbundle`   | No      | No          | Config or SB3   | Restore output with individual extensions   |
@@ -121,8 +122,8 @@ The extension commands have the following roles:
 sb3-toolchain extensions status app
 ```
 
-`status` does not change local files. Review upstream changes for extensions whose tracked ref differs
-from `resolvedCommit`, then decide whether to update.
+`status` does not change local files. GitHub sources compare the tracked ref with `resolvedCommit`.
+npm sources compare the declared exact version with the installed package without network access.
 
 ### Restore from a pinned commit
 
@@ -131,9 +132,9 @@ sb3-toolchain extensions sync app
 sb3-toolchain check app
 ```
 
-`sync` does not resolve a mutable branch or tag. It downloads from the recorded `resolvedCommit` and
-replaces local files only when JavaScript and an optional API manifest match their recorded IDs and
-SHA-256 values.
+`sync` does not resolve a mutable branch or tag. GitHub sources download from `resolvedCommit`; npm
+sources read from the exact package installed in the nearest ancestor `node_modules`. It replaces
+local files only when JavaScript and an optional API manifest match recorded IDs and SHA-256 values.
 
 ### Update a tracked ref
 
@@ -146,6 +147,10 @@ git diff -- app
 
 Omitting the ID updates all managed extensions as one transaction. If any download or validation
 fails, neither files nor metadata are changed.
+
+For an npm source, first use the project package manager to install a new exact dependency version,
+then run `extensions status` and `extensions update`. The update copies the installed artifacts and
+records their package `version` and integrity. It never queries the npm registry itself.
 
 When `source.apiManifest` is present, the update downloads JavaScript and the API manifest from the
 same resolved commit. Compatible additions are reported. A removed block, changed block type,
@@ -160,8 +165,9 @@ sb3-toolchain extensions update app EXTENSION_ID --allow-breaking-api --yes
 See [`extension-api-compatibility.md`](extension-api-compatibility.md) for the versioned manifest
 contract, classification table, default-off behavior, and rollback.
 
-In an update PR, review `resolvedCommit`, JavaScript and manifest integrity, compatibility paths, and
-both artifacts together, then test the extension's primary features in the generated SB3.
+In an update PR, review `resolvedCommit` or npm `version`, JavaScript and manifest integrity,
+compatibility paths, and both artifacts together, then test the extension's primary features in the
+generated SB3.
 
 ## Migrate an extension ID
 

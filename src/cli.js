@@ -577,6 +577,13 @@ export async function runCli(
         return;
       }
       for (const status of statuses) {
+        if (status.package) {
+          log(
+            `${status.id}: ${status.state}; local=${status.local}; ` +
+              `${status.package}@${status.version} (installed ${status.installedVersion})`,
+          );
+          continue;
+        }
         log(
           `${status.id}: ${status.state}; local=${status.local}; ` +
             `${status.ref} -> ${status.remoteCommit} ` +

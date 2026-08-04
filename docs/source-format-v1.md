@@ -44,7 +44,7 @@ reconstruct the data URL.
 ## `embedded-extensions.json`
 
 This file records embedded extension data URL information and extraction paths. Optional `source`
-metadata can be added for an extension managed from GitHub.
+metadata can be added for an extension managed from GitHub or an installed npm package.
 
 ```json
 {
@@ -75,10 +75,25 @@ metadata can be added for an extension managed from GitHub.
 }
 ```
 
+For an exact npm dependency, replace the GitHub-specific fields with the package identity:
+
+```json
+{
+  "provider": "npm",
+  "package": "@owner/example-extension",
+  "version": "1.2.3",
+  "artifact": "dist/example.js",
+  "integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+}
+```
+
+- `provider`: `github` or `npm`
 - `repository`: GitHub repository in `<owner>/<repository>` form
 - `ref`: branch, tag, or commit to track for update candidates
 - `resolvedCommit`: lowercase 40-character commit SHA used to obtain the current file
-- `artifact`: JavaScript artifact path relative to the repository root
+- `package`: exact npm package name, including its scope when applicable
+- `version`: exact semantic version recorded in the installed package's `package.json`; ranges are not accepted
+- `artifact`: JavaScript artifact path relative to the repository or npm package root
 - `integrity`: SRI-form SHA-256 of the current file
 - `apiManifest`: optional, opt-in API compatibility metadata
   - `artifact`: API manifest path relative to the same GitHub repository
@@ -90,7 +105,7 @@ Validation and builds verify managed extensions without accessing the network:
 
 - The actual file SHA-256 matches `integrity`
 - The file's `// ID: <extensionId>` header matches `id`
-- The repository, ref, commit, and artifact path use safe forms
+- The GitHub repository, ref, commit, npm package, exact version, and artifact path use safe forms
 - When `apiManifest` exists, its JSON schema, ID, format version, path, and SHA-256 are valid
 
 Re-importing an SB3 into an existing expanded source directory preserves `source` metadata for the
@@ -98,12 +113,14 @@ same ID and path. If the imported file does not match the recorded hash or ID, t
 without changing the existing output. A new import cannot infer provenance, so it does not create
 `source` automatically.
 
-`extensions sync` downloads the JavaScript and optional API manifest using the immutable
-`resolvedCommit` and restores local files only when their IDs and hashes match the existing metadata.
-`extensions update` resolves `ref` through the GitHub API, downloads both artifacts from that same
-commit, and compares a candidate API manifest with the installed contract. It updates
-`resolvedCommit` and both integrity values only after compatibility and content validation succeed.
-The expanded source is not changed until every selected entry has been downloaded and validated.
+For GitHub sources, `extensions sync` downloads the JavaScript and optional API manifest using the
+immutable `resolvedCommit`. For npm sources, it reads them from the exact package installed in the
+nearest ancestor `node_modules` directory without network access. Both paths restore local files only
+when IDs and hashes match existing metadata. After the package manager installs a newer exact npm
+version, `extensions update` copies its artifacts and updates `version` and integrity metadata.
+GitHub updates instead resolve `ref` and update `resolvedCommit`. Candidate API manifests are compared
+before either type is installed. The expanded source remains unchanged until every selected entry has
+been validated.
 
 An extension ID migration changes the manifest `id` and `path`, known references in
 `project.source.json`, and `extensions/<id>.js` in one transaction. When a managed extension is

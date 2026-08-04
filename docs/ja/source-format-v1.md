@@ -42,8 +42,8 @@ embedded-extension:extensions/<extensionId>.js
 
 ## `embedded-extensions.json`
 
-このファイルは、埋め込み機能拡張のdata URL情報と展開先パスを記録します。GitHubから管理する機能拡張には、
-任意の`source`メタデータを追加できます。
+このファイルは、埋め込み機能拡張のdata URL情報と展開先パスを記録します。GitHubまたはインストール済み
+npmパッケージから管理する機能拡張には、任意の`source`メタデータを追加できます。
 
 ```json
 {
@@ -74,10 +74,25 @@ embedded-extension:extensions/<extensionId>.js
 }
 ```
 
+完全固定したnpm依存では、GitHub固有のフィールドをパッケージ情報へ置き換えます。
+
+```json
+{
+  "provider": "npm",
+  "package": "@owner/example-extension",
+  "version": "1.2.3",
+  "artifact": "dist/example.js",
+  "integrity": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+}
+```
+
+- `provider`: `github`または`npm`
 - `repository`: `<owner>/<repository>`形式のGitHubリポジトリ
 - `ref`: 更新候補として追跡するブランチ、タグ、またはコミット
 - `resolvedCommit`: 現在のファイルの取得に使用した、小文字40文字のコミットSHA
-- `artifact`: リポジトリルートを基準にしたJavaScript成果物のパス
+- `package`: スコープを含む完全なnpmパッケージ名
+- `version`: インストール済み`package.json`に記録された完全固定のsemantic version。範囲指定は不可
+- `artifact`: リポジトリまたはnpmパッケージのルートを基準にしたJavaScript成果物のパス
 - `integrity`: 現在のファイルのSRI形式SHA-256
 - `apiManifest`: 任意で使用するAPI互換性メタデータ
   - `artifact`: 同じGitHubリポジトリを基準にしたAPIマニフェストのパス
@@ -89,19 +104,19 @@ embedded-extension:extensions/<extensionId>.js
 
 - 実ファイルのSHA-256が`integrity`と一致する
 - ファイルの`// ID: <extensionId>`ヘッダーが`id`と一致する
-- リポジトリ、ref、コミット、成果物パスが安全な形式である
+- GitHubリポジトリ、ref、コミット、npmパッケージ、完全固定バージョン、成果物パスが安全な形式である
 - `apiManifest`が存在する場合、そのJSONスキーマ、ID、形式バージョン、パス、SHA-256が有効である
 
 既存の展開ソースディレクトリへSB3を再importすると、同じIDとパスの`source`メタデータが保持されます。
 importしたファイルが記録済みのハッシュまたはIDと一致しない場合、既存の出力を変更せずにimportを拒否します。
 新規importでは来歴を推測できないため、`source`は自動作成されません。
 
-`extensions sync`は、変更不能な`resolvedCommit`を使用してJavaScriptと任意のAPIマニフェストを
-ダウンロードし、そのIDとハッシュが既存メタデータに一致する場合に限りローカルファイルを復元します。
-`extensions update`はGitHub APIを通じて`ref`を解決し、同じコミットから両方の成果物をダウンロードして、
-候補APIマニフェストをインストール済み契約と比較します。互換性検査と内容検証が成功した後に限り、
-`resolvedCommit`と両方のintegrity値を更新します。選択したすべてのエントリのダウンロードと検証が完了するまで、
-展開ソースは変更されません。
+GitHub sourceの`extensions sync`は変更不能な`resolvedCommit`からJavaScriptと任意のAPIマニフェストを
+ダウンロードします。npm sourceでは、最寄りの親`node_modules`にインストールされた完全固定パッケージから、
+ネットワークを使わずに読み込みます。どちらもIDとハッシュが既存メタデータに一致する場合だけ復元します。
+パッケージマネージャーで新しい完全固定npmバージョンを導入した後に`extensions update`を実行すると、成果物を
+コピーして`version`とintegrityを更新します。GitHub更新では`ref`を解決して`resolvedCommit`を更新します。
+どちらも候補APIマニフェストを事前に比較し、選択した全項目の検証が終わるまで展開ソースを変更しません。
 
 機能拡張IDの移行では、マニフェストの`id`と`path`、`project.source.json`内の既知の参照、
 `extensions/<id>.js`を1回のトランザクションで変更します。`extensions update`の一部として管理対象機能拡張を

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import assert from 'node:assert/strict';
-import {cp, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -130,6 +130,17 @@ async function writeManagedSource(sourceDirectory, extensionIds = ['example']) {
   return contentsById;
 }
 
+async function installNpmExtensionPackage(directory, contents, {version = '1.2.3'} = {}) {
+  const packageDirectory = path.join(directory, 'node_modules', '@example', 'example-extension');
+  await mkdir(path.join(packageDirectory, 'dist'), {recursive: true});
+  await writeFile(
+    path.join(packageDirectory, 'package.json'),
+    `${JSON.stringify({name: '@example/example-extension', version}, null, 2)}\n`,
+  );
+  await writeFile(path.join(packageDirectory, 'dist/example.js'), contents);
+  return packageDirectory;
+}
+
 function mockGithub({artifacts = new Map(), commits = new Map()}) {
   const calls = [];
   const fetchImplementation = async (url, options) => {
@@ -232,6 +243,113 @@ test('reports status and syncs only from the pinned commit without touching iden
     const after = await stat(extensionPath);
     assert.equal(unchanged.changed, false);
     assert.equal(after.mtimeMs, before.mtimeMs);
+  });
+});
+
+test('reports and synchronizes an exact installed npm extension without network access', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const contentsById = await writeManagedSource(sourceDirectory);
+    const installedContents = contentsById.get('example');
+    await installNpmExtensionPackage(directory, installedContents);
+    const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+    const manifest = await readJson(manifestPath);
+    manifest.extensions[0].source = {
+      artifact: 'dist/example.js',
+      integrity: extensionIntegrity(installedContents),
+      package: '@example/example-extension',
+      provider: 'npm',
+      version: '1.2.3',
+    };
+    await writeJson(manifestPath, manifest);
+    const extensionPath = path.join(sourceDirectory, 'extensions/example.js');
+    await writeFile(extensionPath, extensionContents('example', 'LocalEdit'));
+    const rejectNetwork = () => {
+      throw new Error('npm synchronization must not use fetch');
+    };
+
+    assert.deepEqual(await extensionStatus(sourceDirectory, {fetch: rejectNetwork}), [
+      {
+        id: 'example',
+        installedVersion: '1.2.3',
+        local: 'modified',
+        package: '@example/example-extension',
+        state: 'current',
+        version: '1.2.3',
+      },
+    ]);
+    const synchronized = await syncExtensions({
+      fetch: rejectNetwork,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(synchronized.changed, true);
+    assert.deepEqual(synchronized.extensions, [
+      {
+        id: 'example',
+        package: '@example/example-extension',
+        version: '1.2.3',
+      },
+    ]);
+    assert.deepEqual(await readFile(extensionPath), installedContents);
+
+    await writeJson(path.join(directory, 'node_modules/@example/example-extension/package.json'), {
+      name: '@example/example-extension',
+      version: '1.2.4',
+    });
+    await assert.rejects(
+      syncExtensions({fetch: rejectNetwork, sourceDirectory, yes: true}),
+      /version mismatch.*expected 1\.2\.3.*1\.2\.4/u,
+    );
+    assert.deepEqual(await readFile(extensionPath), installedContents);
+
+    const updatedContents = extensionContents('example', 'V2');
+    await writeFile(
+      path.join(directory, 'node_modules/@example/example-extension/dist/example.js'),
+      updatedContents,
+    );
+    const status = await extensionStatus(sourceDirectory, {fetch: rejectNetwork});
+    assert.equal(status[0].state, 'update-available');
+    assert.equal(status[0].installedVersion, '1.2.4');
+    const updated = await updateExtensions({
+      extensionId: 'example',
+      fetch: rejectNetwork,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(updated.changed, true);
+    assert.deepEqual(await readFile(extensionPath), updatedContents);
+    const updatedManifest = await readJson(manifestPath);
+    assert.equal(updatedManifest.extensions[0].source.version, '1.2.4');
+    assert.equal(
+      updatedManifest.extensions[0].source.integrity,
+      extensionIntegrity(updatedContents),
+    );
+  });
+});
+
+test('rejects missing and integrity-mismatched npm extension artifacts', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const contentsById = await writeManagedSource(sourceDirectory);
+    const installedContents = contentsById.get('example');
+    const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+    const manifest = await readJson(manifestPath);
+    manifest.extensions[0].source = {
+      artifact: 'dist/example.js',
+      integrity: extensionIntegrity(extensionContents('example', 'Different')),
+      package: '@example/example-extension',
+      provider: 'npm',
+      version: '1.2.3',
+    };
+    await writeJson(manifestPath, manifest);
+
+    await assert.rejects(
+      syncExtensions({sourceDirectory, yes: true}),
+      /Installed npm package was not found/u,
+    );
+    await installNpmExtensionPackage(directory, installedContents);
+    await assert.rejects(syncExtensions({sourceDirectory, yes: true}), /integrity mismatch/u);
   });
 });
 

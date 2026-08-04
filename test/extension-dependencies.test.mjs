@@ -95,6 +95,37 @@ test('validates managed GitHub extension metadata', () => {
   }
 });
 
+test('validates exact npm extension source metadata', () => {
+  const contents = Buffer.from('// ID: example\n');
+  const extension = {
+    ...managedExtension(contents),
+    source: {
+      artifact: 'dist/example.js',
+      integrity: extensionIntegrity(contents),
+      package: '@example/example-extension',
+      provider: 'npm',
+      version: '1.2.3',
+    },
+  };
+  assert.equal(validateExtensionSourceMetadata(extension), extension.source);
+
+  for (const [property, value, message] of [
+    ['package', '../escape', /npm package/u],
+    ['version', '^1.2.3', /exact semantic version/u],
+    ['artifact', '../example.js', /unsafe path segment/u],
+    ['integrity', 'sha256-invalid', /SHA-256/u],
+  ]) {
+    assert.throws(
+      () =>
+        validateExtensionSourceMetadata({
+          ...extension,
+          source: {...extension.source, [property]: value},
+        }),
+      message,
+    );
+  }
+});
+
 test('rejects managed extension content or ID drift without changing unmanaged sources', async () => {
   await withTemporaryDirectory(async (directory) => {
     const sourceDirectory = path.join(directory, 'source');

@@ -9,7 +9,8 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 
 - Safely expand an SB3 into formatted `project.source.json`, assets, and embedded extensions
 - Validate asset references, MD5 hashes, ZIP entries, and embedded extension mappings
-- Record commits and SHA-256 hashes for GitHub-hosted embedded extensions and verify them offline
+- Manage embedded extensions from pinned GitHub commits or exact installed npm package versions and
+  verify their SHA-256 hashes offline
 - Optionally compare versioned extension API manifests before replacing embedded JavaScript
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
