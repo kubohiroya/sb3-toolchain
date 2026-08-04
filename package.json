@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
