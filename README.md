@@ -14,6 +14,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
 - Produce deterministic builds with fixed ZIP entry order, timestamps, and compression settings
+- Optionally lay out every target's scripts in a deterministic TurboWarp-style cleaned arrangement
 - Protect uncommitted Git changes when importing
 - Protect existing output through transactional replacement and rollback
 - Provide both a CLI and a JavaScript API
@@ -75,9 +76,11 @@ await validateSb3Source('app');
 await buildSb3({
   sourceDirectory: 'app',
   outputPath: 'dist/project.sb3',
+  // Opt in to cleaned block coordinates in the generated SB3 only:
+  cleanUpBlocks: true,
 });
 
-const {archive} = await createDeterministicSb3('app');
+const {archive} = await createDeterministicSb3('app', {cleanUpBlocks: true});
 
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 

@@ -23,7 +23,7 @@ export function usage() {
   return `Usage:
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
   sb3-toolchain check SOURCE_DIR
-  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--yes]
+  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--clean-up-blocks] [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
@@ -37,6 +37,12 @@ Commands:
   check       Validate an expanded SB3 source directory.
   build       Build a deterministic SB3 from expanded sources.
   extensions  Inspect, restore, or update managed embedded extensions.
+
+Build layout cleanup:
+  --clean-up-blocks applies a deterministic TurboWarp-style "Clean up Blocks"
+  layout to every target in the generated SB3. It never deletes blocks,
+  variables, lists, or comments. The expanded source is unchanged, but the
+  generated SB3 might not be able to undo the coordinate changes.
 
 Replacement safety:
   Differing outputs require interactive confirmation or --yes.
@@ -91,13 +97,16 @@ function parseCheckArguments(arguments_) {
 }
 
 function parseBuildArguments(arguments_) {
+  let cleanUpBlocks = false;
   let sourceDirectory;
   let outputPath;
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (argument === '--output') {
+    if (argument === '--clean-up-blocks') {
+      cleanUpBlocks = true;
+    } else if (argument === '--output') {
       outputPath = path.resolve(takeValue(arguments_, index, '--output'));
       index += 1;
     } else if (argument === '--yes') {
@@ -111,7 +120,13 @@ function parseBuildArguments(arguments_) {
 
   assert(sourceDirectory, 'The build command requires SOURCE_DIR.');
   assert(outputPath, 'The build command requires --output OUTPUT.sb3.');
-  return {command: 'build', outputPath, sourceDirectory, yes};
+  return {
+    ...(cleanUpBlocks ? {cleanUpBlocks} : {}),
+    command: 'build',
+    outputPath,
+    sourceDirectory,
+    yes,
+  };
 }
 
 function parseExtensionMutationArguments(action, arguments_) {
@@ -481,15 +496,20 @@ export async function runCli(
   }
   if (options.command === 'build' && 'outputPath' in options) {
     const result = await buildSb3({
+      cleanUpBlocks: options.cleanUpBlocks,
       confirmReplace: confirmBuildReplacement,
       outputPath: options.outputPath,
       sourceDirectory: options.sourceDirectory,
       yes: options.yes,
     });
     const action = result.changed ? 'Built' : 'Already up to date';
+    const cleanUpMessage = result.blockCleanUp
+      ? `, ${result.blockCleanUp.movedScriptCount}/${result.blockCleanUp.scriptCount} scripts laid out`
+      : '';
     log(
       `${action}: ${result.outputPath} (${result.entryCount} entries, ` +
-        `${result.assetCount} assets, ${result.embeddedExtensionCount} embedded extensions).`,
+        `${result.assetCount} assets, ${result.embeddedExtensionCount} embedded extensions` +
+        `${cleanUpMessage}).`,
     );
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;

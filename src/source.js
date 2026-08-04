@@ -13,6 +13,7 @@ import {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
+import {cleanUpTurboWarpBlocks} from './turbowarp-clean-up.js';
 
 export const sourceFormatVersion = 1;
 export const fixedZipTimestamp = new Date(1980, 0, 1, 0, 0, 0, 0);
@@ -386,7 +387,8 @@ export async function validateSb3Source(sourceDirectory) {
   return source;
 }
 
-export async function createDeterministicSb3(sourceDirectory) {
+export async function createDeterministicSb3(sourceDirectory, {cleanUpBlocks = false} = {}) {
+  assert(typeof cleanUpBlocks === 'boolean', 'cleanUpBlocks must be a boolean.');
   const source = await validateSb3Source(sourceDirectory);
   const bundled = buildExtensionBundles({
     extensionBundles: source.extensionBundles,
@@ -394,7 +396,18 @@ export async function createDeterministicSb3(sourceDirectory) {
     extensions: source.extensions,
     project: source.project,
   });
-  const project = structuredClone(bundled.project);
+  let project = structuredClone(bundled.project);
+  let blockCleanUp = null;
+  if (cleanUpBlocks) {
+    const cleaned = cleanUpTurboWarpBlocks(project);
+    project = cleaned.project;
+    blockCleanUp = {
+      movedCommentCount: cleaned.movedCommentCount,
+      movedScriptCount: cleaned.movedScriptCount,
+      scriptCount: cleaned.scriptCount,
+      targetCount: cleaned.targetCount,
+    };
+  }
   for (const extension of bundled.extensions) {
     project.extensionURLs[extension.id] = encodeExtensionDataUrl(
       extension,
@@ -419,6 +432,7 @@ export async function createDeterministicSb3(sourceDirectory) {
     archive,
     assetCount: source.assetContents.size,
     assetReferenceCount: source.assetReferenceCount,
+    blockCleanUp,
     bundlePlans: bundled.bundlePlans,
     embeddedExtensionCount: bundled.extensions.length,
     entryCount: source.sourceManifest.archiveEntries.length,

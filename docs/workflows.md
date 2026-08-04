@@ -83,6 +83,18 @@ expanded format, embedded extension IDs, and SHA-256 hashes using only local inp
 and expanded source produce a bit-for-bit identical SB3. An identical existing output is left
 untouched. A differing output requires replacement confirmation or `--yes`.
 
+To arrange the top-level scripts in every target before writing the generated SB3, opt in explicitly:
+
+```bash
+sb3-toolchain build app --output dist/project.sb3 --clean-up-blocks
+```
+
+`--clean-up-blocks` uses TurboWarp's cleaned-layout starting coordinates, column grouping tolerance,
+and spacing. It preserves blocks, variables, lists, and comments; attached comments move with their
+scripts. Only the generated `project.json` is transformed, so the expanded source remains unchanged.
+TurboWarp might not be able to undo these coordinate changes after opening the generated SB3. Omit
+the option and rebuild to roll back to the source coordinates.
+
 In addition to project-specific tests, open the generated SB3 in TurboWarp and verify startup, primary
 operations, images, sounds, and embedded extension behavior.
 
