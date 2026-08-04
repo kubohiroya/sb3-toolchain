@@ -43,25 +43,38 @@ export function validateExtensionSourceMetadata(extension) {
     source && typeof source === 'object' && !Array.isArray(source),
     `Managed extension source must be an object: ${extension.id}`,
   );
-  assert(
-    source.provider === 'github',
-    `Unsupported extension source provider for ${extension.id}: ${source.provider}`,
-  );
-  assert(
-    typeof source.repository === 'string' &&
-      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]+$/u.test(source.repository),
-    `Invalid GitHub repository for extension ${extension.id}: ${source.repository}`,
-  );
-  assert(
-    typeof source.ref === 'string' &&
-      source.ref.length > 0 &&
-      !/[\u0000-\u0020\u007f]/u.test(source.ref),
-    `Invalid Git ref for extension ${extension.id}: ${source.ref}`,
-  );
-  assert(
-    typeof source.resolvedCommit === 'string' && /^[a-f0-9]{40}$/u.test(source.resolvedCommit),
-    `Managed extension ${extension.id} requires a 40-character resolvedCommit.`,
-  );
+  if (source.provider === 'github') {
+    assert(
+      typeof source.repository === 'string' &&
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]+$/u.test(source.repository),
+      `Invalid GitHub repository for extension ${extension.id}: ${source.repository}`,
+    );
+    assert(
+      typeof source.ref === 'string' &&
+        source.ref.length > 0 &&
+        !/[\u0000-\u0020\u007f]/u.test(source.ref),
+      `Invalid Git ref for extension ${extension.id}: ${source.ref}`,
+    );
+    assert(
+      typeof source.resolvedCommit === 'string' && /^[a-f0-9]{40}$/u.test(source.resolvedCommit),
+      `Managed extension ${extension.id} requires a 40-character resolvedCommit.`,
+    );
+  } else if (source.provider === 'npm') {
+    assert(
+      typeof source.package === 'string' &&
+        /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(source.package),
+      `Invalid npm package for extension ${extension.id}: ${source.package}`,
+    );
+    assert(
+      typeof source.version === 'string' &&
+        /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(source.version),
+      `Managed npm extension ${extension.id} requires an exact semantic version.`,
+    );
+  } else {
+    throw new Error(
+      `Unsupported extension source provider for ${extension.id}: ${source.provider}`,
+    );
+  }
   assert(
     typeof source.artifact === 'string' && source.artifact.length > 0,
     `Managed extension ${extension.id} requires an artifact path.`,

@@ -100,20 +100,21 @@ sb3-toolchain build app --output dist/project.sb3 --clean-up-blocks
 
 ## 管理対象の埋め込み機能拡張
 
-`embedded-extensions.json`の`source`オブジェクトには、GitHubリポジトリ、追跡対象ref、解決済みコミット、
-成果物パス、SHA-256を記録できます。更新時の静的互換性検査に使用するバージョン付きAPIマニフェストも任意で
-設定できます。完全なスキーマは[`source-format-v1.md`](source-format-v1.md)を参照してください。
+`embedded-extensions.json`の`source`オブジェクトには、GitHubコミットの来歴またはインストール済みnpm
+パッケージの完全固定バージョンと、成果物パス、SHA-256を記録できます。更新時の静的互換性検査に使用する
+バージョン付きAPIマニフェストも任意で設定できます。完全なスキーマは
+[`source-format-v1.md`](source-format-v1.md)を参照してください。
 
 機能拡張コマンドの役割は次のとおりです。
 
-| コマンド                | ネットワーク | refの解決 | メタデータ更新 | 目的                                   |
-| ----------------------- | ------------ | --------- | -------------- | -------------------------------------- |
-| `extensions status`     | あり         | あり      | なし           | 追跡対象refに更新があるか確認          |
-| `extensions sync`       | あり         | なし      | なし           | 固定したコミットからファイルを復元     |
-| `extensions update`     | あり         | あり      | あり           | 最新のrefコミットへ明示的に更新        |
-| `extensions migrate-id` | なし         | なし      | ID／参照       | プロジェクトで使用中の機能拡張IDを移行 |
-| `extensions bundle`     | なし         | なし      | bundle設定     | 機能拡張を1つの権限単位へ統合          |
-| `extensions unbundle`   | なし         | なし      | 設定またはSB3  | 個別機能拡張を使用する出力へ復元       |
+| コマンド                | ネットワーク | refの解決  | メタデータ更新 | 目的                                   |
+| ----------------------- | ------------ | ---------- | -------------- | -------------------------------------- |
+| `extensions status`     | GitHubのみ   | GitHubのみ | なし           | 上流または導入済みパッケージを確認     |
+| `extensions sync`       | GitHubのみ   | なし       | なし           | 宣言したsourceからファイルを復元       |
+| `extensions update`     | GitHubのみ   | GitHubのみ | あり           | 上流または導入済みパッケージを採用     |
+| `extensions migrate-id` | なし         | なし       | ID／参照       | プロジェクトで使用中の機能拡張IDを移行 |
+| `extensions bundle`     | なし         | なし       | bundle設定     | 機能拡張を1つの権限単位へ統合          |
+| `extensions unbundle`   | なし         | なし       | 設定またはSB3  | 個別機能拡張を使用する出力へ復元       |
 
 ### 更新の確認
 
@@ -121,8 +122,8 @@ sb3-toolchain build app --output dist/project.sb3 --clean-up-blocks
 sb3-toolchain extensions status app
 ```
 
-`status`はローカルファイルを変更しません。追跡対象refが`resolvedCommit`と異なる機能拡張について上流の
-変更を確認し、更新するかどうかを判断します。
+`status`はローカルファイルを変更しません。GitHub sourceでは追跡対象refと`resolvedCommit`を比較します。
+npm sourceでは、宣言した完全固定バージョンとインストール済みパッケージをネットワークなしで比較します。
 
 ### 固定したコミットからの復元
 
@@ -131,9 +132,9 @@ sb3-toolchain extensions sync app
 sb3-toolchain check app
 ```
 
-`sync`は変更可能なブランチやタグを解決しません。記録済みの`resolvedCommit`からダウンロードし、
-JavaScriptと任意のAPIマニフェストが記録済みIDおよびSHA-256値に一致する場合に限り、ローカルファイルを
-置き換えます。
+`sync`は変更可能なブランチやタグを解決しません。GitHub sourceは`resolvedCommit`からダウンロードし、
+npm sourceは最寄りの親`node_modules`へ導入済みの完全固定パッケージから読み込みます。JavaScriptと任意の
+APIマニフェストが記録済みIDおよびSHA-256値に一致する場合に限り、ローカルファイルを置き換えます。
 
 ### 追跡対象refの更新
 
@@ -147,6 +148,10 @@ git diff -- app
 IDを省略すると、管理対象の全機能拡張を1回のトランザクションで更新します。ダウンロードまたは検証が1つでも
 失敗した場合、ファイルもメタデータも変更しません。
 
+npm sourceでは、最初にプロジェクトのパッケージマネージャーで新しい完全固定バージョンを導入し、続けて
+`extensions status`と`extensions update`を実行します。updateは導入済み成果物をコピーし、パッケージの
+`version`とintegrityを記録します。sb3-toolchain自身はnpm registryへ問い合わせません。
+
 `source.apiManifest`が存在する場合、同じ解決済みコミットからJavaScriptとAPIマニフェストをダウンロードします。
 互換性のある追加は報告されます。ブロックの削除、ブロック種別の変更、引数契約の変更、参照中メニューの削除、
 `acceptReporters`の変更は、インストール前に拒否されます。未参照メニューの削除には互換性があります。
@@ -159,8 +164,8 @@ sb3-toolchain extensions update app EXTENSION_ID --allow-breaking-api --yes
 バージョン付きマニフェスト契約、分類表、既定OFFの動作、ロールバックについては、
 [`extension-api-compatibility.md`](extension-api-compatibility.md)を参照してください。
 
-更新PRでは、`resolvedCommit`、JavaScriptとマニフェストのintegrity、互換性パス、両成果物をまとめて確認し、
-生成SB3で機能拡張の主要機能をテストします。
+更新PRでは、`resolvedCommit`またはnpmの`version`、JavaScriptとマニフェストのintegrity、互換性パス、
+両成果物をまとめて確認し、生成SB3で機能拡張の主要機能をテストします。
 
 ## 機能拡張IDの移行
 
