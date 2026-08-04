@@ -14,6 +14,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 - 元のJavaScriptを削除せず、複数の機能拡張を1つの権限単位へ静的にbundleし、展開ソースまたは
   bundle済みSB3から復元
 - ZIPエントリ順、タイムスタンプ、圧縮設定を固定した決定的ビルド
+- 全ターゲットのスクリプトをTurboWarp風の決定的な「きれいにする」配置へ任意で整理
 - import時に未コミットのGit変更を保護
 - トランザクションによる置換とロールバックで既存出力を保護
 - CLIとJavaScript APIの両方を提供
@@ -75,9 +76,11 @@ await validateSb3Source('app');
 await buildSb3({
   sourceDirectory: 'app',
   outputPath: 'dist/project.sb3',
+  // 生成SB3だけを整理済みブロック座標にする場合に明示的に有効化します。
+  cleanUpBlocks: true,
 });
 
-const {archive} = await createDeterministicSb3('app');
+const {archive} = await createDeterministicSb3('app', {cleanUpBlocks: true});
 
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 

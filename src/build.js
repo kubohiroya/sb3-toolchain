@@ -152,9 +152,15 @@ export async function writeSb3Archive({
   };
 }
 
-export async function buildSb3({confirmReplace, outputPath, sourceDirectory, yes = false}) {
+export async function buildSb3({
+  cleanUpBlocks = false,
+  confirmReplace,
+  outputPath,
+  sourceDirectory,
+  yes = false,
+}) {
   assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
-  const built = await createDeterministicSb3(sourceDirectory);
+  const built = await createDeterministicSb3(sourceDirectory, {cleanUpBlocks});
   const written = await writeSb3Archive({
     archive: built.archive,
     confirmReplace,
