@@ -117,8 +117,9 @@ Images require `kind`, `file`, `rotationCenterX`, and `rotationCenterY`; costume
 `target`. `bitmapResolution` is optional and defaults to `1`. `dataFormat` is inferred from the
 filename extension.
 
-Sounds normally require only `kind: sound` and `file`. MP3 and WAV metadata are parsed to infer
-`rate` and `sampleCount`. Only a sprite sound also requires `target`.
+Sounds normally require only `kind: sound` and `file`. The open-source `music-metadata` library
+parses MP3 and WAV files to infer `rate` and `sampleCount`. Only a sprite sound also requires
+`target`.
 
 ## Optional strict locks
 

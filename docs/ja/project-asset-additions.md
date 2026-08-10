@@ -126,8 +126,8 @@ JSONでもduplicate keyを拒否します。`.json`、`.yml`、`.yaml`以外の�
 | `bitmapResolution`                   | 任意            | `1`（既定）または`2`              |
 | `name`                               | 任意            | Scratch内の名前。省略時はasset ID |
 
-音声では通常、`kind: sound`と`file`だけで足ります。MP3／WAVを解析して`rate`と`sampleCount`を
-自動取得します。sprite soundだけは`target`も指定します。`dataFormat`は画像・音声ともfile拡張子から
+音声では通常、`kind: sound`と`file`だけで足ります。open-sourceの`music-metadata`を使ってMP3／WAVを
+解析し、`rate`と`sampleCount`を自動取得します。sprite soundだけは`target`も指定します。`dataFormat`は画像・音声ともfile拡張子から
 取得します。
 
 ## 配布用のstrict lock
