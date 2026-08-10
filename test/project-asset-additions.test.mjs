@@ -9,6 +9,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, unzipSync} from 'fflate';
+import {stringify} from 'yaml';
 
 import {parseCliArguments, runCli} from '../src/cli.js';
 import {buildSb3, createDeterministicSb3} from '../src/index.js';
@@ -16,12 +17,28 @@ import {buildSb3, createDeterministicSb3} from '../src/index.js';
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 
-function sha256(contents) {
-  return createHash('sha256').update(contents).digest('hex');
-}
-
 function md5(contents) {
   return createHash('md5').update(contents).digest('hex');
+}
+
+function createWave({sampleCount = 4, sampleRate = 8000} = {}) {
+  const bytesPerSample = 2;
+  const dataSize = sampleCount * bytesPerSample;
+  const contents = Buffer.alloc(44 + dataSize);
+  contents.write('RIFF', 0);
+  contents.writeUInt32LE(36 + dataSize, 4);
+  contents.write('WAVE', 8);
+  contents.write('fmt ', 12);
+  contents.writeUInt32LE(16, 16);
+  contents.writeUInt16LE(1, 20);
+  contents.writeUInt16LE(1, 22);
+  contents.writeUInt32LE(sampleRate, 24);
+  contents.writeUInt32LE(sampleRate * bytesPerSample, 28);
+  contents.writeUInt16LE(bytesPerSample, 32);
+  contents.writeUInt16LE(16, 34);
+  contents.write('data', 36);
+  contents.writeUInt32LE(dataSize, 40);
+  return contents;
 }
 
 async function withTemporaryDirectory(callback) {
@@ -38,99 +55,107 @@ async function writeJson(filePath, value) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function costume(name, file, contents) {
+function sprite() {
   return {
-    name,
+    layerOrder: 6,
+    visible: false,
+    x: 4,
+    y: -16,
+    size: 70,
+    direction: 90,
+    draggable: false,
+    rotationStyle: 'all around',
+    volume: 100,
+  };
+}
+
+function image(kind, file, extra = {}) {
+  return {
+    kind,
     file,
-    size: contents.length,
-    sha256: sha256(contents),
-    dataFormat: 'png',
     bitmapResolution: 2,
     rotationCenterX: 507,
     rotationCenterY: 507,
+    ...extra,
   };
 }
 
-function sound(name, file, contents) {
-  return {
-    name,
-    file,
-    size: contents.length,
-    sha256: sha256(contents),
-    dataFormat: 'mp3',
-    rate: 44_100,
-    sampleCount: 12_345,
-  };
-}
-
-function manifest(costumes, sounds = []) {
+function manifest() {
   return {
     formatVersion: 1,
-    sprites: [
-      {
+    sprites: {Princess: sprite()},
+    assets: {
+      Princess: image('costume', '../inputs/Princess.png', {
+        target: 'Princess',
+        license: 'CC-BY-SA-4.0: LICENSES.md',
+      }),
+      Sunset: image('backdrop', '../inputs/Princess.png'),
+      PrincessSound: {
+        kind: 'sound',
+        target: 'Princess',
         name: 'Princess',
-        layerOrder: 6,
-        visible: false,
-        x: 4,
-        y: -16,
-        size: 70,
-        direction: 90,
-        draggable: false,
-        rotationStyle: 'all around',
-        volume: 100,
-        costumes,
-        sounds,
+        file: '../inputs/Princess.wav',
       },
-    ],
+    },
   };
 }
 
-test('adds locked sprite assets from JSON without modifying the expanded source', async () => {
+test('adds editable JSON or YAML sprite assets and backdrops without modifying source', async () => {
   await withTemporaryDirectory(async (directory) => {
     const configurationDirectory = path.join(directory, 'configuration');
     const assetsDirectory = path.join(directory, 'inputs');
-    const manifestPath = path.join(configurationDirectory, 'project-assets.json');
+    const jsonManifestPath = path.join(configurationDirectory, 'project-assets.json');
+    const yamlManifestPath = path.join(configurationDirectory, 'project-assets.yml');
     const outputPath = path.join(directory, 'project.sb3');
     const princess = Buffer.from('not-a-real-png-but-content-addressed');
-    const voice = Buffer.from('not-a-real-mp3-but-content-addressed');
-    const princessCostume = {
-      ...costume('Princess', '../inputs/Princess.png', princess),
-      license: 'CC-BY-SA-4.0: LICENSES.md',
-    };
+    const voice = createWave();
+    const specification = manifest();
     await mkdir(assetsDirectory, {recursive: true});
     await Promise.all([
       writeFile(path.join(assetsDirectory, 'Princess.png'), princess),
-      writeFile(path.join(assetsDirectory, 'Princess.mp3'), voice),
-      writeJson(
-        manifestPath,
-        manifest([princessCostume], [sound('Princess', '../inputs/Princess.mp3', voice)]),
-      ),
+      writeFile(path.join(assetsDirectory, 'Princess.wav'), voice),
+      writeJson(jsonManifestPath, specification),
+      writeFile(yamlManifestPath, stringify(specification)),
     ]);
     const sourceBefore = await readFile(
       path.join(fixtureSourceDirectory, 'project.source.json'),
       'utf8',
     );
-    const options = {
-      allowedAssetRoots: [directory],
-      projectAssetsPath: manifestPath,
-    };
-    const [first, second] = await Promise.all([
-      createDeterministicSb3(fixtureSourceDirectory, options),
-      createDeterministicSb3(fixtureSourceDirectory, options),
+    const options = {allowedAssetRoots: [directory]};
+    const [first, second, yaml] = await Promise.all([
+      createDeterministicSb3(fixtureSourceDirectory, {
+        ...options,
+        projectAssetsPath: jsonManifestPath,
+      }),
+      createDeterministicSb3(fixtureSourceDirectory, {
+        ...options,
+        projectAssetsPath: jsonManifestPath,
+      }),
+      createDeterministicSb3(fixtureSourceDirectory, {
+        ...options,
+        projectAssetsPath: yamlManifestPath,
+      }),
     ]);
     assert.deepEqual(Buffer.from(first.archive), Buffer.from(second.archive));
+    assert.deepEqual(Buffer.from(first.archive), Buffer.from(yaml.archive));
     assert.deepEqual(first.projectAssetAdditions, {
       assetFileCount: 2,
+      backdropCount: 1,
       costumeCount: 1,
       soundCount: 1,
       spriteCount: 1,
     });
     assert.equal(first.assetCount, 3);
-    assert.equal(first.assetReferenceCount, 3);
+    assert.equal(first.assetReferenceCount, 4);
     assert.equal(first.entryCount, 4);
 
     const archive = unzipSync(first.archive);
     const project = JSON.parse(strFromU8(archive['project.json']));
+    const stage = project.targets.find(({isStage}) => isStage);
+    assert.deepEqual(
+      stage.costumes.map(({name}) => name),
+      ['pixel', 'Sunset'],
+    );
     const princessTargets = project.targets.filter(({name}) => name === 'Princess');
     assert.equal(princessTargets.length, 1);
     assert.deepEqual(princessTargets[0], {
@@ -157,11 +182,11 @@ test('adds locked sprite assets from JSON without modifying the expanded source'
         {
           name: 'Princess',
           assetId: md5(voice),
-          dataFormat: 'mp3',
+          dataFormat: 'wav',
           format: '',
-          md5ext: `${md5(voice)}.mp3`,
-          rate: 44_100,
-          sampleCount: 12_345,
+          md5ext: `${md5(voice)}.wav`,
+          rate: 8000,
+          sampleCount: 4,
         },
       ],
       volume: 100,
@@ -175,7 +200,7 @@ test('adds locked sprite assets from JSON without modifying the expanded source'
       rotationStyle: 'all around',
     });
     assert.deepEqual(Buffer.from(archive[`${md5(princess)}.png`]), princess);
-    assert.deepEqual(Buffer.from(archive[`${md5(voice)}.mp3`]), voice);
+    assert.deepEqual(Buffer.from(archive[`${md5(voice)}.wav`]), voice);
     assert.equal(
       await readFile(path.join(fixtureSourceDirectory, 'project.source.json'), 'utf8'),
       sourceBefore,
@@ -184,6 +209,7 @@ test('adds locked sprite assets from JSON without modifying the expanded source'
     const built = await buildSb3({
       ...options,
       outputPath,
+      projectAssetsPath: yamlManifestPath,
       sourceDirectory: fixtureSourceDirectory,
     });
     assert.equal(built.changed, true);
@@ -196,7 +222,7 @@ test('adds locked sprite assets from JSON without modifying the expanded source'
         'build',
         fixtureSourceDirectory,
         '--project-assets',
-        manifestPath,
+        yamlManifestPath,
         '--allow-asset-root',
         directory,
         '--output',
@@ -215,14 +241,14 @@ test('parses project asset options for check and build', () => {
       'check',
       'source',
       '--project-assets',
-      'project-assets.json',
+      'project-assets.yml',
       '--allow-asset-root',
       'resources',
     ]),
     {
       allowedAssetRoots: [path.resolve('resources')],
       command: 'check',
-      projectAssetsPath: path.resolve('project-assets.json'),
+      projectAssetsPath: path.resolve('project-assets.yml'),
       sourceDirectory: path.resolve('source'),
     },
   );
@@ -254,55 +280,92 @@ test('parses project asset options for check and build', () => {
   );
 });
 
-test('rejects unlocked, escaping, duplicate, and symbolic-link project assets', async () => {
+test('applies optional strict locks and rejects unsafe or ambiguous additions', async () => {
   await withTemporaryDirectory(async (directory) => {
     const configurationDirectory = path.join(directory, 'configuration');
     const inputsDirectory = path.join(directory, 'inputs');
     const manifestPath = path.join(configurationDirectory, 'project-assets.json');
     const princessPath = path.join(inputsDirectory, 'Princess.png');
+    const soundPath = path.join(inputsDirectory, 'Princess.wav');
     const princess = Buffer.from('princess');
+    const voice = createWave();
     await mkdir(inputsDirectory, {recursive: true});
-    await writeFile(princessPath, princess);
+    await Promise.all([writeFile(princessPath, princess), writeFile(soundPath, voice)]);
 
-    const validCostume = costume('Princess', '../inputs/Princess.png', princess);
-    await writeJson(manifestPath, manifest([validCostume]));
+    const valid = manifest();
+    await writeJson(manifestPath, valid);
     await assert.rejects(
       createDeterministicSb3(fixtureSourceDirectory, {projectAssetsPath: manifestPath}),
       /outside the allowed project asset roots/u,
     );
 
     const options = {allowedAssetRoots: [directory], projectAssetsPath: manifestPath};
-    const invalidHash = structuredClone(validCostume);
-    invalidHash.sha256 = '0'.repeat(64);
-    await writeJson(manifestPath, manifest([invalidHash]));
+    const invalidHash = structuredClone(valid);
+    invalidHash.assets.Princess.sha256 = '0'.repeat(64);
+    await writeJson(manifestPath, invalidHash);
     await assert.rejects(
       createDeterministicSb3(fixtureSourceDirectory, options),
       /sha256 differs/u,
     );
 
-    const duplicateTarget = manifest([validCostume]);
-    duplicateTarget.sprites[0].name = 'Stage';
+    const invalidSize = structuredClone(valid);
+    invalidSize.assets.Princess.size = princess.length + 1;
+    await writeJson(manifestPath, invalidSize);
+    await assert.rejects(createDeterministicSb3(fixtureSourceDirectory, options), /size differs/u);
+
+    const invalidRate = structuredClone(valid);
+    invalidRate.assets.PrincessSound.rate = 44_100;
+    await writeJson(manifestPath, invalidRate);
+    await assert.rejects(createDeterministicSb3(fixtureSourceDirectory, options), /rate differs/u);
+
+    const duplicateTarget = structuredClone(valid);
+    duplicateTarget.sprites.Stage = duplicateTarget.sprites.Princess;
+    delete duplicateTarget.sprites.Princess;
+    duplicateTarget.assets.Princess.target = 'Stage';
     await writeJson(manifestPath, duplicateTarget);
     await assert.rejects(
       createDeterministicSb3(fixtureSourceDirectory, options),
       /already exists in the project/u,
     );
 
-    await writeJson(manifestPath, manifest([validCostume, validCostume]));
+    const duplicateCostume = structuredClone(valid);
+    duplicateCostume.assets.PrincessAgain = {
+      ...duplicateCostume.assets.Princess,
+      name: 'Princess',
+    };
+    await writeJson(manifestPath, duplicateCostume);
     await assert.rejects(
       createDeterministicSb3(fixtureSourceDirectory, options),
-      /name is duplicated/u,
+      /name already exists/u,
     );
 
     const linkedPath = path.join(inputsDirectory, 'Linked.png');
     await symlink(princessPath, linkedPath);
-    await writeJson(
-      manifestPath,
-      manifest([costume('Princess', '../inputs/Linked.png', princess)]),
-    );
+    const symbolicLink = structuredClone(valid);
+    symbolicLink.assets.Princess.file = '../inputs/Linked.png';
+    await writeJson(manifestPath, symbolicLink);
     await assert.rejects(
       createDeterministicSb3(fixtureSourceDirectory, options),
       /must not traverse a symbolic link/u,
     );
+  });
+});
+
+test('rejects YAML composition features and duplicate JSON or YAML keys', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const aliasesPath = path.join(directory, 'aliases.yml');
+    const duplicateYamlPath = path.join(directory, 'duplicate.yml');
+    const duplicateJsonPath = path.join(directory, 'duplicate.json');
+    await Promise.all([
+      writeFile(aliasesPath, 'formatVersion: 1\nsprites: &sprites {}\nassets: *sprites\n'),
+      writeFile(duplicateYamlPath, 'formatVersion: 1\nassets: {}\nassets: {}\n'),
+      writeFile(duplicateJsonPath, '{"formatVersion":1,"assets":{},"assets":{}}\n'),
+    ]);
+    for (const manifestPath of [aliasesPath, duplicateYamlPath, duplicateJsonPath]) {
+      await assert.rejects(
+        createDeterministicSb3(fixtureSourceDirectory, {projectAssetsPath: manifestPath}),
+        /aliases and anchors|Map keys must be unique/u,
+      );
+    }
   });
 });

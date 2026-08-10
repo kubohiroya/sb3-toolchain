@@ -50,8 +50,8 @@ Build layout cleanup:
   generated SB3 might not be able to undo the coordinate changes.
 
 Project asset additions:
-  --project-assets validates a JSON manifest and adds its sprites, costumes,
-  and sounds only to the generated SB3. Input files are confined to the
+  --project-assets validates a JSON or YAML manifest and adds its sprites,
+  backdrops, costumes, and sounds only to the generated SB3. Input files are confined to the
   manifest directory unless --allow-asset-root explicitly permits another root.
 
 Replacement safety:

@@ -45,7 +45,9 @@
     "prepack": "pnpm check"
   },
   "dependencies": {
-    "fflate": "0.8.3"
+    "fflate": "0.8.3",
+    "music-metadata": "11.14.0",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
