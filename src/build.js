@@ -152,15 +152,32 @@ export async function writeSb3Archive({
   };
 }
 
+/**
+ * @param {{
+ *   allowedAssetRoots?: string[],
+ *   cleanUpBlocks?: boolean,
+ *   confirmReplace?: (outputPath: string) => Promise<boolean>,
+ *   outputPath: string,
+ *   projectAssetsPath?: string,
+ *   sourceDirectory: string,
+ *   yes?: boolean,
+ * }} options
+ */
 export async function buildSb3({
+  allowedAssetRoots = [],
   cleanUpBlocks = false,
   confirmReplace,
   outputPath,
+  projectAssetsPath,
   sourceDirectory,
   yes = false,
 }) {
   assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
-  const built = await createDeterministicSb3(sourceDirectory, {cleanUpBlocks});
+  const built = await createDeterministicSb3(sourceDirectory, {
+    allowedAssetRoots,
+    cleanUpBlocks,
+    projectAssetsPath,
+  });
   const written = await writeSb3Archive({
     archive: built.archive,
     confirmReplace,

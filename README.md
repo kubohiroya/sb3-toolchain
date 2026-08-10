@@ -15,6 +15,8 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
 - Produce deterministic builds with fixed ZIP entry order, timestamps, and compression settings
+- Add locked sprites, costumes, and sounds from an optional JSON build manifest without modifying
+  the expanded base source
 - Optionally lay out every target's scripts in a deterministic TurboWarp-style cleaned arrangement
 - Protect uncommitted Git changes when importing
 - Protect existing output through transactional replacement and rollback
@@ -132,6 +134,7 @@ await unbundleSb3({
 
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
 - [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
+- [`docs/project-asset-additions.md`](docs/project-asset-additions.md): JSON build input for additional sprites, costumes, and sounds
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
 - [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates
 - [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling into one permission unit and reversible unbundling

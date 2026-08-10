@@ -57,4 +57,8 @@ export {
   sourceFormatVersion,
   validateSb3Source,
 } from './source.js';
+export {
+  applyProjectAssetAdditions,
+  projectAssetAdditionsFormatVersion,
+} from './project-asset-additions.js';
 export {cleanUpTurboWarpBlocks, turboWarpCleanUpLayout} from './turbowarp-clean-up.js';

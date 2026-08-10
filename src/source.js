@@ -13,6 +13,7 @@ import {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies.js';
+import {applyProjectAssetAdditions} from './project-asset-additions.js';
 import {cleanUpTurboWarpBlocks} from './turbowarp-clean-up.js';
 
 export const sourceFormatVersion = 1;
@@ -387,14 +388,39 @@ export async function validateSb3Source(sourceDirectory) {
   return source;
 }
 
-export async function createDeterministicSb3(sourceDirectory, {cleanUpBlocks = false} = {}) {
+/**
+ * @param {string} sourceDirectory
+ * @param {{allowedAssetRoots?: string[], cleanUpBlocks?: boolean, projectAssetsPath?: string}} [options]
+ */
+export async function createDeterministicSb3(sourceDirectory, options = {}) {
+  const {allowedAssetRoots = [], cleanUpBlocks = false, projectAssetsPath} = options;
   assert(typeof cleanUpBlocks === 'boolean', 'cleanUpBlocks must be a boolean.');
+  assert(Array.isArray(allowedAssetRoots), 'allowedAssetRoots must be an array.');
+  assert(
+    projectAssetsPath === undefined || typeof projectAssetsPath === 'string',
+    'projectAssetsPath must be a string when provided.',
+  );
   const source = await validateSb3Source(sourceDirectory);
+  const projectAssets = projectAssetsPath
+    ? await applyProjectAssetAdditions({
+        allowedAssetRoots,
+        assetContents: source.assetContents,
+        archiveEntries: source.sourceManifest.archiveEntries,
+        manifestPath: projectAssetsPath,
+        project: source.project,
+      })
+    : {
+        archiveEntries: source.sourceManifest.archiveEntries,
+        assetContents: source.assetContents,
+        assetReferenceCount: 0,
+        project: source.project,
+        summary: null,
+      };
   const bundled = buildExtensionBundles({
     extensionBundles: source.extensionBundles,
     extensionContents: source.extensionContents,
     extensions: source.extensions,
-    project: source.project,
+    project: projectAssets.project,
   });
   let project = structuredClone(bundled.project);
   let blockCleanUp = null;
@@ -417,11 +443,11 @@ export async function createDeterministicSb3(sourceDirectory, {cleanUpBlocks = f
 
   /** @type {Record<string, Uint8Array>} */
   const archiveEntries = {};
-  for (const entryName of source.sourceManifest.archiveEntries) {
+  for (const entryName of projectAssets.archiveEntries) {
     archiveEntries[entryName] =
       entryName === 'project.json'
         ? strToU8(`${JSON.stringify(project)}\n`)
-        : source.assetContents.get(entryName);
+        : projectAssets.assetContents.get(entryName);
   }
   const archive = zipSync(archiveEntries, {
     level: 6,
@@ -430,12 +456,13 @@ export async function createDeterministicSb3(sourceDirectory, {cleanUpBlocks = f
 
   return {
     archive,
-    assetCount: source.assetContents.size,
-    assetReferenceCount: source.assetReferenceCount,
+    assetCount: projectAssets.assetContents.size,
+    assetReferenceCount: source.assetReferenceCount + projectAssets.assetReferenceCount,
     blockCleanUp,
     bundlePlans: bundled.bundlePlans,
     embeddedExtensionCount: bundled.extensions.length,
-    entryCount: source.sourceManifest.archiveEntries.length,
+    entryCount: projectAssets.archiveEntries.length,
+    projectAssetAdditions: projectAssets.summary,
     source,
   };
 }
