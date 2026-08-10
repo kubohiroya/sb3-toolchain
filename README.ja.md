@@ -15,6 +15,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 - 元のJavaScriptを削除せず、複数の機能拡張を1つの権限単位へ静的にbundleし、展開ソースまたは
   bundle済みSB3から復元
 - ZIPエントリ順、タイムスタンプ、圧縮設定を固定した決定的ビルド
+- 展開済みbase sourceを変更せず、JSON／YAML build manifestからsprite、backdrop、costume、soundを追加
 - 全ターゲットのスクリプトをTurboWarp風の決定的な「きれいにする」配置へ任意で整理
 - import時に未コミットのGit変更を保護
 - トランザクションによる置換とロールバックで既存出力を保護
@@ -132,6 +133,7 @@ await unbundleSb3({
 
 - [`docs/ja/workflows.md`](docs/ja/workflows.md): SB3ソースと機能拡張を管理するワークフロー
 - [`docs/ja/source-format-v1.md`](docs/ja/source-format-v1.md): 展開ソース形式と決定的出力
+- [`docs/ja/project-asset-additions.md`](docs/ja/project-asset-additions.md): `--project-assets`のJSON／YAML、backdrop、編集／strict lock仕様
 - [`docs/ja/extension-id-migration.md`](docs/ja/extension-id-migration.md): プロジェクトで使用中の機能拡張IDの移行
 - [`docs/ja/extension-api-compatibility.md`](docs/ja/extension-api-compatibility.md): 機能拡張更新時の任意の静的API互換性検査
 - [`docs/ja/extension-bundles.md`](docs/ja/extension-bundles.md): 1つの権限単位への静的bundleと可逆的なunbundle

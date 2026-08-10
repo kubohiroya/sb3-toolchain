@@ -11,8 +11,13 @@ import {unbundleSb3} from './extension-bundle-archive.js';
 import {migrateExtensionId} from './extension-id-migration.js';
 import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync.js';
 import {importSb3} from './import.js';
-import {validateSb3Source} from './source.js';
+import {createDeterministicSb3, validateSb3Source} from './source.js';
 
+/**
+ * @param {unknown} condition
+ * @param {string} message
+ * @returns {asserts condition}
+ */
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -22,8 +27,8 @@ function assert(condition, message) {
 export function usage() {
   return `Usage:
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
-  sb3-toolchain check SOURCE_DIR
-  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--clean-up-blocks] [--yes]
+  sb3-toolchain check SOURCE_DIR [--project-assets MANIFEST.json] [--allow-asset-root DIR ...]
+  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
@@ -43,6 +48,11 @@ Build layout cleanup:
   layout to every target in the generated SB3. It never deletes blocks,
   variables, lists, or comments. The expanded source is unchanged, but the
   generated SB3 might not be able to undo the coordinate changes.
+
+Project asset additions:
+  --project-assets validates a JSON or YAML manifest and adds its sprites,
+  backdrops, costumes, and sounds only to the generated SB3. Input files are confined to the
+  manifest directory unless --allow-asset-root explicitly permits another root.
 
 Replacement safety:
   Differing outputs require interactive confirmation or --yes.
@@ -88,24 +98,63 @@ function parseImportArguments(arguments_) {
   return {command: 'import', discardLocalChanges, inputPath, outputDirectory, yes};
 }
 
+/**
+ * @param {string[]} arguments_
+ * @returns {{allowedAssetRoots?: string[], command: 'check', projectAssetsPath?: string, sourceDirectory: string}}
+ */
 function parseCheckArguments(arguments_) {
+  const allowedAssetRoots = [];
+  let projectAssetsPath;
+  let sourceDirectory;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--project-assets') {
+      projectAssetsPath = path.resolve(takeValue(arguments_, index, '--project-assets'));
+      index += 1;
+    } else if (argument === '--allow-asset-root') {
+      allowedAssetRoots.push(path.resolve(takeValue(arguments_, index, '--allow-asset-root')));
+      index += 1;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      assert(!sourceDirectory, 'Only one SB3 source directory may be specified.');
+      sourceDirectory = path.resolve(argument);
+    }
+  }
+  assert(sourceDirectory, 'The check command requires SOURCE_DIR.');
   assert(
-    arguments_.length === 1 && !arguments_[0].startsWith('-'),
-    'The check command requires exactly one SOURCE_DIR.',
+    allowedAssetRoots.length === 0 || projectAssetsPath,
+    '--allow-asset-root requires --project-assets.',
   );
-  return {command: 'check', sourceDirectory: path.resolve(arguments_[0])};
+  return {
+    ...(allowedAssetRoots.length > 0 ? {allowedAssetRoots} : {}),
+    command: 'check',
+    ...(projectAssetsPath ? {projectAssetsPath} : {}),
+    sourceDirectory,
+  };
 }
 
+/**
+ * @param {string[]} arguments_
+ * @returns {{allowedAssetRoots?: string[], cleanUpBlocks?: boolean, command: 'build', outputPath: string, projectAssetsPath?: string, sourceDirectory: string, yes: boolean}}
+ */
 function parseBuildArguments(arguments_) {
+  const allowedAssetRoots = [];
   let cleanUpBlocks = false;
   let sourceDirectory;
   let outputPath;
+  let projectAssetsPath;
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === '--clean-up-blocks') {
       cleanUpBlocks = true;
+    } else if (argument === '--project-assets') {
+      projectAssetsPath = path.resolve(takeValue(arguments_, index, '--project-assets'));
+      index += 1;
+    } else if (argument === '--allow-asset-root') {
+      allowedAssetRoots.push(path.resolve(takeValue(arguments_, index, '--allow-asset-root')));
+      index += 1;
     } else if (argument === '--output') {
       outputPath = path.resolve(takeValue(arguments_, index, '--output'));
       index += 1;
@@ -120,10 +169,16 @@ function parseBuildArguments(arguments_) {
 
   assert(sourceDirectory, 'The build command requires SOURCE_DIR.');
   assert(outputPath, 'The build command requires --output OUTPUT.sb3.');
+  assert(
+    allowedAssetRoots.length === 0 || projectAssetsPath,
+    '--allow-asset-root requires --project-assets.',
+  );
   return {
+    ...(allowedAssetRoots.length > 0 ? {allowedAssetRoots} : {}),
     ...(cleanUpBlocks ? {cleanUpBlocks} : {}),
     command: 'build',
     outputPath,
+    ...(projectAssetsPath ? {projectAssetsPath} : {}),
     sourceDirectory,
     yes,
   };
@@ -485,6 +540,22 @@ export async function runCli(
     return;
   }
   if (options.command === 'check') {
+    assert(
+      'sourceDirectory' in options && !('action' in options),
+      'Internal CLI check command routing error.',
+    );
+    if (options.projectAssetsPath) {
+      const result = await createDeterministicSb3(options.sourceDirectory, {
+        allowedAssetRoots: options.allowedAssetRoots,
+        projectAssetsPath: options.projectAssetsPath,
+      });
+      log(
+        `Valid SB3 source with project assets: ${result.source.resolvedSourceDirectory} ` +
+          `(${result.entryCount} entries, ${result.assetCount} assets, ` +
+          `${result.assetReferenceCount} references, ${result.embeddedExtensionCount} embedded extensions).`,
+      );
+      return;
+    }
     const result = await validateSb3Source(options.sourceDirectory);
     log(
       `Valid SB3 source: ${result.resolvedSourceDirectory} ` +
@@ -494,11 +565,18 @@ export async function runCli(
     );
     return;
   }
-  if (options.command === 'build' && 'outputPath' in options) {
+  if (
+    options.command === 'build' &&
+    'outputPath' in options &&
+    'sourceDirectory' in options &&
+    !('action' in options)
+  ) {
     const result = await buildSb3({
+      allowedAssetRoots: options.allowedAssetRoots,
       cleanUpBlocks: options.cleanUpBlocks,
       confirmReplace: confirmBuildReplacement,
       outputPath: options.outputPath,
+      projectAssetsPath: options.projectAssetsPath,
       sourceDirectory: options.sourceDirectory,
       yes: options.yes,
     });
