@@ -482,7 +482,7 @@ ${loaders}
   Scratch.extensions.register(new StaticExtensionBundle());
 })(Scratch);
 `;
-  if (bundle.recoveryCapsule === false) {
+  if (bundle.recoveryCapsule !== true) {
     return Buffer.from(`${header}\n${runtime}`);
   }
   const capsule = Buffer.from(

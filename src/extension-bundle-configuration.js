@@ -87,7 +87,7 @@ async function configurationContext({
       id: bundleId,
       members,
       name: bundleName,
-      ...(recoveryCapsule === false ? {recoveryCapsule: false} : {}),
+      ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
     },
   ];
   const extensionBundles = validateExtensionBundleConfigurations(
@@ -108,7 +108,7 @@ export async function planExtensionBundle({
   bundleId,
   bundleName,
   extensionIds,
-  recoveryCapsule = true,
+  recoveryCapsule = false,
   sourceDirectory,
 }) {
   const context = await configurationContext({
@@ -127,7 +127,7 @@ export async function planExtensionBundle({
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
     members: [...context.configuredBundle.bundle.members],
-    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule !== false,
+    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule === true,
     sourceDirectory: context.source.resolvedSourceDirectory,
   };
 }
@@ -191,7 +191,7 @@ export async function bundleExtensions({
   bundleId,
   bundleName,
   extensionIds,
-  recoveryCapsule = true,
+  recoveryCapsule = false,
   sourceDirectory,
   yes = false,
 }) {
@@ -209,7 +209,7 @@ export async function bundleExtensions({
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
     members: [...context.configuredBundle.bundle.members],
-    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule !== false,
+    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule === true,
     sourceDirectory: context.source.resolvedSourceDirectory,
   };
   if (!yes) {
