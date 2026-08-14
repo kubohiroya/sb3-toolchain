@@ -22,7 +22,7 @@ flowchart LR
   subgraph Output["Generated bundled SB3"]
     BundledProject["project.json<br/>namespaced opcodes"]
     Composite["one composite extension<br/>one register() call"]
-    Capsule["recovery capsule<br/>original extension data"]
+    Capsule["optional recovery capsule<br/>original extension data"]
   end
 
   TurboWarp["TurboWarp Editor<br/>one permission prompt"]
@@ -38,8 +38,8 @@ flowchart LR
 ```
 
 The expanded source always retains the individual extensions. Bundling changes only the generated
-SB3, and the recovery capsule makes that generated artifact reversible when its safety conditions
-remain satisfied.
+SB3. The default recovery capsule makes that generated artifact reversible when its safety
+conditions remain satisfied; an explicit compact configuration can omit it.
 
 ## What problem it solves
 
@@ -74,7 +74,7 @@ extension to authorize and load.
 | Create one composite runtime extension from several members       | Disable or bypass TurboWarp's permission prompt              |
 | Rewrite generated project references to collision-free namespaces | Rewrite the authoritative source project in place            |
 | Preserve and delegate each member's original implementation       | Flatten all member classes into one manually merged class    |
-| Embed recovery data for direct SB3 unbundling                     | Guarantee compatibility for arbitrary dynamic extension code |
+| Embed recovery data by default for direct SB3 unbundling          | Guarantee compatibility for arbitrary dynamic extension code |
 | Reject transformations that cannot be classified safely           | Execute extension JavaScript during the build                |
 
 ## Internal architecture
@@ -147,7 +147,7 @@ projectbundle.js
 │   ├── generated palette headings and separators
 │   └── handlers that delegate to captured member instances
 ├── one real Scratch.extensions.register() call
-└── SB3-Toolchain-Reversible-Bundle-v1 recovery capsule
+└── optional SB3-Toolchain-Reversible-Bundle-v1 recovery capsule
 ```
 
 The original scripts still execute their normal initialization code at runtime. Their calls to
@@ -352,9 +352,16 @@ Only `projectbundle` appears in `extensions` and `extensionURLs`, and the genera
 `Scratch.extensions.register` once. The initial comments in that JavaScript list every member's
 name, ID, author, description, and license so the user can inspect them before granting permission.
 
-The end of the JavaScript contains an `SB3-Toolchain-Reversible-Bundle-v1` recovery capsule. The
-capsule records each original member data URL, member order, and the original `extensions` and
-`extensionURLs` order.
+By default, the end of the JavaScript contains an `SB3-Toolchain-Reversible-Bundle-v1` recovery
+capsule. The capsule records each original member data URL, member order, and the original
+`extensions` and `extensionURLs` order.
+
+Set `"recoveryCapsule": false` on a bundle, or pass `--omit-recovery-capsule` while configuring it,
+to omit that duplicate payload. This is an explicit distribution decision: first confirm that every
+member license permits modification and combination, keep all required notices and corresponding
+source available, and accept that the generated SB3 cannot be directly unbundled. The bundle header,
+member code, block icons, opcode namespaces, and storage behavior are unchanged. The default remains
+reversible.
 
 ## Restore from expanded source
 
@@ -401,7 +408,8 @@ accidentally.
 
 ## Restore a bundled SB3 directly
 
-A bundled SB3 containing a recovery capsule can be unbundled without the expanded source. The
+A bundled SB3 containing a recovery capsule can be unbundled without the expanded source. A bundle
+built with `recoveryCapsule: false` must instead be restored from its authoritative expanded source. The
 command is a dry run unless `--yes` is supplied.
 
 ```bash
@@ -454,7 +462,8 @@ The tool refuses the operation without modifying the output instead of guessing 
 following conditions apply:
 
 - The target data URL has no `SB3-Toolchain-Reversible-Bundle-v1` capsule because the bundle was
-  produced before recovery capsules were introduced, by another tool, or by hand
+  configured with `recoveryCapsule: false`, produced before recovery capsules were introduced, by
+  another tool, or by hand
 - The bundle data URL or capsule was removed, corrupted, or duplicated; its format version is not
   supported; or its bundle ID, member ID, and original JavaScript header ID do not agree
 - The ID set or order in `project.extensions` or `extensionURLs` changed after bundling. For example,

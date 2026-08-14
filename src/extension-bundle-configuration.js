@@ -56,11 +56,13 @@ async function configurationContext({
   bundleId,
   bundleName,
   extensionIds,
+  recoveryCapsule,
   sourceDirectory,
   willReplace,
 }) {
   validateBundleId(bundleId);
   validateBundleName(bundleName);
+  assert(typeof recoveryCapsule === 'boolean', 'recoveryCapsule must be a boolean.');
   const source = await inspectConfigurationSource(sourceDirectory, willReplace);
   const extensionManifest = await readExtensionManifest(source);
   const existingBundles = validateExtensionBundleConfigurations(
@@ -81,7 +83,12 @@ async function configurationContext({
   const candidateManifest = structuredClone(extensionManifest);
   candidateManifest.extensionBundles = [
     ...existingBundles,
-    {id: bundleId, members, name: bundleName},
+    {
+      id: bundleId,
+      members,
+      name: bundleName,
+      ...(recoveryCapsule === false ? {recoveryCapsule: false} : {}),
+    },
   ];
   const extensionBundles = validateExtensionBundleConfigurations(
     candidateManifest.extensionBundles,
@@ -97,11 +104,18 @@ async function configurationContext({
   return {buildPlan, candidateManifest, configuredBundle, extensionManifest, source};
 }
 
-export async function planExtensionBundle({bundleId, bundleName, extensionIds, sourceDirectory}) {
+export async function planExtensionBundle({
+  bundleId,
+  bundleName,
+  extensionIds,
+  recoveryCapsule = true,
+  sourceDirectory,
+}) {
   const context = await configurationContext({
     bundleId,
     bundleName,
     extensionIds,
+    recoveryCapsule,
     sourceDirectory,
     willReplace: false,
   });
@@ -113,6 +127,7 @@ export async function planExtensionBundle({bundleId, bundleName, extensionIds, s
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
     members: [...context.configuredBundle.bundle.members],
+    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule !== false,
     sourceDirectory: context.source.resolvedSourceDirectory,
   };
 }
@@ -176,6 +191,7 @@ export async function bundleExtensions({
   bundleId,
   bundleName,
   extensionIds,
+  recoveryCapsule = true,
   sourceDirectory,
   yes = false,
 }) {
@@ -183,6 +199,7 @@ export async function bundleExtensions({
     bundleId,
     bundleName,
     extensionIds,
+    recoveryCapsule,
     sourceDirectory,
     willReplace: yes,
   });
@@ -192,6 +209,7 @@ export async function bundleExtensions({
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
     members: [...context.configuredBundle.bundle.members],
+    recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule !== false,
     sourceDirectory: context.source.resolvedSourceDirectory,
   };
   if (!yes) {

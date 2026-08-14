@@ -33,7 +33,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--omit-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -293,6 +293,7 @@ function parseExtensionIdMigrationArguments(arguments_) {
 function parseExtensionBundleArguments(arguments_) {
   let bundleId;
   let bundleName;
+  let recoveryCapsule = true;
   let sourceDirectory;
   const extensionIds = [];
   let yes = false;
@@ -307,6 +308,8 @@ function parseExtensionBundleArguments(arguments_) {
       index += 1;
     } else if (argument === '--yes') {
       yes = true;
+    } else if (argument === '--omit-recovery-capsule') {
+      recoveryCapsule = false;
     } else {
       assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
       if (!sourceDirectory) {
@@ -329,6 +332,7 @@ function parseExtensionBundleArguments(arguments_) {
     bundleName,
     command: 'extensions',
     extensionIds,
+    recoveryCapsule,
     sourceDirectory,
     yes,
   };
@@ -598,6 +602,7 @@ export async function runCli(
         bundleId: options.bundleId,
         bundleName: options.bundleName,
         extensionIds: options.extensionIds,
+        recoveryCapsule: options.recoveryCapsule,
         sourceDirectory: options.sourceDirectory,
         yes: options.yes,
       });

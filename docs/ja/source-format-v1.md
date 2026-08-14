@@ -156,7 +156,8 @@ APIマニフェストファイルは展開ソースの検証入力であり、SB
     {
       "id": "projectbundle",
       "name": "Project Extension Bundle",
-      "members": ["extensionone", "extensiontwo"]
+      "members": ["extensionone", "extensiontwo"],
+      "recoveryCapsule": false
     }
   ]
 }
@@ -167,15 +168,19 @@ APIマニフェストファイルは展開ソースの検証入力であり、SB
 - `members`: 2つ以上の個別機能拡張ID。順序によってブロックとメニューの合成順が決まる。パレットでは、
   メタデータを持つ装飾済みbundle LABEL見出しとグループ間の二重separatorが追加される一方、元の機能拡張の
   LABELエントリとseparatorは変更されない
+- `recoveryCapsule`: 任意の真偽値で、既定値は`true`。改変と結合が許可されることを確認し、必要な通知と
+  対応ソースを別途保持し、生成SB3を直接unbundleできなくなることを受け入れた場合に限り`false`を指定する
 
 1つのメンバーを複数のbundleに所属させることはできません。個別エントリ、個別JavaScript、`source`、
 `project.source.json`が引き続き信頼できる情報源です。`build`は各元opcodeに`memberId + "__"`を加え、
 出力側の`project.json`のopcode、`extensions`、`extensionURLs`、機能拡張ストレージだけをbundle IDに変更します。
 埋め込まれるbundle JavaScriptのdata URLは1つです。
 
-bundle JavaScriptの末尾には、元の個別data URLと機能拡張の順序を格納した形式1の復元カプセルが含まれます。
-設定を削除するか、そのカプセルを含む生成SB3に対して`extensions unbundle`を実行すると、通常の出力へ
-復元できます。互換性契約と復元手順については、[`extension-bundles.md`](extension-bundles.md)を参照してください。
+既定では、bundle JavaScriptの末尾に、元の個別data URLと機能拡張の順序を格納した形式1の復元カプセルが
+含まれます。`recoveryCapsule: false`では、メンバーコードとヘッダー通知を生成JavaScriptに残したまま、
+この重複データだけを省略します。設定を削除すれば展開ソースから常に通常出力へ戻せますが、生成SB3を直接
+`extensions unbundle`するにはカプセルが必要です。互換性契約と復元手順については、
+[`extension-bundles.md`](extension-bundles.md)を参照してください。
 
 ## アセット
 
