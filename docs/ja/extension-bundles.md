@@ -21,7 +21,7 @@ flowchart LR
   subgraph Output["生成されたbundle済みSB3"]
     BundledProject["project.json<br/>名前空間化されたopcode"]
     Composite["1つの複合機能拡張<br/>1回のregister()呼び出し"]
-    Capsule["復元カプセル<br/>元の機能拡張データ"]
+    Capsule["任意の復元カプセル<br/>元の機能拡張データ"]
   end
 
   TurboWarp["TurboWarp Editor<br/>1回の権限確認"]
@@ -36,8 +36,8 @@ flowchart LR
   Composite --> TurboWarp
 ```
 
-展開ソースには、常に個別機能拡張が保持されます。bundleによって変わるのは生成SB3だけです。安全条件を満たす
-間は、復元カプセルによって生成成果物を元に戻せます。
+展開ソースには、常に個別機能拡張が保持されます。bundleによって変わるのは生成SB3だけです。生成成果物から
+直接復元する必要がある場合に限り、復元データを明示的に追加します。
 
 ## 解決する問題
 
@@ -71,7 +71,7 @@ flowchart LR
 | 複数メンバーから1つの複合ランタイム機能拡張を作成    | TurboWarpの権限確認を無効化または回避            |
 | 生成プロジェクトの参照を衝突しない名前空間へ書き換え | 信頼できる情報源であるプロジェクトを直接書き換え |
 | 各メンバーの元の実装を保持して処理を委譲             | すべてのメンバークラスを手作業で1クラスへ平坦化  |
-| SB3を直接unbundleするための復元データを埋め込み      | 任意の動的な機能拡張コードに対する互換性を保証   |
+| SB3を直接unbundleする復元データを任意で埋め込み      | 任意の動的な機能拡張コードに対する互換性を保証   |
 | 安全に分類できない変換を拒否                         | ビルド中に機能拡張JavaScriptを実行               |
 
 ## 内部アーキテクチャ
@@ -144,7 +144,7 @@ projectbundle.js
 │   ├── 生成されたパレット見出しとseparator
 │   └── 捕捉したメンバーインスタンスへ委譲するhandler
 ├── 実際のScratch.extensions.register()呼び出し1回
-└── SB3-Toolchain-Reversible-Bundle-v1復元カプセル
+└── 任意のSB3-Toolchain-Reversible-Bundle-v1復元カプセル
 ```
 
 元のスクリプトは、ランタイムで通常の初期化コードを引き続き実行します。各スクリプトの
@@ -342,8 +342,13 @@ bundleの読み込みを拒否します。
 `Scratch.extensions.register`を1回呼び出します。そのJavaScriptの先頭コメントには全メンバーの名前、ID、
 作者、説明、ライセンスが列挙され、ユーザーは権限を許可する前に確認できます。
 
-JavaScriptの末尾には`SB3-Toolchain-Reversible-Bundle-v1`復元カプセルが含まれます。カプセルは各メンバーの
-元のdata URL、メンバー順、元の`extensions`と`extensionURLs`の順序を記録します。
+既定では、JavaScriptから重複する復元データを省略します。すべてのメンバーライセンスが改変と結合を許可する
+ことを先に確認し、必要な通知と対応ソースを利用可能な状態で保持してください。bundleヘッダー、メンバーコード、
+ブロックアイコン、opcode名前空間、ストレージ動作は変わりません。
+
+bundleに`"recoveryCapsule": true`を指定するか、設定時に`--include-recovery-capsule`を渡すと、末尾に
+`SB3-Toolchain-Reversible-Bundle-v1`カプセルを追加します。カプセルは各メンバーの元のdata URL、メンバー順、
+元の`extensions`と`extensionURLs`の順序を記録しますが、出力サイズは増加します。
 
 ## 展開ソースからの復元
 
@@ -388,8 +393,8 @@ sb3-toolchain build app --output dist/project.sb3 --yes
 
 ## bundle済みSB3の直接復元
 
-復元カプセルを含むbundle済みSB3は、展開ソースがなくてもunbundleできます。`--yes`を指定しない限り、
-コマンドはdry runです。
+明示的に復元カプセルを含めたbundle済みSB3は、展開ソースがなくてもunbundleできます。既定のcompact bundleは、
+信頼できる展開ソースから復元する必要があります。`--yes`を指定しない限り、コマンドはdry runです。
 
 ```bash
 sb3-toolchain extensions unbundle \
@@ -438,8 +443,8 @@ flowchart TD
 
 次のいずれかの条件に該当する場合、ツールは推測せず、出力を変更せずに操作を拒否します。
 
-- 対象data URLに`SB3-Toolchain-Reversible-Bundle-v1`カプセルがない。復元カプセル導入前、別のツール、
-  または手作業でbundleが生成された場合が該当する
+- 対象data URLに`SB3-Toolchain-Reversible-Bundle-v1`カプセルがない。復元を明示的に有効化していない、
+  復元カプセル導入前、別のツール、または手作業でbundleが生成された場合が該当する
 - bundle data URLまたはカプセルが削除、破損、重複している、形式バージョンが未対応、またはbundle ID、
   メンバーID、元のJavaScriptヘッダーIDが一致しない
 - bundle後に`project.extensions`または`extensionURLs`内のID集合や順序が変わった。たとえば別の機能拡張を

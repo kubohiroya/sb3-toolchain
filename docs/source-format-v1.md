@@ -172,15 +172,17 @@ only in the generated SB3.
 - `id`: composite extension ID in TurboWarp's `[a-z0-9]+` form that does not collide with an individual extension
 - `name`: single-line name displayed in the permission prompt and extension category
 - `members`: two or more individual extension IDs; their order defines block and menu composition order. The palette receives a decorated, metadata-bearing bundle LABEL heading and a double separator between groups, while LABEL entries and separators from the original extensions remain unchanged
+- `recoveryCapsule`: optional boolean, default `false`. Set it to `true` only when the extra size is acceptable and direct unbundling from the generated SB3 is required
 
 A member cannot belong to more than one bundle. Individual entries, individual JavaScript, `source`,
 and `project.source.json` remain authoritative. `build` adds `memberId + "__"` to each original opcode
 and changes only the output `project.json` opcodes, `extensions`, `extensionURLs`, and extension storage
 to the bundle ID. It embeds one bundle JavaScript data URL.
 
-The end of the bundle JavaScript contains a format 1 recovery capsule with the original individual
-data URLs and extension order. Removing the configuration or running `extensions unbundle` against a
-generated SB3 containing that capsule restores the ordinary output. See
+By default, the bundle omits duplicate recovery data while leaving member code and header notices in
+the generated JavaScript. `recoveryCapsule: true` adds a format 1 capsule with the original individual
+data URLs and extension order. Removing the configuration always restores the ordinary output from
+expanded source; direct `extensions unbundle` of the generated SB3 requires the capsule. See
 [`extension-bundles.md`](extension-bundles.md) for the compatibility contract and restoration steps.
 
 ## Assets

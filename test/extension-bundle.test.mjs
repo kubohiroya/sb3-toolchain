@@ -279,6 +279,7 @@ test('builds one reversible composite extension without deleting original source
       bundleId: 'projectbundle',
       bundleName: 'Project Extension Bundle',
       extensionIds: ['alpha', 'beta'],
+      recoveryCapsule: true,
       sourceDirectory,
     });
     assert.equal(dryRun.applied, false);
@@ -293,6 +294,7 @@ test('builds one reversible composite extension without deleting original source
       bundleId: 'projectbundle',
       bundleName: 'Project Extension Bundle',
       extensionIds: ['alpha', 'beta'],
+      recoveryCapsule: true,
       sourceDirectory,
       yes: true,
     });
@@ -311,6 +313,7 @@ test('builds one reversible composite extension without deleting original source
         id: 'projectbundle',
         members: ['alpha', 'beta'],
         name: 'Project Extension Bundle',
+        recoveryCapsule: true,
       },
     ]);
 
@@ -568,6 +571,7 @@ test('unbundles supported edits in an SB3 and rejects irreversible archive chang
       bundleId: 'projectbundle',
       bundleName: 'Project Extension Bundle',
       extensionIds: ['alpha', 'beta'],
+      recoveryCapsule: true,
       sourceDirectory,
       yes: true,
     });
@@ -639,6 +643,56 @@ test('unbundles supported edits in an SB3 and rejects irreversible archive chang
   });
 });
 
+test('omits recovery data by default and preserves runtime composition', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeBundleSource(sourceDirectory);
+    const original = await createDeterministicSb3(sourceDirectory);
+    const configured = await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(configured.recoveryCapsule, false);
+    const manifest = JSON.parse(
+      await readFile(path.join(sourceDirectory, 'embedded-extensions.json'), 'utf8'),
+    );
+    assert.equal('recoveryCapsule' in manifest.extensionBundles[0], false);
+
+    const built = await createDeterministicSb3(sourceDirectory);
+    const project = JSON.parse(strFromU8(unzipSync(built.archive)['project.json']));
+    const bundleSource = decodeDataUrl(project.extensionURLs.projectbundle);
+    assert.doesNotMatch(bundleSource, /SB3-Toolchain-Reversible-Bundle-v1/u);
+    assert.match(bundleSource, /^\/\/   License: MPL-2\.0$/mu);
+    assert.match(bundleSource, /^\/\/   License: MIT$/mu);
+    const runtime = evaluateBundle(bundleSource, project.extensionStorage);
+    const info = runtime.registrations[0].getInfo();
+    const alphaValue = info.blocks.find((block) => block?.opcode === 'alpha__value');
+    assert.equal(
+      alphaValue.blockIconURI,
+      'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
+    );
+    assert.equal(runtime.registrations[0].alpha__value(), 'alpha:1');
+
+    const bundledPath = path.join(directory, 'compact.sb3');
+    await writeFile(bundledPath, built.archive);
+    await assert.rejects(
+      planBundledSb3Unbundle({
+        bundleId: 'projectbundle',
+        inputPath: bundledPath,
+        outputPath: path.join(directory, 'never.sb3'),
+      }),
+      /has no SB3-Toolchain-Reversible-Bundle-v1 recovery capsule/u,
+    );
+
+    await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
+    const restored = await createDeterministicSb3(sourceDirectory);
+    assert.deepEqual(Buffer.from(restored.archive), Buffer.from(original.archive));
+  });
+});
+
 test('unbundles multiple reversible bundles in either order', async () => {
   await withTemporaryDirectory(async (directory) => {
     const sourceDirectory = path.join(directory, 'source');
@@ -686,6 +740,7 @@ test('unbundles multiple reversible bundles in either order', async () => {
       bundleId: 'firstbundle',
       bundleName: 'First Bundle',
       extensionIds: ['alpha', 'beta'],
+      recoveryCapsule: true,
       sourceDirectory,
       yes: true,
     });
@@ -693,6 +748,7 @@ test('unbundles multiple reversible bundles in either order', async () => {
       bundleId: 'secondbundle',
       bundleName: 'Second Bundle',
       extensionIds: ['gamma', 'delta'],
+      recoveryCapsule: true,
       sourceDirectory,
       yes: true,
     });
@@ -782,9 +838,23 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       bundleName: 'Project Extension Bundle',
       command: 'extensions',
       extensionIds: ['alpha', 'beta'],
+      recoveryCapsule: false,
       sourceDirectory: path.resolve('custom-source'),
       yes: true,
     },
+  );
+  assert.equal(
+    parseCliArguments([
+      'extensions',
+      'bundle',
+      'custom-source',
+      '--id',
+      'projectbundle',
+      '--name',
+      'Project Extension Bundle',
+      '--include-recovery-capsule',
+    ]).recoveryCapsule,
+    true,
   );
   assert.deepEqual(
     parseCliArguments(['extensions', 'unbundle', 'custom-source', 'projectbundle', '--yes']),

@@ -55,6 +55,10 @@ export function validateExtensionBundleConfigurations(extensionBundles, extensio
       Array.isArray(bundle.members) && bundle.members.length >= 2,
       `Extension bundle ${bundle.id} must contain at least two members.`,
     );
+    assert(
+      bundle.recoveryCapsule === undefined || typeof bundle.recoveryCapsule === 'boolean',
+      `Extension bundle ${bundle.id} recoveryCapsule must be a boolean when present.`,
+    );
 
     const localMemberIds = new Set();
     for (const memberId of bundle.members) {
@@ -74,7 +78,12 @@ export function validateExtensionBundleConfigurations(extensionBundles, extensio
       localMemberIds.add(memberId);
       bundledMemberIds.add(memberId);
     }
-    return {id: bundle.id, members: [...bundle.members], name: bundle.name};
+    return {
+      id: bundle.id,
+      members: [...bundle.members],
+      name: bundle.name,
+      ...(bundle.recoveryCapsule === undefined ? {} : {recoveryCapsule: bundle.recoveryCapsule}),
+    };
   });
 }
 
@@ -473,6 +482,9 @@ ${loaders}
   Scratch.extensions.register(new StaticExtensionBundle());
 })(Scratch);
 `;
+  if (bundle.recoveryCapsule !== true) {
+    return Buffer.from(`${header}\n${runtime}`);
+  }
   const capsule = Buffer.from(
     JSON.stringify(
       recoveryCapsule(
