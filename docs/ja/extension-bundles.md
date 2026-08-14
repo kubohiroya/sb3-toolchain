@@ -254,6 +254,13 @@ TurboWarp Editorのパレットでは、各グループが次の形式の装飾�
 }
 ```
 
+各通常ブロックが独自の`blockIconURI`を持たない場合、bundleはメンバーのトップレベル
+`getInfo().blockIconURI`を変換後のブロックへコピーします。TurboWarpはブロック単位の
+`blockIconURI`に対応しているため、1つの機能拡張として登録されたbundleでも、各ブロックは由来元の
+機能拡張アイコンを保持します。ブロック固有アイコンが常に優先され、アイコンを持たないメンバーの出力は
+従来どおりです。生成見出し、ドキュメントボタン、メンバーのLABEL、メンバーのBUTTONには継承アイコンを
+設定しません。
+
 メンバーの`getInfo()`が空でない文字列[`docsURI`](https://docs.turbowarp.org/development/extensions/assorted-apis#docsuri)を返す場合、
 bundleはそのメンバー見出しの直後に`Open Documentation`ボタンを挿入します。機能拡張コードへの委譲ではなく、TurboWarp標準の
 `OPEN_EXTENSION_DOCS` callbackを使用するため、通常の`docsURI`と同じ動作を保持します。生成ボタンには別の

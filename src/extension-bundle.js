@@ -359,6 +359,10 @@ ${loaders}
           throw new Error('Static bundle member ' + componentId + ' must have a non-empty name.');
         }
         const namespace = componentId + '__';
+        const memberBlockIconURI =
+          typeof info.blockIconURI === 'string' && info.blockIconURI.length > 0
+            ? info.blockIconURI
+            : null;
         const customFieldTypes = info.customFieldTypes || {};
         for (const [fieldName, fieldInfo] of Object.entries(customFieldTypes)) {
           result.customFieldTypes[namespace + fieldName] = fieldInfo;
@@ -391,6 +395,14 @@ ${loaders}
             throw new Error('XML blocks are unsupported in static bundle member ' + componentId + '.');
           }
           const transformed = {...block};
+          if (
+            memberBlockIconURI !== null &&
+            !Object.prototype.hasOwnProperty.call(block, 'blockIconURI') &&
+            block.blockType !== Scratch.BlockType.LABEL &&
+            block.blockType !== Scratch.BlockType.BUTTON
+          ) {
+            transformed.blockIconURI = memberBlockIconURI;
+          }
           if (block.arguments) {
             transformed.arguments = Object.fromEntries(
               Object.entries(block.arguments).map(([argumentName, argument]) => {

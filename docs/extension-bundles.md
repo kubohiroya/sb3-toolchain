@@ -262,6 +262,13 @@ metadata:
 }
 ```
 
+For every ordinary block that does not already define its own `blockIconURI`, the bundle copies the
+member's top-level `getInfo().blockIconURI` onto the transformed block. TurboWarp supports
+`blockIconURI` at block level, so blocks keep their originating extension's icon even though the
+bundle is registered as one extension. A block-specific icon always wins, and members without an
+icon keep the previous icon-free output. Generated headings, documentation buttons, member LABELs,
+and member BUTTONs are not given an inherited icon.
+
 When a member's `getInfo()` returns a non-empty string [`docsURI`](https://docs.turbowarp.org/development/extensions/assorted-apis#docsuri),
 the bundle inserts an `Open Documentation` button immediately after that member's heading. It uses TurboWarp's native
 `OPEN_EXTENSION_DOCS` callback, so it preserves the normal `docsURI` behavior instead of delegating

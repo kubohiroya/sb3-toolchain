@@ -39,6 +39,7 @@ const alphaSource = `// Name: Alpha Tools
         id: 'alpha',
         name: 'Alpha Tools',
         docsURI: 'https://example.com/alpha?a=1&b="two"',
+        blockIconURI: 'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
         blocks: [
           {
             opcode: 'value',
@@ -54,6 +55,7 @@ const alphaSource = `// Name: Alpha Tools
             opcode: 'selected',
             blockType: Scratch.BlockType.REPORTER,
             text: 'selected [ITEM]',
+            blockIconURI: 'data:image/svg+xml,%3Csvg%20id%3D%22alpha-selected%22%2F%3E',
             arguments: {
               ITEM: {type: Scratch.ArgumentType.STRING, menu: 'ITEMS'},
             },
@@ -395,6 +397,25 @@ test('builds one reversible composite extension without deleting original source
           block.sb3Toolchain.memberId === 'beta',
       ),
       false,
+    );
+    const blockByOpcode = new Map(
+      info.blocks
+        .filter((block) => block && typeof block === 'object' && typeof block.opcode === 'string')
+        .map((block) => [block.opcode, block]),
+    );
+    assert.equal(
+      blockByOpcode.get('alpha__value').blockIconURI,
+      'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
+    );
+    assert.equal(
+      blockByOpcode.get('alpha__selected').blockIconURI,
+      'data:image/svg+xml,%3Csvg%20id%3D%22alpha-selected%22%2F%3E',
+    );
+    assert.equal(blockByOpcode.get('beta__value').blockIconURI, undefined);
+    assert.equal(
+      info.blocks.find((block) => block?.sb3Toolchain?.kind === 'bundle-member-heading')
+        .blockIconURI,
+      undefined,
     );
     assert.equal(composite.alpha__value(), 'alpha:1');
     assert.equal(project.extensionStorage.projectbundle.components.alpha.calls, 1);
