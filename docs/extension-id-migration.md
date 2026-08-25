@@ -64,6 +64,38 @@ compatibility policy to every remaining field. JavaScript, the renamed local man
 both remote artifact paths when supplied, and both integrity values change in one transaction. See
 [`extension-api-compatibility.md`](extension-api-compatibility.md).
 
+## TurboWarp TM workflow
+
+TurboWarp TM uses `kubohiroyatm` as the migrated extension ID. Plan first and review every
+classified count, conflict, manifest path, and unclassified reference before applying the migration.
+
+```bash
+sb3-toolchain extensions migrate-id app --from LEGACY_TM_ID --to kubohiroyatm
+```
+
+After placing or updating the extension artifact so it declares `// ID: kubohiroyatm`, apply the
+same generic migration. No TurboWarp TM-specific hard-code is required.
+
+```bash
+sb3-toolchain extensions migrate-id app --from LEGACY_TM_ID --to kubohiroyatm --yes
+sb3-toolchain check app
+sb3-toolchain build app --output dist/project.sb3 --yes
+```
+
+When the extension is managed from an upstream artifact, update provenance and migrate the ID in one
+transaction:
+
+```bash
+sb3-toolchain extensions update app LEGACY_TM_ID \
+  --migrate-id kubohiroyatm \
+  --artifact dist/kubohiroyatm.js \
+  --api-manifest-artifact dist/kubohiroyatm.manifest.json \
+  --yes
+```
+
+The repository fixture for this workflow generates the legacy source state during tests so checked-in
+metadata and documentation remain aligned with TurboWarp TM naming.
+
 ## Validation and rollback
 
 The tool completes normal source validation and a deterministic candidate SB3 build before replacing

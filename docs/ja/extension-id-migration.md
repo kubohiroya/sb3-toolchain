@@ -62,6 +62,37 @@ sb3-toolchain extensions update app twOld \
 両方のintegrity値を、1回のトランザクションで変更します。詳しくは、
 [`extension-api-compatibility.md`](extension-api-compatibility.md)を参照してください。
 
+## TurboWarp TM ワークフロー
+
+TurboWarp TMでは、移行後の機能拡張IDとして`kubohiroyatm`を使用します。まずplanを実行し、
+分類済み件数、衝突、manifest path、未分類参照を確認してから移行を適用します。
+
+```bash
+sb3-toolchain extensions migrate-id app --from LEGACY_TM_ID --to kubohiroyatm
+```
+
+`// ID: kubohiroyatm`を宣言する機能拡張成果物を配置または更新した後、同じgeneric migrationを適用します。
+TurboWarp TM固有のhard-codeは不要です。
+
+```bash
+sb3-toolchain extensions migrate-id app --from LEGACY_TM_ID --to kubohiroyatm --yes
+sb3-toolchain check app
+sb3-toolchain build app --output dist/project.sb3 --yes
+```
+
+上流成果物で管理している機能拡張では、来歴更新とID移行を1回のトランザクションで行います。
+
+```bash
+sb3-toolchain extensions update app LEGACY_TM_ID \
+  --migrate-id kubohiroyatm \
+  --artifact dist/kubohiroyatm.js \
+  --api-manifest-artifact dist/kubohiroyatm.manifest.json \
+  --yes
+```
+
+このワークフローのリポジトリfixtureはテスト中に旧source状態を生成するため、チェックイン済みmetadataと
+ドキュメントはTurboWarp TM命名に揃ったままです。
+
 ## 検証とロールバック
 
 ツールは展開ソースディレクトリをトランザクションで置き換える前に、通常のソース検証と候補SB3の決定的ビルドを

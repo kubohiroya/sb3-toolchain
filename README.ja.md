@@ -31,7 +31,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 再現可能なインストールのため、検証済みのnpmバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.8.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.9.0
 ```
 
 ## クイックスタート
@@ -141,13 +141,14 @@ await unbundleSb3({
 ## 開発
 
 ```bash
-pnpm install
-pnpm check
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run check
 ```
 
 ## ライセンス
 
-[Mozilla Public License 2.0](LICENSE)
+SPDX-License-Identifier: MPL-2.0
 
-この実装は、[`kubohiroya/tmpose-kamishibai`](https://github.com/kubohiroya/tmpose-kamishibai)
-向けに開発された一般的なSB3ソース管理機構を、プロジェクト固有およびTMPose固有の処理から分離したものです。
+この実装は、[`kubohiroya/tm-kamishibai`](https://github.com/kubohiroya/tm-kamishibai)
+向けに開発された一般的なSB3ソース管理機構を、TurboWarp TMのアプリケーション層から分離したものです。

@@ -32,7 +32,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.8.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.9.0
 ```
 
 ## Quick start
@@ -142,14 +142,15 @@ await unbundleSb3({
 ## Development
 
 ```bash
-pnpm install
-pnpm check
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run check
 ```
 
 ## License
 
-[Mozilla Public License 2.0](LICENSE)
+SPDX-License-Identifier: MPL-2.0
 
 This implementation extracts the general SB3 source-management mechanism developed for
-[`kubohiroya/tmpose-kamishibai`](https://github.com/kubohiroya/tmpose-kamishibai) from its
-project- and TMPose-specific processing.
+[`kubohiroya/tm-kamishibai`](https://github.com/kubohiroya/tm-kamishibai) from the
+TurboWarp TM application layer.

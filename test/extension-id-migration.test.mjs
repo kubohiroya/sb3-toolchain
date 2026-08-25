@@ -10,6 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {runCli} from '../src/cli.js';
 import {
   createDeterministicSb3,
+  extensionApiManifestIntegrity,
   extensionIntegrity,
   migrateExtensionId,
   planExtensionIdMigration,
@@ -23,6 +24,8 @@ const oldId = 'twOld';
 const newId = 'newext';
 const installedCommit = '1'.repeat(40);
 const updatedCommit = '2'.repeat(40);
+const legacyTmId = ['tm', 'pose'].join('');
+const tmId = 'kubohiroyatm';
 
 async function withTemporaryDirectory(callback) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-id-migration-test-'));
@@ -45,6 +48,27 @@ function extensionContents(id, version = 'V1') {
   return Buffer.from(
     `// Name: Migration test\n// ID: ${id}\n` +
       `Scratch.extensions.register(new Extension${version}());\n`,
+  );
+}
+
+function apiManifestContents(id, opcode = 'accumulatedPose') {
+  return Buffer.from(
+    `${JSON.stringify(
+      {
+        formatVersion: 1,
+        id,
+        blocks: [
+          {
+            opcode,
+            blockType: 'REPORTER',
+            arguments: [{id: 'TARGET', type: 'STRING'}],
+          },
+        ],
+        menus: [],
+      },
+      null,
+      2,
+    )}\n`,
   );
 }
 
@@ -128,6 +152,106 @@ async function writeMigrationSource(sourceDirectory, {managed = false} = {}) {
 
 async function assertMissing(filePath) {
   await assert.rejects(access(filePath), (error) => error?.code === 'ENOENT');
+}
+
+async function writeTurboWarpTmMigrationSource(sourceDirectory) {
+  await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
+  const otherId = 'textlines';
+  const legacyContents = extensionContents(legacyTmId);
+  const legacyApiManifest = apiManifestContents(legacyTmId);
+
+  await rename(
+    path.join(sourceDirectory, 'extensions/example.js'),
+    path.join(sourceDirectory, `extensions/${legacyTmId}.js`),
+  );
+  await Promise.all([
+    writeFile(path.join(sourceDirectory, `extensions/${legacyTmId}.js`), legacyContents),
+    writeFile(
+      path.join(sourceDirectory, `extensions/${legacyTmId}.manifest.json`),
+      legacyApiManifest,
+    ),
+    writeFile(path.join(sourceDirectory, `extensions/${otherId}.js`), extensionContents(otherId)),
+  ]);
+
+  const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+  const manifest = await readJson(manifestPath);
+  manifest.extensions = [
+    {
+      id: legacyTmId,
+      path: `extensions/${legacyTmId}.js`,
+      mediaType: 'text/javascript',
+      parameters: [],
+      encoding: 'base64',
+      source: {
+        provider: 'github',
+        repository: 'kubohiroya/turbowarp-tm',
+        ref: 'main',
+        resolvedCommit: installedCommit,
+        artifact: `dist/${legacyTmId}.js`,
+        integrity: extensionIntegrity(legacyContents),
+        apiManifest: {
+          artifact: `dist/${legacyTmId}.manifest.json`,
+          formatVersion: 1,
+          integrity: extensionApiManifestIntegrity(legacyApiManifest),
+          path: `extensions/${legacyTmId}.manifest.json`,
+        },
+      },
+    },
+    {
+      id: otherId,
+      path: `extensions/${otherId}.js`,
+      mediaType: 'text/javascript',
+      parameters: [],
+      encoding: 'base64',
+    },
+  ];
+  await writeJson(manifestPath, manifest);
+
+  const projectPath = path.join(sourceDirectory, 'project.source.json');
+  const project = await readJson(projectPath);
+  project.extensions = [legacyTmId, otherId];
+  project.extensionURLs = {
+    [legacyTmId]: `embedded-extension:extensions/${legacyTmId}.js`,
+    [otherId]: `embedded-extension:extensions/${otherId}.js`,
+    external: project.extensionURLs.external,
+  };
+  project.targets[0].blocks = {
+    tmReporter: {
+      opcode: `${legacyTmId}_accumulatedPose`,
+      fields: {},
+      inputs: {},
+      next: null,
+      parent: null,
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 0,
+    },
+    tmMenu: {
+      opcode: `${legacyTmId}_targetMenu`,
+      fields: {},
+      inputs: {},
+      next: null,
+      parent: 'tmReporter',
+      shadow: true,
+      topLevel: false,
+    },
+    otherExtension: {
+      opcode: `${otherId}_contains_${legacyTmId}`,
+      fields: {},
+      inputs: {},
+      next: null,
+      parent: null,
+      shadow: false,
+      topLevel: true,
+      x: 100,
+      y: 0,
+    },
+  };
+  project.monitors = [
+    {id: 'tmMonitor', mode: 'default', opcode: `${legacyTmId}_accumulatedPose`, params: {}},
+  ];
+  await writeJson(projectPath, project);
 }
 
 test('plans schema-aware changes and reports strings it will not rewrite', async () => {
@@ -332,5 +456,134 @@ test('updates a managed artifact and migrates its ID and provenance together', a
     assert.equal(extension.source.integrity, extensionIntegrity(updatedContents));
     await validateSb3Source(sourceDirectory);
     await createDeterministicSb3(sourceDirectory);
+  });
+});
+
+test('migrates the TurboWarp TM legacy extension ID fixture with the generic workflow', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeTurboWarpTmMigrationSource(sourceDirectory);
+
+    const plan = await planExtensionIdMigration({
+      fromId: legacyTmId,
+      sourceDirectory,
+      toId: tmId,
+    });
+    assert.equal(plan.artifactReady, false);
+    assert.deepEqual(plan.counts, {
+      apiManifestArtifacts: 0,
+      blockOpcodes: 2,
+      extensionFiles: 1,
+      extensionUrlKeys: 1,
+      extensionUrlValues: 1,
+      manifestIds: 1,
+      manifestPaths: 2,
+      monitorOpcodes: 1,
+      projectExtensions: 1,
+      sourceArtifacts: 0,
+    });
+    assert.equal(plan.totalChanges, 10);
+    assert.ok(
+      plan.unclassifiedReferences.some((reference) => reference.value.includes(`${legacyTmId}`)),
+    );
+
+    const output = [];
+    await runCli(
+      ['extensions', 'migrate-id', sourceDirectory, '--from', legacyTmId, '--to', tmId],
+      {
+        log: (message) => output.push(message),
+      },
+    );
+    assert.ok(output.some((line) => line.includes('Dry run:')));
+    assert.ok(output.some((line) => line.includes('manifestPaths=2')));
+    assert.ok(output.some((line) => line.includes('Unclassified value:')));
+
+    const updatedContents = extensionContents(tmId, 'V2');
+    const updatedApiManifest = apiManifestContents(tmId);
+    const calls = [];
+    const fetchImplementation = async (url, options) => {
+      calls.push(url);
+      assert.equal(options.redirect, 'error');
+      const parsedUrl = new URL(url);
+      if (parsedUrl.hostname === 'api.github.com') {
+        return new Response(JSON.stringify({sha: updatedCommit}));
+      }
+      if (parsedUrl.pathname.endsWith(`/dist/${tmId}.js`)) {
+        return new Response(updatedContents);
+      }
+      assert.ok(parsedUrl.pathname.endsWith(`/dist/${tmId}.manifest.json`));
+      return new Response(updatedApiManifest);
+    };
+
+    const result = await updateExtensions({
+      apiManifestArtifact: `dist/${tmId}.manifest.json`,
+      extensionId: legacyTmId,
+      fetch: fetchImplementation,
+      migrateToId: tmId,
+      sourceArtifact: `dist/${tmId}.js`,
+      sourceDirectory,
+      yes: true,
+    });
+    assert.equal(result.changed, true);
+    assert.equal(result.migration.fromId, legacyTmId);
+    assert.equal(result.migration.toId, tmId);
+    assert.deepEqual(result.apiCompatibility[0].changes, []);
+    assert.equal(calls.length, 3);
+
+    await assertMissing(path.join(sourceDirectory, `extensions/${legacyTmId}.js`));
+    await assertMissing(path.join(sourceDirectory, `extensions/${legacyTmId}.manifest.json`));
+    assert.deepEqual(
+      await readFile(path.join(sourceDirectory, `extensions/${tmId}.js`)),
+      updatedContents,
+    );
+    assert.deepEqual(
+      await readFile(path.join(sourceDirectory, `extensions/${tmId}.manifest.json`)),
+      updatedApiManifest,
+    );
+
+    const manifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
+    const extension = manifest.extensions[0];
+    assert.equal(extension.id, tmId);
+    assert.equal(extension.path, `extensions/${tmId}.js`);
+    assert.equal(extension.source.artifact, `dist/${tmId}.js`);
+    assert.equal(extension.source.integrity, extensionIntegrity(updatedContents));
+    assert.equal(extension.source.apiManifest.artifact, `dist/${tmId}.manifest.json`);
+    assert.equal(
+      extension.source.apiManifest.integrity,
+      extensionApiManifestIntegrity(updatedApiManifest),
+    );
+
+    const project = await readJson(path.join(sourceDirectory, 'project.source.json'));
+    assert.deepEqual(project.extensions, [tmId, 'textlines']);
+    assert.equal(project.extensionURLs[tmId], `embedded-extension:extensions/${tmId}.js`);
+    assert.equal(project.targets[0].blocks.tmReporter.opcode, `${tmId}_accumulatedPose`);
+    assert.equal(project.targets[0].blocks.tmMenu.opcode, `${tmId}_targetMenu`);
+    assert.equal(
+      project.targets[0].blocks.otherExtension.opcode,
+      `textlines_contains_${legacyTmId}`,
+    );
+    assert.equal(project.monitors[0].opcode, `${tmId}_accumulatedPose`);
+    await validateSb3Source(sourceDirectory);
+    await createDeterministicSb3(sourceDirectory);
+  });
+});
+
+test('rejects the TurboWarp TM target ID when the fixture already contains it', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeTurboWarpTmMigrationSource(sourceDirectory);
+    const projectPath = path.join(sourceDirectory, 'project.source.json');
+    const project = await readJson(projectPath);
+    project.extensions.push(tmId);
+    await writeJson(projectPath, project);
+
+    await assert.rejects(
+      planExtensionIdMigration({
+        fromId: legacyTmId,
+        sourceDirectory,
+        toId: tmId,
+      }),
+      /already contains/u,
+    );
   });
 });
