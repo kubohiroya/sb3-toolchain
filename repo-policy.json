@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "profile": "cli-js-api-package",
+  "packageName": "@kubohiroya/sb3-toolchain",
+  "humanName": "sb3-toolchain",
+  "license": "MPL-2.0",
+  "homepage": "https://kubohiroya.github.io/sb3-toolchain/",
+  "repository": "kubohiroya/sb3-toolchain",
+  "authorPolicy": {
+    "name": "Hiroya Kubo",
+    "email": false
+  },
+  "publicSurface": {
+    "cli": "sb3-toolchain",
+    "javascriptApi": true,
+    "preserveExistingBehavior": true
+  },
+  "integration": {
+    "upstreamMigrationIssue": "kubohiroya/turbowarp-tm#79",
+    "targetExtensionId": "kubohiroyatm",
+    "downstreamApplication": "TurboWarp TM",
+    "downstreamRepository": "kubohiroya/tm-kamishibai"
+  },
+  "release": {
+    "packDryRun": "pnpm run pack:check",
+    "releaseDryRun": "pnpm run release:check",
+    "publish": "manual-approval-required"
+  }
+}

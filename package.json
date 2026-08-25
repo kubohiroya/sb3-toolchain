@@ -1,11 +1,11 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
   "author": "Hiroya Kubo",
-  "homepage": "https://github.com/kubohiroya/sb3-toolchain#readme",
+  "homepage": "https://kubohiroya.github.io/sb3-toolchain/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kubohiroya/sb3-toolchain.git"
@@ -23,6 +23,8 @@
   "files": [
     "bin/",
     "docs/",
+    "repo-policy.json",
+    "CHANGELOG.md",
     "src/",
     "README.md",
     "README.ja.md",
@@ -34,15 +36,16 @@
   },
   "packageManager": "pnpm@11.11.0",
   "scripts": {
-    "lint": "eslint src bin test",
-    "format": "prettier --check .github bin docs src test package.json README.md README.ja.md tsconfig.json",
-    "format:write": "prettier --write .github bin docs src test package.json README.md README.ja.md tsconfig.json",
+    "lint": "eslint src bin scripts test",
+    "format": "prettier --check .github bin docs scripts src test CHANGELOG.md package.json README.md README.ja.md repo-policy.json tsconfig.json",
+    "format:write": "prettier --write .github bin docs scripts src test CHANGELOG.md package.json README.md README.ja.md repo-policy.json tsconfig.json",
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --test test/*.test.mjs",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "release:check": "npm publish --dry-run --access public",
-    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm test && pnpm pack:check",
-    "prepack": "pnpm check"
+    "repo:check": "node scripts/check-repo.mjs",
+    "check": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test && pnpm run repo:check && pnpm run pack:check",
+    "prepack": "pnpm run check"
   },
   "dependencies": {
     "fflate": "0.8.3",
