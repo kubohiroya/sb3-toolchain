@@ -61,4 +61,15 @@ export {
   applyProjectAssetAdditions,
   projectAssetAdditionsFormatVersion,
 } from './project-asset-additions.js';
+export {
+  assertSb3ReleaseSnapshotMetadata,
+  computeReleaseSourceIdentity,
+  createSb3ReleaseSnapshot,
+  createSb3ReleaseSnapshotMetadata,
+  freezeSb3ReleaseSnapshot,
+  readSb3ReleaseSnapshotMetadata,
+  recordPublishedSb3ReleaseSnapshot,
+  verifySb3ReleaseSnapshot,
+  writeSb3ReleaseCandidate,
+} from './release-snapshot.js';
 export {cleanUpTurboWarpBlocks, turboWarpCleanUpLayout} from './turbowarp-clean-up.js';

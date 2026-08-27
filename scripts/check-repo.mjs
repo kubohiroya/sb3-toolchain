@@ -32,7 +32,7 @@ const legacyPosePattern = new RegExp(
 );
 
 assert(packageJson.name === policy.packageName, 'package name must match repo policy.');
-assert(packageJson.version === '0.9.0', 'package version must be 0.9.0.');
+assert(packageJson.version === '0.10.0', 'package version must be 0.10.0.');
 assert(packageJson.license === policy.license, 'package license must be MPL-2.0.');
 assert(packageJson.author === policy.authorPolicy.name, 'package author must use the shared name.');
 assert(!packageJson.author.includes('@'), 'package author must not include email.');
@@ -75,7 +75,11 @@ includesEvery(
   ],
   'README.ja.md',
 );
-includesEvery(changelog, [`## ${version} - 2026-08-25`, 'kubohiroyatm'], 'CHANGELOG.md');
+includesEvery(
+  changelog,
+  [`## ${version} - 2026-08-27`, 'release snapshot helpers'],
+  'CHANGELOG.md',
+);
 includesEvery(license, ['Mozilla Public License Version 2.0', '3. Responsibilities'], 'LICENSE');
 includesEvery(migrationDocs, ['kubohiroyatm', 'TurboWarp TM'], 'docs/extension-id-migration.md');
 includesEvery(
