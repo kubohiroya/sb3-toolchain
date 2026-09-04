@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+
+import {test} from 'vitest';
 
 import {
   createDeterministicSb3,
@@ -16,12 +17,13 @@ import {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
   validateSb3Source,
-} from '../src/index.js';
+} from '../src/index';
+import type {EmbeddedExtension} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-extension-source-test-'));
   try {
     return await callback(directory);
@@ -30,7 +32,7 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-function managedExtension(contents) {
+function managedExtension(contents: Uint8Array): EmbeddedExtension {
   return {
     id: 'example',
     path: 'extensions/example.js',
@@ -76,20 +78,21 @@ test('validates managed GitHub extension metadata', () => {
   assert.equal(validateExtensionSourceMetadata({...extension, source: undefined}), null);
   assert.equal(validateExtensionSourceMetadata(extension), extension.source);
 
-  for (const [property, value, message] of [
+  const githubCases: [string, string, RegExp][] = [
     ['provider', 'url', /provider/u],
     ['repository', '../escape', /repository/u],
     ['ref', 'bad ref', /Git ref/u],
     ['resolvedCommit', 'main', /40-character/u],
     ['artifact', '../example.js', /unsafe path segment/u],
     ['integrity', 'sha256-invalid', /SHA-256/u],
-  ]) {
+  ];
+  for (const [property, value, message] of githubCases) {
     assert.throws(
       () =>
         validateExtensionSourceMetadata({
           ...extension,
           source: {...extension.source, [property]: value},
-        }),
+        } as unknown as EmbeddedExtension),
       message,
     );
   }
@@ -97,7 +100,7 @@ test('validates managed GitHub extension metadata', () => {
 
 test('validates exact npm extension source metadata', () => {
   const contents = Buffer.from('// ID: example\n');
-  const extension = {
+  const extension: EmbeddedExtension = {
     ...managedExtension(contents),
     source: {
       artifact: 'dist/example.js',
@@ -109,18 +112,19 @@ test('validates exact npm extension source metadata', () => {
   };
   assert.equal(validateExtensionSourceMetadata(extension), extension.source);
 
-  for (const [property, value, message] of [
+  const npmCases: [string, string, RegExp][] = [
     ['package', '../escape', /npm package/u],
     ['version', '^1.2.3', /exact semantic version/u],
     ['artifact', '../example.js', /unsafe path segment/u],
     ['integrity', 'sha256-invalid', /SHA-256/u],
-  ]) {
+  ];
+  for (const [property, value, message] of npmCases) {
     assert.throws(
       () =>
         validateExtensionSourceMetadata({
           ...extension,
           source: {...extension.source, [property]: value},
-        }),
+        } as unknown as EmbeddedExtension),
       message,
     );
   }
@@ -141,7 +145,7 @@ test('rejects managed extension content or ID drift without changing unmanaged s
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
     const validated = await validateSb3Source(sourceDirectory);
-    assert.equal(validated.extensions[0].source.integrity, extensionIntegrity(contents));
+    assert.equal(validated.extensions[0].source?.integrity, extensionIntegrity(contents));
     await createDeterministicSb3(sourceDirectory);
 
     await writeFile(extensionPath, Buffer.concat([contents, Buffer.from('// drift\n')]));

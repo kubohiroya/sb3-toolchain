@@ -5,19 +5,19 @@ import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, unzipSync} from 'fflate';
+import {test} from 'vitest';
 import {stringify} from 'yaml';
 
-import {parseCliArguments, runCli} from '../src/cli.js';
-import {buildSb3, createDeterministicSb3} from '../src/index.js';
+import {parseCliArguments, runCli} from '../src/cli';
+import {buildSb3, createDeterministicSb3} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 
-function md5(contents) {
+function md5(contents: Uint8Array | string): string {
   return createHash('md5').update(contents).digest('hex');
 }
 
@@ -41,7 +41,7 @@ function createWave({sampleCount = 4, sampleRate = 8000} = {}) {
   return contents;
 }
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-project-assets-test-'));
   try {
     return await callback(directory);
@@ -50,7 +50,7 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), {recursive: true});
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -69,7 +69,7 @@ function sprite() {
   };
 }
 
-function image(kind, file, extra = {}) {
+function image(kind: string, file: string, extra: Record<string, unknown> = {}): any {
   return {
     kind,
     file,
@@ -80,7 +80,7 @@ function image(kind, file, extra = {}) {
   };
 }
 
-function manifest() {
+function manifest(): any {
   return {
     formatVersion: 1,
     sprites: {Princess: sprite()},
@@ -151,12 +151,12 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
 
     const archive = unzipSync(first.archive);
     const project = JSON.parse(strFromU8(archive['project.json']));
-    const stage = project.targets.find(({isStage}) => isStage);
+    const stage = project.targets.find(({isStage}: any) => isStage);
     assert.deepEqual(
-      stage.costumes.map(({name}) => name),
+      stage.costumes.map(({name}: any) => name),
       ['pixel', 'Sunset'],
     );
-    const princessTargets = project.targets.filter(({name}) => name === 'Princess');
+    const princessTargets = project.targets.filter(({name}: any) => name === 'Princess');
     assert.equal(princessTargets.length, 1);
     assert.deepEqual(princessTargets[0], {
       isStage: false,
@@ -216,7 +216,7 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
     assert.deepEqual(await readFile(outputPath), Buffer.from(first.archive));
 
     const cliOutputPath = path.join(directory, 'cli-project.sb3');
-    const messages = [];
+    const messages: string[] = [];
     await runCli(
       [
         'build',

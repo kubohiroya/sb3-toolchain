@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, unlink, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
-import vm from 'node:vm';
 import {fileURLToPath} from 'node:url';
+import vm from 'node:vm';
 
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
+import {test} from 'vitest';
 
-import {parseCliArguments} from '../src/cli.js';
+import {parseCliArguments} from '../src/cli';
+import type {ExtensionsBundleCliOptions} from '../src/cli';
 import {
   bundleExtensions,
   compareDirectories,
@@ -20,7 +21,7 @@ import {
   planBundledSb3Unbundle,
   unbundleSb3,
   unbundleExtensions,
-} from '../src/index.js';
+} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
@@ -156,7 +157,7 @@ const deltaSource = betaSource
   .replaceAll('beta', 'delta')
   .replaceAll('Bob Example', 'Dana Example');
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-bundle-test-'));
   try {
     return await callback(directory);
@@ -165,11 +166,11 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function writeBundleSource(sourceDirectory) {
+async function writeBundleSource(sourceDirectory: string) {
   await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
   await unlink(path.join(sourceDirectory, 'extensions/example.js'));
   await Promise.all([
@@ -214,25 +215,24 @@ async function writeBundleSource(sourceDirectory) {
   await writeJson(projectPath, project);
 }
 
-function decodeDataUrl(dataUrl) {
+function decodeDataUrl(dataUrl: string): string {
   const commaIndex = dataUrl.indexOf(',');
   assert.notEqual(commaIndex, -1);
   return Buffer.from(dataUrl.slice(commaIndex + 1), 'base64').toString('utf8');
 }
 
-function archiveWithProject(archive, project) {
+function archiveWithProject(archive: Uint8Array, project: unknown): Uint8Array {
   const entries = unzipSync(archive);
   entries['project.json'] = strToU8(`${JSON.stringify(project)}\n`);
   return zipSync(entries, {level: 6});
 }
 
-function evaluateBundle(source, extensionStorage) {
-  const opcodeFunctions = new Map();
-  const opcodeLookups = [];
-  const registrations = [];
-  const startedHats = [];
-  let runtime;
-  const Scratch = {
+function evaluateBundle(source: string, extensionStorage?: unknown) {
+  const opcodeFunctions = new Map<string, any>();
+  const opcodeLookups: any[] = [];
+  const registrations: any[] = [];
+  const startedHats: string[] = [];
+  const Scratch: any = {
     ArgumentType: {STRING: 'string'},
     BlockType: {
       BUTTON: 'button',
@@ -243,20 +243,20 @@ function evaluateBundle(source, extensionStorage) {
       XML: 'xml',
     },
     extensions: {
-      register(extension) {
+      register(extension: unknown) {
         registrations.push(extension);
       },
       unsandboxed: true,
     },
     vm: {},
   };
-  runtime = {
+  const runtime: any = {
     extensionStorage,
-    getOpcodeFunction(opcode, ...args) {
+    getOpcodeFunction(this: unknown, opcode: string, ...args: unknown[]) {
       opcodeLookups.push({args, opcode, receiver: this});
       return opcodeFunctions.get(opcode);
     },
-    startHats(opcode) {
+    startHats(opcode: string) {
       startedHats.push(opcode);
     },
     targets: [],
@@ -327,7 +327,7 @@ test('builds one reversible composite extension without deleting original source
     assert.deepEqual(project.extensions, ['projectbundle']);
     assert.deepEqual(Object.keys(project.extensionURLs), ['projectbundle', 'external']);
     assert.deepEqual(
-      Object.values(project.targets[0].blocks).map((block) => block.opcode),
+      Object.values(project.targets[0].blocks).map((block: any) => block.opcode),
       ['projectbundle_alpha__value', 'projectbundle_beta__value', 'projectbundle_alpha__selected'],
     );
     assert.equal(
@@ -355,7 +355,7 @@ test('builds one reversible composite extension without deleting original source
     const info = composite.getInfo();
     assert.equal(info.id, 'projectbundle');
     assert.deepEqual(
-      Array.from(info.blocks, (block) =>
+      Array.from(info.blocks as any[], (block: any) =>
         block === '---'
           ? 'separator'
           : block.blockType === runtime.Scratch.BlockType.LABEL
@@ -385,7 +385,7 @@ test('builds one reversible composite extension without deleting original source
       ],
     );
     const alphaDocs = info.blocks.find(
-      (block) =>
+      (block: any) =>
         block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
         block.sb3Toolchain.memberId === 'alpha',
     );
@@ -395,16 +395,18 @@ test('builds one reversible composite extension without deleting original source
     );
     assert.equal(
       info.blocks.some(
-        (block) =>
+        (block: any) =>
           block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
           block.sb3Toolchain.memberId === 'beta',
       ),
       false,
     );
-    const blockByOpcode = new Map(
+    const blockByOpcode = new Map<string, any>(
       info.blocks
-        .filter((block) => block && typeof block === 'object' && typeof block.opcode === 'string')
-        .map((block) => [block.opcode, block]),
+        .filter(
+          (block: any) => block && typeof block === 'object' && typeof block.opcode === 'string',
+        )
+        .map((block: any) => [block.opcode, block]),
     );
     assert.equal(
       blockByOpcode.get('alpha__value').blockIconURI,
@@ -416,7 +418,7 @@ test('builds one reversible composite extension without deleting original source
     );
     assert.equal(blockByOpcode.get('beta__value').blockIconURI, undefined);
     assert.equal(
-      info.blocks.find((block) => block?.sb3Toolchain?.kind === 'bundle-member-heading')
+      info.blocks.find((block: any) => block?.sb3Toolchain?.kind === 'bundle-member-heading')
         .blockIconURI,
       undefined,
     );
@@ -426,7 +428,7 @@ test('builds one reversible composite extension without deleting original source
     composite.alpha__fire();
     assert.deepEqual(runtime.startedHats, ['projectbundle_alpha__whenReady']);
 
-    runtime.opcodeFunctions.set('projectbundle_alpha__selected', (args, util) =>
+    runtime.opcodeFunctions.set('projectbundle_alpha__selected', (args: any, util: any) =>
       composite.alpha__selected(args, util),
     );
     const selfPayload = {ITEM: 'self member'};
@@ -443,13 +445,13 @@ test('builds one reversible composite extension without deleting original source
       'self member',
     );
 
-    let crossMemberArguments;
-    let crossMemberReceiver;
+    let crossMemberArguments: {args: unknown; util: unknown} | undefined;
+    let crossMemberReceiver: unknown;
     let crossMemberPromise;
     const expectedReceiver = {id: 'registered-opcode-handler'};
     runtime.opcodeFunctions.set(
       'projectbundle_beta__echo',
-      function (args, util) {
+      function (this: unknown, args: any, util: any) {
         crossMemberArguments = {args, util};
         crossMemberReceiver = this;
         crossMemberPromise = composite.beta__echo(args, util);
@@ -467,8 +469,8 @@ test('builds one reversible composite extension without deleting original source
       crossMemberUtil,
     );
     assert.equal(dynamicResult, crossMemberPromise);
-    assert.equal(crossMemberArguments.args, crossMemberPayload);
-    assert.equal(crossMemberArguments.util, crossMemberUtil);
+    assert.equal(crossMemberArguments?.args, crossMemberPayload);
+    assert.equal(crossMemberArguments?.util, crossMemberUtil);
     assert.equal(crossMemberReceiver, expectedReceiver);
     assert.equal(await dynamicResult, 'beta:Fish1:asset-manager');
 
@@ -529,7 +531,7 @@ test('builds one reversible composite extension without deleting original source
       'dynamic',
     ]);
     assert.deepEqual(
-      Object.values(unbundledProject.targets[0].blocks).map((block) => block.opcode),
+      Object.values(unbundledProject.targets[0].blocks).map((block: any) => block.opcode),
       ['alpha_value', 'beta_value', 'alpha_selected'],
     );
 
@@ -549,7 +551,7 @@ test('builds one reversible composite extension without deleting original source
     assert.deepEqual(restoredProject.extensions, ['alpha', 'beta']);
     assert.deepEqual(Object.keys(restoredProject.extensionURLs), ['alpha', 'beta', 'external']);
     assert.deepEqual(
-      Object.values(restoredProject.targets[0].blocks).map((block) => block.opcode),
+      Object.values(restoredProject.targets[0].blocks).map((block: any) => block.opcode),
       ['alpha_value', 'beta_value', 'alpha_selected'],
     );
     assert.equal(
@@ -669,7 +671,7 @@ test('omits recovery data by default and preserves runtime composition', async (
     assert.match(bundleSource, /^\/\/   License: MIT$/mu);
     const runtime = evaluateBundle(bundleSource, project.extensionStorage);
     const info = runtime.registrations[0].getInfo();
-    const alphaValue = info.blocks.find((block) => block?.opcode === 'alpha__value');
+    const alphaValue = info.blocks.find((block: any) => block?.opcode === 'alpha__value');
     assert.equal(
       alphaValue.blockIconURI,
       'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
@@ -703,7 +705,9 @@ test('unbundles multiple reversible bundles in either order', async () => {
     ]);
     const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-    const entryById = new Map(manifest.extensions.map((extension) => [extension.id, extension]));
+    const entryById = new Map(
+      manifest.extensions.map((extension: any) => [extension.id, extension]),
+    );
     manifest.extensions = [
       entryById.get('alpha'),
       {
@@ -844,16 +848,18 @@ test('parses reversible bundle and unbundle CLI commands', () => {
     },
   );
   assert.equal(
-    parseCliArguments([
-      'extensions',
-      'bundle',
-      'custom-source',
-      '--id',
-      'projectbundle',
-      '--name',
-      'Project Extension Bundle',
-      '--include-recovery-capsule',
-    ]).recoveryCapsule,
+    (
+      parseCliArguments([
+        'extensions',
+        'bundle',
+        'custom-source',
+        '--id',
+        'projectbundle',
+        '--name',
+        'Project Extension Bundle',
+        '--include-recovery-capsule',
+      ]) as ExtensionsBundleCliOptions
+    ).recoveryCapsule,
     true,
   );
   assert.deepEqual(

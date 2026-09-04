@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import assert from 'node:assert/strict';
-import test from 'node:test';
+
+import {test} from 'vitest';
 
 import {
   compareExtensionApiManifests,
@@ -9,9 +10,10 @@ import {
   parseExtensionApiManifest,
   validateExtensionApiManifestSourceMetadata,
   validateManagedExtensionApiManifest,
-} from '../src/index.js';
+} from '../src/index';
+import type {EmbeddedExtension} from '../src/index';
 
-function manifest(overrides = {}) {
+function manifest(overrides: Record<string, unknown> = {}): any {
   return {
     formatVersion: 1,
     id: 'example',
@@ -30,14 +32,17 @@ function manifest(overrides = {}) {
   };
 }
 
-function contents(value = manifest()) {
+function contents(value: unknown = manifest()): Buffer {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function managedExtension(apiContents = contents()) {
+function managedExtension(apiContents: Buffer = contents()): EmbeddedExtension {
   return {
     id: 'example',
     path: 'extensions/example.js',
+    mediaType: 'text/javascript',
+    parameters: [],
+    encoding: 'base64',
     source: {
       provider: 'github',
       repository: 'example/example-extension',
@@ -73,15 +78,18 @@ test('validates and canonicalizes extension API manifest v1', () => {
     menus: [{acceptReporters: true, id: 'voices'}],
   });
   const extension = managedExtension(apiContents);
-  assert.equal(validateExtensionApiManifestSourceMetadata(extension), extension.source.apiManifest);
   assert.equal(
-    validateManagedExtensionApiManifest(extension, apiContents).integrity,
-    extension.source.apiManifest.integrity,
+    validateExtensionApiManifestSourceMetadata(extension),
+    extension.source?.apiManifest,
+  );
+  assert.equal(
+    validateManagedExtensionApiManifest(extension, apiContents)?.integrity,
+    extension.source?.apiManifest?.integrity,
   );
 });
 
 test('rejects malformed, ambiguous, and mismatched extension API manifests', () => {
-  for (const [value, message] of [
+  const invalidManifests: [unknown, RegExp][] = [
     [{...manifest(), extra: true}, /unsupported properties/u],
     [{...manifest(), formatVersion: 2}, /Unsupported.*formatVersion/u],
     [{...manifest(), id: 'Wrong-ID'}, /Invalid.*ID/u],
@@ -118,7 +126,8 @@ test('rejects malformed, ambiguous, and mismatched extension API manifests', () 
       },
       /unknown menu/u,
     ],
-  ]) {
+  ];
+  for (const [value, message] of invalidManifests) {
     assert.throws(() => parseExtensionApiManifest(contents(value)), message);
   }
   assert.throws(
@@ -127,6 +136,7 @@ test('rejects malformed, ambiguous, and mismatched extension API manifests', () 
   );
 
   const extension = managedExtension();
+  assert.ok(extension.source?.apiManifest);
   extension.source.apiManifest.path = 'extensions/other.manifest.json';
   assert.throws(() => validateExtensionApiManifestSourceMetadata(extension), /path must match/u);
 });
@@ -224,7 +234,7 @@ test('classifies removal of a referenced menu as breaking', () => {
   assert.equal(
     compareExtensionApiManifests(installed, candidate).find(
       (change) => change.kind === 'menu-removed',
-    ).breaking,
+    )?.breaking,
     true,
   );
 });

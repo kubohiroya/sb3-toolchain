@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+
+import {test} from 'vitest';
 
 import {
   computeReleaseSourceIdentity,
@@ -14,7 +15,7 @@ import {
   recordPublishedSb3ReleaseSnapshot,
   verifySb3ReleaseSnapshot,
   writeSb3ReleaseCandidate,
-} from '../src/index.js';
+} from '../src/index';
 
 const sourceFiles = () =>
   new Map([
@@ -22,7 +23,7 @@ const sourceFiles = () =>
     ['project.source.json', Buffer.from('{"targets":[]}\n')],
   ]);
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-release-snapshot-test-'));
   try {
     return await callback(directory);

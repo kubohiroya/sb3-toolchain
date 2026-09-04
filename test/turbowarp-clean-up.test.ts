@@ -4,23 +4,49 @@ import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, unzipSync} from 'fflate';
+import {test} from 'vitest';
 
-import {parseCliArguments} from '../src/cli.js';
+import {parseCliArguments} from '../src/cli';
 import {
   buildSb3,
   cleanUpTurboWarpBlocks,
   createDeterministicSb3,
   turboWarpCleanUpLayout,
-} from '../src/index.js';
+} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 
-function block({next = null, opcode, parent = null, topLevel = false, x, y}) {
+interface TestBlock {
+  fields: Record<string, unknown>;
+  inputs: Record<string, unknown>;
+  next: string | null;
+  opcode: string;
+  parent: string | null;
+  shadow: boolean;
+  topLevel: boolean;
+  x?: number;
+  y?: number;
+}
+
+function block({
+  next = null,
+  opcode,
+  parent = null,
+  topLevel = false,
+  x,
+  y,
+}: {
+  next?: string | null;
+  opcode: string;
+  parent?: string | null;
+  topLevel?: boolean;
+  x?: number;
+  y?: number;
+}): TestBlock {
   return {
     fields: {},
     inputs: {},
@@ -98,7 +124,7 @@ function projectWithUntidyBlocks() {
   };
 }
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-clean-up-test-'));
   try {
     return await callback(directory);
@@ -107,13 +133,17 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-function readProject(archive) {
+function readProject(archive: Uint8Array): any {
   return JSON.parse(strFromU8(unzipSync(archive)['project.json']));
+}
+
+function targetsOf(project: {targets?: unknown}): any[] {
+  return project.targets as any[];
 }
 
 test('lays out every target without deleting project data or changing the input', () => {
   const input = projectWithUntidyBlocks();
-  const snapshot = structuredClone(input);
+  const snapshot: any = structuredClone(input);
   const result = cleanUpTurboWarpBlocks(input);
 
   assert.deepEqual(input, snapshot);
@@ -122,7 +152,7 @@ test('lays out every target without deleting project data or changing the input'
   assert.equal(result.movedScriptCount, 4);
   assert.equal(result.movedCommentCount, 1);
 
-  const [stage, sprite] = result.project.targets;
+  const [stage, sprite] = targetsOf(result.project);
   assert.deepEqual(
     {x: stage.blocks.upper.x, y: stage.blocks.upper.y},
     {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
@@ -163,7 +193,7 @@ test('lays out every target without deleting project data or changing the input'
 
 test('handles large linear stacks without depending on the JavaScript call stack', () => {
   const blockCount = 5000;
-  const blocks = {};
+  const blocks: Record<string, TestBlock> = {};
   for (let index = 0; index < blockCount; index += 1) {
     const blockId = `block-${index}`;
     blocks[blockId] = block({
@@ -182,8 +212,8 @@ test('handles large linear stacks without depending on the JavaScript call stack
   assert.equal(result.scriptCount, 1);
   assert.deepEqual(
     {
-      x: result.project.targets[0].blocks['block-0'].x,
-      y: result.project.targets[0].blocks['block-0'].y,
+      x: targetsOf(result.project)[0].blocks['block-0'].x,
+      y: targetsOf(result.project)[0].blocks['block-0'].y,
     },
     {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
   );
@@ -221,7 +251,7 @@ test('reserves column width for attached comments and inline primitive values', 
     ],
   });
 
-  const [commentTarget, inlineTarget] = result.project.targets;
+  const [commentTarget, inlineTarget] = targetsOf(result.project);
   const commentRight = commentTarget.comments.wide.x + commentTarget.comments.wide.width;
   assert.equal(commentTarget.blocks.right.x - commentRight, turboWarpCleanUpLayout.columnGap);
   assert.ok(inlineTarget.blocks.right.x - inlineTarget.blocks.left.x > 200 * 8);
@@ -253,10 +283,10 @@ test('builds an opt-in cleaned archive without modifying expanded sources', asyn
       },
       {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
     );
-    assert.equal(cleaned.blockCleanUp.scriptCount, 3);
+    assert.equal(cleaned.blockCleanUp?.scriptCount, 3);
 
     const built = await buildSb3({cleanUpBlocks: true, outputPath, sourceDirectory});
-    assert.equal(built.blockCleanUp.scriptCount, 3);
+    assert.equal(built.blockCleanUp?.scriptCount, 3);
     assert.equal(readProject(await readFile(outputPath)).targets[0].blocks.upper.x, 48);
     assert.equal(await readFile(projectPath, 'utf8'), sourceBeforeBuild);
   });
@@ -274,7 +304,9 @@ test('parses the opt-in build flag and rejects non-boolean API values', async ()
     },
   );
   await assert.rejects(
-    createDeterministicSb3(fixtureSourceDirectory, {cleanUpBlocks: 'yes'}),
+    createDeterministicSb3(fixtureSourceDirectory, {
+      cleanUpBlocks: 'yes',
+    } as unknown as {cleanUpBlocks?: boolean}),
     /cleanUpBlocks must be a boolean/u,
   );
 });

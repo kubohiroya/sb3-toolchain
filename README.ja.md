@@ -140,11 +140,27 @@ await unbundleSb3({
 
 ## 開発
 
+ソースはTypeScriptで記述し、Viteのライブラリモードでビルドし、Vitestでテストします。
+`pnpm run check`は、lint・format・typecheck・test・build・リポジトリポリシー・pack検査をこの順で実行します。
+
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check
 ```
+
+個別のステップ:
+
+```bash
+pnpm run typecheck
+pnpm run test
+pnpm run test:watch
+pnpm run build
+```
+
+`pnpm run build`は`dist/`（ESMと`.d.ts`型定義、ソースマップ）を出力します。
+公開パッケージも`bin/sb3-toolchain`も`dist/`を読み込むため、
+チェックアウトからCLIを使う場合は先にビルドしてください。
 
 ## ライセンス
 

@@ -5,11 +5,11 @@ import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 
 import {strToU8, zipSync} from 'fflate';
+import {test} from 'vitest';
 
-import {parseCliArguments} from '../src/cli.js';
+import {parseCliArguments} from '../src/cli';
 import {
   decodeExtensionDataUrl,
   extensionApiManifestIntegrity,
@@ -17,9 +17,10 @@ import {
   importSb3,
   validateArchiveEntryName,
   validateOutputDirectoryPath,
-} from '../src/index.js';
+} from '../src/index';
+import type {OutputReplacementContext} from '../src/index';
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-import-test-'));
   try {
     return await callback(directory);
@@ -28,16 +29,15 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function writeSb3(filePath, entries) {
+async function writeSb3(filePath: string, entries: Record<string, Uint8Array>): Promise<void> {
   await writeFile(filePath, zipSync(entries, {level: 0}));
 }
 
-function git(arguments_, cwd) {
-  return new Promise((resolve, reject) => {
+function git(arguments_: string[], cwd: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     execFile('git', arguments_, {cwd, encoding: 'utf8'}, (error, stdout, stderr) => {
       if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
+        Object.assign(error, {stdout, stderr});
         reject(error);
         return;
       }
@@ -46,18 +46,21 @@ function git(arguments_, cwd) {
   });
 }
 
-async function initializeGitRepository(directory) {
+async function initializeGitRepository(directory: string): Promise<void> {
   await git(['init', '--quiet'], directory);
   await git(['config', 'user.name', 'SB3 Import Test'], directory);
   await git(['config', 'user.email', 'sb3-import-test@example.invalid'], directory);
 }
 
-async function commitOutput(directory, message = 'track imported output') {
+async function commitOutput(directory: string, message = 'track imported output'): Promise<void> {
   await git(['add', 'app'], directory);
   await git(['commit', '--quiet', '-m', message], directory);
 }
 
-async function writeProjectSb3(filePath, extraProjectProperties = {}) {
+async function writeProjectSb3(
+  filePath: string,
+  extraProjectProperties: Record<string, unknown> = {},
+): Promise<void> {
   await writeSb3(filePath, {
     'project.json': strToU8(
       JSON.stringify({
@@ -345,7 +348,7 @@ test('shows candidate and Git comparison context and preserves clean output when
     await importSb3({inputPath, outputDirectory});
     await commitOutput(directory);
     await writeProjectSb3(inputPath, {updated: true});
-    let confirmationContext;
+    let confirmationContext: OutputReplacementContext | undefined;
 
     await assert.rejects(
       importSb3({
@@ -359,9 +362,9 @@ test('shows candidate and Git comparison context and preserves clean output when
       /cancelled/u,
     );
 
-    assert.equal(confirmationContext.outputDirectory, outputDirectory);
-    assert.equal(confirmationContext.gitState.clean, true);
-    assert.deepEqual(confirmationContext.comparison.differences, {
+    assert.equal(confirmationContext?.outputDirectory, outputDirectory);
+    assert.equal(confirmationContext?.gitState.clean, true);
+    assert.deepEqual(confirmationContext?.comparison.differences, {
       added: [],
       modified: ['project.source.json'],
       removed: [],

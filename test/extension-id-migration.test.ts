@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import {access, cp, mkdtemp, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
-import {runCli} from '../src/cli.js';
+import {test} from 'vitest';
+
+import {runCli} from '../src/cli';
 import {
   createDeterministicSb3,
   extensionApiManifestIntegrity,
@@ -16,7 +17,7 @@ import {
   planExtensionIdMigration,
   updateExtensions,
   validateSb3Source,
-} from '../src/index.js';
+} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
@@ -27,7 +28,7 @@ const updatedCommit = '2'.repeat(40);
 const legacyTmId = ['tm', 'pose'].join('');
 const tmId = 'kubohiroyatm';
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-id-migration-test-'));
   try {
     return await callback(directory);
@@ -36,22 +37,22 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function readJson(filePath) {
+async function readJson(filePath: string): Promise<any> {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function extensionContents(id, version = 'V1') {
+function extensionContents(id: string, version = 'V1'): Buffer {
   return Buffer.from(
     `// Name: Migration test\n// ID: ${id}\n` +
       `Scratch.extensions.register(new Extension${version}());\n`,
   );
 }
 
-function apiManifestContents(id, opcode = 'accumulatedPose') {
+function apiManifestContents(id: string, opcode = 'accumulatedPose'): Buffer {
   return Buffer.from(
     `${JSON.stringify(
       {
@@ -72,7 +73,10 @@ function apiManifestContents(id, opcode = 'accumulatedPose') {
   );
 }
 
-async function writeMigrationSource(sourceDirectory, {managed = false} = {}) {
+async function writeMigrationSource(
+  sourceDirectory: string,
+  {managed = false}: {managed?: boolean} = {},
+) {
   await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
   const oldPath = path.join(sourceDirectory, `extensions/${oldId}.js`);
   await rename(path.join(sourceDirectory, 'extensions/example.js'), oldPath);
@@ -150,11 +154,11 @@ async function writeMigrationSource(sourceDirectory, {managed = false} = {}) {
   return {contents, manifestPath, oldPath, projectPath};
 }
 
-async function assertMissing(filePath) {
-  await assert.rejects(access(filePath), (error) => error?.code === 'ENOENT');
+async function assertMissing(filePath: string): Promise<void> {
+  await assert.rejects(access(filePath), (error: any) => error?.code === 'ENOENT');
 }
 
-async function writeTurboWarpTmMigrationSource(sourceDirectory) {
+async function writeTurboWarpTmMigrationSource(sourceDirectory: string) {
   await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
   const otherId = 'textlines';
   const legacyContents = extensionContents(legacyTmId);
@@ -297,7 +301,7 @@ test('plans schema-aware changes and reports strings it will not rewrite', async
         (reference) => reference.value === `other_${oldId}_operation`,
       ),
     );
-    const output = [];
+    const output: string[] = [];
     await runCli(['extensions', 'migrate-id', sourceDirectory, '--from', oldId, '--to', newId], {
       log: (message) => output.push(message),
     });
@@ -395,12 +399,12 @@ test('updates a managed artifact and migrates its ID and provenance together', a
       managed: true,
     });
     const updatedContents = extensionContents(newId, 'V2');
-    const calls = [];
+    const calls: string[] = [];
     let servedContents = extensionContents(oldId, 'V2');
-    const fetchImplementation = async (url, options) => {
-      calls.push(url);
+    const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
+      calls.push(String(url));
       assert.equal(options.redirect, 'error');
-      const parsedUrl = new URL(url);
+      const parsedUrl = new URL(String(url));
       if (parsedUrl.hostname === 'api.github.com') {
         return new Response(JSON.stringify({sha: updatedCommit}));
       }
@@ -440,7 +444,7 @@ test('updates a managed artifact and migrates its ID and provenance together', a
     assert.equal(result.changed, true);
     assert.equal(result.extensions[0].id, newId);
     assert.equal(result.extensions[0].previousId, oldId);
-    assert.equal(result.migration.fromId, oldId);
+    assert.equal(result.migration?.fromId, oldId);
     assert.equal(calls.length, 2);
     assert.notDeepEqual(
       await readFile(path.join(sourceDirectory, `extensions/${newId}.js`)),
@@ -487,7 +491,7 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       plan.unclassifiedReferences.some((reference) => reference.value.includes(`${legacyTmId}`)),
     );
 
-    const output = [];
+    const output: string[] = [];
     await runCli(
       ['extensions', 'migrate-id', sourceDirectory, '--from', legacyTmId, '--to', tmId],
       {
@@ -500,11 +504,11 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
 
     const updatedContents = extensionContents(tmId, 'V2');
     const updatedApiManifest = apiManifestContents(tmId);
-    const calls = [];
-    const fetchImplementation = async (url, options) => {
-      calls.push(url);
+    const calls: string[] = [];
+    const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
+      calls.push(String(url));
       assert.equal(options.redirect, 'error');
-      const parsedUrl = new URL(url);
+      const parsedUrl = new URL(String(url));
       if (parsedUrl.hostname === 'api.github.com') {
         return new Response(JSON.stringify({sha: updatedCommit}));
       }
@@ -525,8 +529,8 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       yes: true,
     });
     assert.equal(result.changed, true);
-    assert.equal(result.migration.fromId, legacyTmId);
-    assert.equal(result.migration.toId, tmId);
+    assert.equal(result.migration?.fromId, legacyTmId);
+    assert.equal(result.migration?.toId, tmId);
     assert.deepEqual(result.apiCompatibility[0].changes, []);
     assert.equal(calls.length, 3);
 

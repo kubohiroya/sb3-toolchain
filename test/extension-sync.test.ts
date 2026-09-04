@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import {cp, mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+
+import {test} from 'vitest';
 
 import {
   extensionApiManifestIntegrity,
@@ -13,14 +14,14 @@ import {
   extensionStatus,
   syncExtensions,
   updateExtensions,
-} from '../src/index.js';
+} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 const installedCommit = '1'.repeat(40);
 const updatedCommit = '2'.repeat(40);
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-extension-sync-test-'));
   try {
     return await callback(directory);
@@ -29,21 +30,25 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function readJson(filePath) {
+async function readJson(filePath: string): Promise<any> {
   return JSON.parse(await readFile(filePath, 'utf8'));
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function extensionContents(id, version) {
+function extensionContents(id: string, version: number | string): Buffer {
   return Buffer.from(
     `// Name: ${id}\n// ID: ${id}\n` + `Scratch.extensions.register(new Extension${version}());\n`,
   );
 }
 
-function sourceMetadata(id, contents, repository = `example/${id}-extension`) {
+function sourceMetadata(
+  id: string,
+  contents: Uint8Array,
+  repository = `example/${id}-extension`,
+): any {
   return {
     provider: 'github',
     repository,
@@ -54,7 +59,7 @@ function sourceMetadata(id, contents, repository = `example/${id}-extension`) {
   };
 }
 
-function apiManifest(id, overrides = {}) {
+function apiManifest(id: string, overrides: Record<string, unknown> = {}): any {
   return {
     formatVersion: 1,
     id,
@@ -70,19 +75,19 @@ function apiManifest(id, overrides = {}) {
   };
 }
 
-function apiManifestContents(id, overrides = {}) {
+function apiManifestContents(id: string, overrides: Record<string, unknown> = {}): Buffer {
   return Buffer.from(`${JSON.stringify(apiManifest(id, overrides), null, 2)}\n`);
 }
 
 async function addApiManifest(
-  sourceDirectory,
-  id,
-  contents = apiManifestContents(id),
+  sourceDirectory: string,
+  id: string,
+  contents: Buffer = apiManifestContents(id),
   artifact = 'dist/extension-manifest.json',
-) {
+): Promise<Buffer> {
   const embeddedManifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
   const embeddedManifest = await readJson(embeddedManifestPath);
-  const extension = embeddedManifest.extensions.find((entry) => entry.id === id);
+  const extension = embeddedManifest.extensions.find((entry: any) => entry.id === id);
   assert(extension);
   extension.source.apiManifest = {
     artifact,
@@ -97,7 +102,7 @@ async function addApiManifest(
   return contents;
 }
 
-async function writeManagedSource(sourceDirectory, extensionIds = ['example']) {
+async function writeManagedSource(sourceDirectory: string, extensionIds: string[] = ['example']) {
   await cp(fixtureSourceDirectory, sourceDirectory, {recursive: true});
   const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
   const projectPath = path.join(sourceDirectory, 'project.source.json');
@@ -130,7 +135,11 @@ async function writeManagedSource(sourceDirectory, extensionIds = ['example']) {
   return contentsById;
 }
 
-async function installNpmExtensionPackage(directory, contents, {version = '1.2.3'} = {}) {
+async function installNpmExtensionPackage(
+  directory: string,
+  contents: Uint8Array,
+  {version = '1.2.3'}: {version?: string} = {},
+): Promise<string> {
   const packageDirectory = path.join(directory, 'node_modules', '@example', 'example-extension');
   await mkdir(path.join(packageDirectory, 'dist'), {recursive: true});
   await writeFile(
@@ -141,15 +150,21 @@ async function installNpmExtensionPackage(directory, contents, {version = '1.2.3
   return packageDirectory;
 }
 
-function mockGithub({artifacts = new Map(), commits = new Map()}) {
-  const calls = [];
-  const fetchImplementation = async (url, options) => {
-    calls.push({options, url});
+function mockGithub({
+  artifacts = new Map<string, unknown>(),
+  commits = new Map<string, unknown>(),
+}: {
+  artifacts?: Map<string, unknown>;
+  commits?: Map<string, unknown>;
+}) {
+  const calls: {options: RequestInit | undefined; url: string}[] = [];
+  const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
+    calls.push({options, url: String(url)});
     assert.equal(options.redirect, 'error');
-    const parsedUrl = new URL(url);
+    const parsedUrl = new URL(String(url));
     if (parsedUrl.hostname === 'api.github.com') {
       const repository = parsedUrl.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/commits\//u)?.[1];
-      const commit = commits.get(repository);
+      const commit = commits.get(repository ?? '');
       return commit instanceof Response
         ? commit
         : new Response(JSON.stringify({sha: commit ?? updatedCommit}), {
@@ -160,14 +175,16 @@ function mockGithub({artifacts = new Map(), commits = new Map()}) {
       const response = artifacts.get(parsedUrl.pathname);
       return response instanceof Response
         ? response
-        : new Response(response ?? 'not found', {status: response === undefined ? 404 : 200});
+        : new Response((response as any) ?? 'not found', {
+            status: response === undefined ? 404 : 200,
+          });
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
   return {calls, fetch: fetchImplementation};
 }
 
-function rawPath(repository, commit, artifact) {
+function rawPath(repository: string, commit: string, artifact: string): string {
   return `/${repository}/${commit}/${artifact}`;
 }
 
@@ -361,7 +378,7 @@ test('rejects failed, redirected, oversized, corrupted, and wrong-ID downloads',
     const originalContents = contentsById.get('example');
     const artifactPath = rawPath('example/example-extension', installedCommit, 'dist/example.js');
 
-    for (const [response, message, maximumArtifactBytes] of [
+    const artifactCases: [unknown, RegExp, number][] = [
       [new Response('missing', {status: 404}), /HTTP 404/u, 1024],
       [
         new Response(null, {
@@ -373,7 +390,8 @@ test('rejects failed, redirected, oversized, corrupted, and wrong-ID downloads',
       ],
       [new Response(Buffer.alloc(65), {headers: {'content-length': '65'}}), /64-byte limit/u, 64],
       [extensionContents('example', 'Corrupted'), /integrity mismatch/u, 1024],
-    ]) {
+    ];
+    for (const [response, message, maximumArtifactBytes] of artifactCases) {
       const github = mockGithub({artifacts: new Map([[artifactPath, response]])});
       await assert.rejects(
         syncExtensions({
@@ -411,7 +429,7 @@ test('updates multiple extensions and metadata as one transaction', async () => 
     const secondPath = rawPath('example/second-extension', updatedCommit, 'dist/second.js');
 
     const failedGithub = mockGithub({
-      artifacts: new Map([
+      artifacts: new Map<string, unknown>([
         [examplePath, updatedExample],
         [secondPath, new Response('missing', {status: 404})],
       ]),
@@ -607,7 +625,7 @@ test('rejects unsafe API manifest downloads without changing the source', async 
       updatedCommit,
       'dist/extension-manifest.json',
     );
-    for (const [response, message, maximumManifestBytes] of [
+    const manifestCases: [unknown, RegExp, number][] = [
       [Buffer.from('{'), /not valid JSON/u, 1024],
       [apiManifestContents('example', {formatVersion: 2}), /Unsupported.*formatVersion/u, 1024],
       [apiManifestContents('another'), /ID mismatch/u, 1024],
@@ -617,9 +635,10 @@ test('rejects unsafe API manifest downloads without changing the source', async 
         /HTTP 302/u,
         1024,
       ],
-    ]) {
+    ];
+    for (const [response, message, maximumManifestBytes] of manifestCases) {
       const github = mockGithub({
-        artifacts: new Map([
+        artifacts: new Map<string, unknown>([
           [extensionPath, extensionContents('example', 'V2')],
           [manifestPath, response],
         ]),
@@ -696,10 +715,10 @@ test('normalizes the manifest ID during a managed extension ID migration', async
       yes: true,
     });
     assert.deepEqual(result.apiCompatibility[0].changes, []);
-    assert.equal(result.migration.counts.apiManifestArtifacts, 1);
+    assert.equal(result.migration?.counts.apiManifestArtifacts, 1);
     await assert.rejects(
       readFile(path.join(sourceDirectory, 'extensions/oldext.manifest.json')),
-      (error) => error?.code === 'ENOENT',
+      (error: any) => error?.code === 'ENOENT',
     );
     assert.deepEqual(
       await readFile(path.join(sourceDirectory, 'extensions/newext.manifest.json')),

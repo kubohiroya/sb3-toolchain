@@ -5,12 +5,12 @@ import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, strToU8, unzipSync} from 'fflate';
+import {test} from 'vitest';
 
-import {parseCliArguments, runCli} from '../src/cli.js';
+import {parseCliArguments, runCli} from '../src/cli';
 import {
   buildSb3,
   compareDirectories,
@@ -18,12 +18,12 @@ import {
   importSb3,
   packageVersion,
   validateSb3Source,
-} from '../src/index.js';
+} from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSourceDirectory = path.join(projectRoot, 'test/fixtures/minimal-source');
 
-async function withTemporaryDirectory(callback) {
+async function withTemporaryDirectory<T>(callback: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'sb3-toolchain-build-test-'));
   try {
     return await callback(directory);
@@ -32,11 +32,11 @@ async function withTemporaryDirectory(callback) {
   }
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function writeMinimalSource(sourceDirectory) {
+async function writeMinimalSource(sourceDirectory: string): Promise<{assetFilename: string}> {
   const assetsDirectory = path.join(sourceDirectory, 'assets');
   const extensionsDirectory = path.join(sourceDirectory, 'extensions');
   await mkdir(assetsDirectory, {recursive: true});
@@ -93,7 +93,7 @@ async function writeMinimalSource(sourceDirectory) {
   return {assetFilename};
 }
 
-function readCentralDirectory(archive) {
+function readCentralDirectory(archive: Uint8Array) {
   const bytes = Buffer.from(archive);
   let endOffset = -1;
   for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65_557); offset -= 1) {
@@ -378,7 +378,7 @@ test('parses build and check CLI options', () => {
 
 test('keeps package metadata and the public CLI/API version aligned', async () => {
   const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
-  const messages = [];
+  const messages: string[] = [];
 
   await runCli(['--version'], {log: (message) => messages.push(message)});
 
