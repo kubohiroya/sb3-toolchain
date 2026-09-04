@@ -21,10 +21,9 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "sb3-toolchain": "bin/sb3-toolchain.mjs"
+    "sb3-toolchain": "./dist/bin.js"
   },
   "files": [
-    "bin/",
     "dist/",
     "docs/",
     "repo-policy.json",
@@ -41,8 +40,8 @@
   "scripts": {
     "build": "vite build",
     "lint": "eslint .",
-    "format": "prettier --check .github bin docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
-    "format:write": "prettier --write .github bin docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
+    "format": "prettier --check .github docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
+    "format:write": "prettier --write .github docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
     "typecheck": "tsc --project tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",

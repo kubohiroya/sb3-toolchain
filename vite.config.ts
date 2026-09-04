@@ -22,14 +22,16 @@ export default defineConfig({
     minify: false,
     lib: {
       entry: {
-        index: 'src/index.ts',
+        bin: 'src/bin.ts',
         cli: 'src/cli.ts',
+        index: 'src/index.ts',
       },
       formats: ['es'],
     },
     rollupOptions: {
       external: externalModules,
       output: {
+        banner: (chunk) => (chunk.name === 'bin' ? '#!/usr/bin/env node' : ''),
         entryFileNames: '[name].js',
         preserveModules: true,
         preserveModulesRoot: 'src',

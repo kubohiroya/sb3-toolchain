@@ -159,9 +159,9 @@ pnpm run test:watch
 pnpm run build
 ```
 
-`pnpm run build` emits `dist/` (ESM plus `.d.ts` declarations and source maps). The published
-package and `bin/sb3-toolchain` both load `dist/`, so run a build before using the CLI from a
-checkout.
+`pnpm run build` emits `dist/` (ESM plus `.d.ts` declarations and source maps). The library entry
+and the `sb3-toolchain` executable are both built from `src/`, so run a build before using the CLI
+from a checkout.
 
 ## License
 

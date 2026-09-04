@@ -159,7 +159,7 @@ pnpm run build
 ```
 
 `pnpm run build`は`dist/`（ESMと`.d.ts`型定義、ソースマップ）を出力します。
-公開パッケージも`bin/sb3-toolchain`も`dist/`を読み込むため、
+ライブラリのエントリも`sb3-toolchain`実行ファイルも`src/`からビルドされるため、
 チェックアウトからCLIを使う場合は先にビルドしてください。
 
 ## ライセンス
