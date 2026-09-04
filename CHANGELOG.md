@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0 - 2026-09-05
+
+- Migrate the source, tests, and build to TypeScript with `strict` type checking.
+- Build the published package with Vite in library mode; `dist/` now holds ESM output, `.d.ts`
+  declarations, and source maps, and `exports` points at `dist/` instead of `src/`.
+- Replace the `node --test` runner with Vitest and lint TypeScript with `typescript-eslint`.
+- Export the public domain types (`EmbeddedExtension`, `ProjectJson`, `ExtensionSource`, and the
+  option and result shapes of every exported function) from the package entry point.
+
+Rollback: pin `@kubohiroya/sb3-toolchain@0.10.0`. The CLI and JavaScript API surfaces are unchanged;
+only the published file layout and the development toolchain differ.
+
 ## 0.10.0 - 2026-08-27
 
 - Add generic deterministic SB3 release snapshot helpers.

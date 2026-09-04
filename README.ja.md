@@ -31,7 +31,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 再現可能なインストールのため、検証済みのnpmバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.10.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.11.0
 ```
 
 ## クイックスタート
@@ -140,11 +140,27 @@ await unbundleSb3({
 
 ## 開発
 
+ソースはTypeScriptで記述し、Viteのライブラリモードでビルドし、Vitestでテストします。
+`pnpm run check`は、lint・format・typecheck・test・build・リポジトリポリシー・pack検査をこの順で実行します。
+
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check
 ```
+
+個別のステップ:
+
+```bash
+pnpm run typecheck
+pnpm run test
+pnpm run test:watch
+pnpm run build
+```
+
+`pnpm run build`は`dist/`（ESMと`.d.ts`型定義、ソースマップ）を出力します。
+ライブラリのエントリも`sb3-toolchain`実行ファイルも`src/`からビルドされるため、
+チェックアウトからCLIを使う場合は先にビルドしてください。
 
 ## ライセンス
 

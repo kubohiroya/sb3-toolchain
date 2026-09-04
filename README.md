@@ -32,7 +32,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.10.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.11.0
 ```
 
 ## Quick start
@@ -141,11 +141,27 @@ await unbundleSb3({
 
 ## Development
 
+The source is TypeScript, built with Vite in library mode and tested with Vitest. `pnpm run check`
+runs lint, format, typecheck, tests, build, repository policy, and pack checks in that order.
+
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check
 ```
+
+Individual steps:
+
+```bash
+pnpm run typecheck
+pnpm run test
+pnpm run test:watch
+pnpm run build
+```
+
+`pnpm run build` emits `dist/` (ESM plus `.d.ts` declarations and source maps). The library entry
+and the `sb3-toolchain` executable are both built from `src/`, so run a build before using the CLI
+from a checkout.
 
 ## License
 

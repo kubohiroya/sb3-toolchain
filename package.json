@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
@@ -14,18 +14,20 @@
     "url": "https://github.com/kubohiroya/sb3-toolchain/issues"
   },
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
-    "sb3-toolchain": "bin/sb3-toolchain.mjs"
+    "sb3-toolchain": "./dist/bin.js"
   },
   "files": [
-    "bin/",
+    "dist/",
     "docs/",
     "repo-policy.json",
     "CHANGELOG.md",
-    "src/",
     "README.md",
     "README.ja.md",
     "LICENSE"
@@ -36,15 +38,17 @@
   },
   "packageManager": "pnpm@11.11.0",
   "scripts": {
-    "lint": "eslint src bin scripts test",
-    "format": "prettier --check .github bin docs scripts src test CHANGELOG.md package.json README.md README.ja.md repo-policy.json tsconfig.json",
-    "format:write": "prettier --write .github bin docs scripts src test CHANGELOG.md package.json README.md README.ja.md repo-policy.json tsconfig.json",
+    "build": "vite build",
+    "lint": "eslint .",
+    "format": "prettier --check .github docs scripts src test CHANGELOG.md eslint.config.ts package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
+    "format:write": "prettier --write .github docs scripts src test CHANGELOG.md eslint.config.ts package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
     "typecheck": "tsc --project tsconfig.json",
-    "test": "node --test test/*.test.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "release:check": "npm publish --dry-run --access public",
-    "repo:check": "node scripts/check-repo.mjs",
-    "check": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test && pnpm run repo:check && pnpm run pack:check",
+    "repo:check": "node --experimental-strip-types scripts/check-repo.ts",
+    "check": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run repo:check && pnpm run pack:check",
     "prepack": "pnpm run check"
   },
   "dependencies": {
@@ -55,8 +59,13 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "eslint": "^9.0.0",
+    "jiti": "^2.7.0",
     "prettier": "^3.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vite-plugin-dts": "^5.1.0",
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=22.12.0"
