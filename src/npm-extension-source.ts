@@ -3,18 +3,29 @@
 import {lstat, readFile, realpath} from 'node:fs/promises';
 import path from 'node:path';
 
-import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest.js';
-import {extensionHeaderId, validateExtensionSourceMetadata} from './extension-dependencies.js';
+import {assert, errorMessage} from './assert';
+import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest';
+import {extensionHeaderId, validateExtensionSourceMetadata} from './extension-dependencies';
+import type {EmbeddedExtension} from './types';
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
+export interface NpmExtensionSourceOptions {
+  allowVersionMismatch?: boolean;
+  maximumArtifactBytes: number;
+  maximumManifestBytes: number;
 }
 
-function packageSegments(packageName) {
+export interface NpmExtensionSourceResult {
+  apiManifestContents: Buffer | null;
+  contents: Buffer;
+  packageDirectory: string;
+  version: string;
+}
+
+function packageSegments(packageName: string): string[] {
   return packageName.startsWith('@') ? packageName.split('/') : [packageName];
 }
 
-async function findPackageDirectory(sourceDirectory, packageName) {
+async function findPackageDirectory(sourceDirectory: string, packageName: string): Promise<string> {
   let current = path.resolve(sourceDirectory);
   while (true) {
     const candidate = path.join(current, 'node_modules', ...packageSegments(packageName));
@@ -22,7 +33,8 @@ async function findPackageDirectory(sourceDirectory, packageName) {
       await lstat(path.join(candidate, 'package.json'));
       return candidate;
     } catch (error) {
-      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') throw error;
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
     }
     const parent = path.dirname(current);
     if (parent === current) break;
@@ -33,7 +45,12 @@ async function findPackageDirectory(sourceDirectory, packageName) {
   );
 }
 
-async function readPackageArtifact(packageDirectory, artifact, maximumBytes, description) {
+async function readPackageArtifact(
+  packageDirectory: string,
+  artifact: string,
+  maximumBytes: number,
+  description: string,
+): Promise<Buffer> {
   const [resolvedPackageDirectory, resolvedArtifact] = await Promise.all([
     realpath(packageDirectory),
     realpath(path.join(packageDirectory, ...artifact.split('/'))),
@@ -53,22 +70,29 @@ async function readPackageArtifact(packageDirectory, artifact, maximumBytes, des
 }
 
 export async function readNpmExtensionSource(
-  extension,
-  sourceDirectory,
-  {allowVersionMismatch = false, maximumArtifactBytes, maximumManifestBytes},
-) {
+  extension: EmbeddedExtension,
+  sourceDirectory: string,
+  {
+    allowVersionMismatch = false,
+    maximumArtifactBytes,
+    maximumManifestBytes,
+  }: NpmExtensionSourceOptions,
+): Promise<NpmExtensionSourceResult> {
   const source = validateExtensionSourceMetadata(extension);
   assert(source?.provider === 'npm', `Extension is not managed by npm: ${extension.id}`);
   const packageDirectory = await findPackageDirectory(sourceDirectory, source.package);
-  let packageManifest;
+  let packageManifest: {name?: unknown; version?: unknown};
   try {
     packageManifest = JSON.parse(
       await readFile(path.join(packageDirectory, 'package.json'), 'utf8'),
     );
   } catch (error) {
-    throw new Error(`Invalid package.json for npm extension ${extension.id}: ${error.message}`, {
-      cause: error,
-    });
+    throw new Error(
+      `Invalid package.json for npm extension ${extension.id}: ${errorMessage(error)}`,
+      {
+        cause: error,
+      },
+    );
   }
   assert(
     packageManifest?.name === source.package,
@@ -107,5 +131,10 @@ export async function readNpmExtensionSource(
         `npm extension API manifest for ${extension.id}`,
       )
     : null;
-  return {apiManifestContents, contents, packageDirectory, version: packageManifest.version};
+  return {
+    apiManifestContents,
+    contents,
+    packageDirectory,
+    version: packageManifest.version as string,
+  };
 }

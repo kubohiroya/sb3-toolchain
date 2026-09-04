@@ -6,9 +6,10 @@ import process from 'node:process';
 
 import {strFromU8, unzipSync} from 'fflate';
 
-import {validateArchiveEntryName} from './archive.js';
-import {validateManagedExtensionApiManifest} from './extension-api-manifest.js';
-import {validateManagedExtensionContents} from './extension-dependencies.js';
+import {validateArchiveEntryName} from './archive';
+import {assert, errorMessage} from './assert';
+import {validateManagedExtensionApiManifest} from './extension-api-manifest';
+import {validateManagedExtensionContents} from './extension-dependencies';
 import {
   assertNoInterruptedRollback,
   assertRecognizedOutputDirectory,
@@ -17,18 +18,66 @@ import {
   pathExists,
   replaceDirectoryTransactionally,
   validateOutputDirectoryPath,
-} from './output-safety.js';
-import {sourceFormatVersion} from './source.js';
+} from './output-safety';
+import type {DirectoryComparison, GitOutputState} from './output-safety';
+import {sourceFormatVersion} from './source';
+import type {
+  EmbeddedExtension,
+  ExtensionEncoding,
+  ExtensionSource,
+  ProjectJson,
+  UnknownRecord,
+} from './types';
 
-export {validateOutputDirectoryPath} from './output-safety.js';
+export {validateOutputDirectoryPath} from './output-safety';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface DecodedExtensionDataUrl {
+  encoding: ExtensionEncoding;
+  mediaType: string;
+  parameters: string[];
+  source: Buffer;
 }
 
-function summarizeGitChanges(gitState) {
+export interface OutputReplacementContext {
+  comparison: DirectoryComparison;
+  discardLocalChanges: boolean;
+  gitState: GitOutputState;
+  outputDirectory: string;
+}
+
+interface OutputReplacementDecision {
+  action: 'create' | 'unchanged' | 'replace';
+  comparison: DirectoryComparison | null;
+  discardLocalChanges?: boolean;
+  gitState: GitOutputState | null;
+  outputDirectory?: string;
+}
+
+export interface ImportSb3Options {
+  confirmReplace?: (context: OutputReplacementContext) => boolean | Promise<boolean>;
+  discardLocalChanges?: boolean;
+  inputPath: string;
+  outputDirectory: string;
+  protectedRoot?: string;
+  yes?: boolean;
+}
+
+export interface ImportSb3Result {
+  archiveEntryCount: number;
+  assetCount: number;
+  changed: boolean;
+  differenceCounts: {added: number; modified: number; removed: number} | null;
+  embeddedExtensionCount: number;
+  inputPath: string;
+  outputDirectory: string;
+  rollbackCleanupWarning: string | null;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function summarizeGitChanges(gitState: GitOutputState): string {
   const entries = [
     ...gitState.statusEntries,
     ...gitState.untrackedContent.map((entry) => `not tracked: ${entry}`),
@@ -44,7 +93,13 @@ async function authorizeOutputReplacement({
   discardLocalChanges,
   outputDirectory,
   yes,
-}) {
+}: {
+  candidateDirectory: string;
+  confirmReplace?: (context: OutputReplacementContext) => boolean | Promise<boolean>;
+  discardLocalChanges: boolean;
+  outputDirectory: string;
+  yes: boolean;
+}): Promise<OutputReplacementDecision> {
   await assertNoInterruptedRollback(outputDirectory);
   if (!(await pathExists(outputDirectory))) {
     return {action: 'create', comparison: null, gitState: null};
@@ -95,7 +150,12 @@ async function revalidateOutputReplacement({
   decision,
   discardLocalChanges,
   outputDirectory,
-}) {
+}: {
+  candidateDirectory: string;
+  decision: OutputReplacementContext;
+  discardLocalChanges: boolean;
+  outputDirectory: string;
+}): Promise<void> {
   const latestComparison = await compareDirectories(outputDirectory, candidateDirectory);
   assert(
     latestComparison.existingFingerprint === decision.comparison.existingFingerprint &&
@@ -120,7 +180,7 @@ async function revalidateOutputReplacement({
   );
 }
 
-function extensionSourcePath(extensionId) {
+function extensionSourcePath(extensionId: string): string {
   assert(
     /^[A-Za-z0-9._-]+$/u.test(extensionId),
     `Embedded extension ID cannot be used as a filename: ${JSON.stringify(extensionId)}`,
@@ -128,7 +188,9 @@ function extensionSourcePath(extensionId) {
   return `extensions/${extensionId}.js`;
 }
 
-async function readExistingExtensionSources(outputDirectory) {
+async function readExistingExtensionSources(
+  outputDirectory: string,
+): Promise<Map<string, ExtensionSource>> {
   if (!(await pathExists(outputDirectory))) {
     return new Map();
   }
@@ -138,7 +200,7 @@ async function readExistingExtensionSources(outputDirectory) {
     return new Map();
   }
 
-  let manifest;
+  let manifest: unknown;
   try {
     manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   } catch (error) {
@@ -147,30 +209,26 @@ async function readExistingExtensionSources(outputDirectory) {
     });
   }
   assert(
-    manifest &&
-      typeof manifest === 'object' &&
-      !Array.isArray(manifest) &&
-      Array.isArray(manifest.extensions),
+    isObject(manifest) && Array.isArray(manifest.extensions),
     `Existing embedded extension manifest is invalid: ${manifestPath}`,
   );
 
-  const sources = new Map();
-  for (const extension of manifest.extensions) {
+  const sources = new Map<string, ExtensionSource>();
+  for (const extension of manifest.extensions as unknown[]) {
     if (
-      !extension ||
-      typeof extension !== 'object' ||
+      !isObject(extension) ||
       typeof extension.id !== 'string' ||
       typeof extension.path !== 'string' ||
       extension.source === undefined
     ) {
       continue;
     }
-    sources.set(`${extension.id}\u0000${extension.path}`, extension.source);
+    sources.set(`${extension.id}\u0000${extension.path}`, extension.source as ExtensionSource);
   }
   return sources;
 }
 
-export function decodeExtensionDataUrl(dataUrl) {
+export function decodeExtensionDataUrl(dataUrl: unknown): DecodedExtensionDataUrl {
   assert(
     typeof dataUrl === 'string' && dataUrl.startsWith('data:'),
     'Embedded extension URL must be a data URL.',
@@ -181,13 +239,13 @@ export function decodeExtensionDataUrl(dataUrl) {
   const metadata = dataUrl.slice('data:'.length, commaIndex).split(';');
   const mediaType = metadata.shift() || 'text/plain';
   const base64Index = metadata.indexOf('base64');
-  const encoding = base64Index >= 0 ? 'base64' : 'percent';
+  const encoding: ExtensionEncoding = base64Index >= 0 ? 'base64' : 'percent';
   if (base64Index >= 0) {
     metadata.splice(base64Index, 1);
   }
 
   const payload = dataUrl.slice(commaIndex + 1);
-  let source;
+  let source: Buffer;
   if (encoding === 'base64') {
     assert(
       /^[A-Za-z0-9+/]*={0,2}$/u.test(payload),
@@ -225,7 +283,7 @@ export async function importSb3({
   discardLocalChanges = false,
   yes = false,
   confirmReplace,
-}) {
+}: ImportSb3Options): Promise<ImportSb3Result> {
   assert(typeof inputPath === 'string', 'Input SB3 path is required.');
   assert(typeof outputDirectory === 'string', 'SB3 source output directory is required.');
   const resolvedInputPath = path.resolve(inputPath);
@@ -241,28 +299,23 @@ export async function importSb3({
   const projectEntry = archive['project.json'];
   assert(projectEntry, 'SB3 archive does not contain project.json.');
 
-  let project;
-  let decision;
-  let rollbackCleanupWarning = null;
+  let project: unknown;
+  let decision: OutputReplacementDecision | undefined;
+  let rollbackCleanupWarning: string | null = null;
   try {
     project = JSON.parse(strFromU8(projectEntry));
   } catch (error) {
-    throw new Error(`SB3 project.json is invalid JSON: ${error.message}`, {cause: error});
+    throw new Error(`SB3 project.json is invalid JSON: ${errorMessage(error)}`, {cause: error});
   }
-  assert(
-    project && typeof project === 'object' && !Array.isArray(project),
-    'SB3 project.json must contain a JSON object.',
-  );
+  assert(isObject(project), 'SB3 project.json must contain a JSON object.');
+  const projectJson: ProjectJson = project;
 
-  const extensionUrls = project.extensionURLs ?? {};
-  assert(
-    extensionUrls && typeof extensionUrls === 'object' && !Array.isArray(extensionUrls),
-    'SB3 project.json extensionURLs must be an object when present.',
-  );
+  const extensionUrls: unknown = projectJson.extensionURLs ?? {};
+  assert(isObject(extensionUrls), 'SB3 project.json extensionURLs must be an object when present.');
 
   const existingExtensionSources = await readExistingExtensionSources(resolvedOutputDirectory);
-  const embeddedExtensions = [];
-  const decodedExtensionSources = [];
+  const embeddedExtensions: EmbeddedExtension[] = [];
+  const decodedExtensionSources: {path: string; source: Buffer}[] = [];
   for (const [extensionId, extensionUrl] of Object.entries(extensionUrls)) {
     if (typeof extensionUrl !== 'string' || !extensionUrl.startsWith('data:')) {
       continue;
@@ -270,7 +323,7 @@ export async function importSb3({
     const sourcePath = extensionSourcePath(extensionId);
     const decoded = decodeExtensionDataUrl(extensionUrl);
     extensionUrls[extensionId] = `embedded-extension:${sourcePath}`;
-    const extension = {
+    const extension: EmbeddedExtension = {
       id: extensionId,
       path: sourcePath,
       mediaType: decoded.mediaType,
@@ -278,7 +331,7 @@ export async function importSb3({
       encoding: decoded.encoding,
     };
     const existingSource = existingExtensionSources.get(`${extensionId}\u0000${sourcePath}`);
-    let existingApiManifestContents = null;
+    let existingApiManifestContents: Buffer | null = null;
     if (existingSource !== undefined) {
       extension.source = structuredClone(existingSource);
       validateManagedExtensionContents(extension, decoded.source);
@@ -291,7 +344,7 @@ export async function importSb3({
     }
     embeddedExtensions.push(extension);
     decodedExtensionSources.push({path: sourcePath, source: decoded.source});
-    if (existingApiManifestContents) {
+    if (existingApiManifestContents && extension.source?.apiManifest) {
       decodedExtensionSources.push({
         path: extension.source.apiManifest.path,
         source: existingApiManifestContents,
@@ -337,7 +390,7 @@ export async function importSb3({
     await Promise.all([
       writeFile(
         path.join(temporaryDirectory, 'project.source.json'),
-        `${JSON.stringify(project, null, 2)}\n`,
+        `${JSON.stringify(projectJson, null, 2)}\n`,
       ),
       writeFile(
         path.join(temporaryDirectory, 'embedded-extensions.json'),
@@ -361,7 +414,7 @@ export async function importSb3({
       if (decision.action === 'replace') {
         await revalidateOutputReplacement({
           candidateDirectory: temporaryDirectory,
-          decision,
+          decision: decision as OutputReplacementContext,
           discardLocalChanges,
           outputDirectory: resolvedOutputDirectory,
         });

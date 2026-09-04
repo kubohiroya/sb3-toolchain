@@ -3,6 +3,7 @@
 import {cp, lstat, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
+import {assert, errorMessage} from './assert';
 import {
   compareExtensionApiManifests,
   defaultExtensionApiManifestSizeLimit,
@@ -11,37 +12,122 @@ import {
   parseExtensionApiManifest,
   validateExtensionApiManifestSourceMetadata,
   validateManagedExtensionApiManifest,
-} from './extension-api-manifest.js';
+} from './extension-api-manifest';
+import type {ExtensionApiCompatibilityChange, ExtensionApiManifest} from './extension-api-manifest';
 import {
   extensionHeaderId,
   extensionIntegrity,
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
-} from './extension-dependencies.js';
-import {rewriteExtensionIdDocuments, validateNewExtensionId} from './extension-id-migration.js';
-import {readNpmExtensionSource} from './npm-extension-source.js';
+} from './extension-dependencies';
+import {rewriteExtensionIdDocuments, validateNewExtensionId} from './extension-id-migration';
+import type {RewriteExtensionIdDocumentsResult} from './extension-id-migration';
+import {readNpmExtensionSource} from './npm-extension-source';
 import {
   assertNoInterruptedRollback,
   compareDirectories,
   pathExists,
   replaceDirectoryTransactionally,
-} from './output-safety.js';
+} from './output-safety';
+import type {DirectoryComparison} from './output-safety';
 import {
   createDeterministicSb3,
   inspectSb3SourceForExtensionSync,
   validateSb3Source,
-} from './source.js';
+} from './source';
+import type {InspectedSb3Source} from './source';
+import type {
+  EmbeddedExtension,
+  EmbeddedExtensionManifest,
+  ExtensionSource,
+  GitHubExtensionSource,
+  ProjectJson,
+} from './types';
 
 export const defaultExtensionArtifactSizeLimit = 5 * 1024 * 1024;
 const githubApiResponseSizeLimit = 1024 * 1024;
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export type FetchImplementation = typeof globalThis.fetch;
+
+export type ExtensionSyncMode = 'sync' | 'update';
+
+/** The candidate manifest is edited in place as a JSON document before it is written back. */
+interface MutableExtensionSource {
+  apiManifest?: {artifact: string; formatVersion: number; integrity: string; path: string};
+  artifact: string;
+  integrity: string;
+  package?: string;
+  provider: string;
+  ref?: string;
+  resolvedCommit?: string;
+  version?: string;
 }
 
-function assertFetch(fetchImplementation) {
+interface MutableManifestExtension {
+  id: string;
+  path: string;
+  source?: MutableExtensionSource;
+  [key: string]: unknown;
+}
+
+interface MutableExtensionManifest {
+  extensions: MutableManifestExtension[];
+  [key: string]: unknown;
+}
+
+interface ApiManifestDownload {
+  contents: Buffer;
+  manifest: ExtensionApiManifest;
+}
+
+interface ExtensionDownload {
+  apiManifestDownload: ApiManifestDownload | null;
+  commit: string | null;
+  compatibilityChanges: ExtensionApiCompatibilityChange[];
+  contents: Buffer;
+  effectiveExtension: EmbeddedExtension;
+  extension: EmbeddedExtension;
+  npmVersion?: string;
+}
+
+export interface ExtensionSyncConfirmContext {
+  comparison: DirectoryComparison;
+  sourceDirectory: string;
+}
+
+interface UpdateCandidateInput {
+  allowBreakingApi: boolean;
+  apiManifestArtifact: string | undefined;
+  confirmReplace?: (context: ExtensionSyncConfirmContext) => boolean | Promise<boolean>;
+  fetchImplementation?: FetchImplementation;
+  maximumArtifactBytes: number;
+  maximumManifestBytes: number;
+  migrateToId: string | undefined;
+  mode: ExtensionSyncMode;
+  selectedExtensionId: string | undefined;
+  sourceArtifact: string | undefined;
+  sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface SyncExtensionsOptions {
+  confirmReplace?: (context: ExtensionSyncConfirmContext) => boolean | Promise<boolean>;
+  fetch?: FetchImplementation;
+  maximumArtifactBytes?: number;
+  maximumManifestBytes?: number;
+  sourceDirectory: string;
+  yes?: boolean;
+}
+
+export interface UpdateExtensionsOptions extends SyncExtensionsOptions {
+  allowBreakingApi?: boolean;
+  apiManifestArtifact?: string;
+  extensionId?: string;
+  migrateToId?: string;
+  sourceArtifact?: string;
+}
+
+function assertFetch(fetchImplementation: FetchImplementation | undefined): FetchImplementation {
   assert(
     typeof fetchImplementation === 'function',
     'A Fetch API implementation is required for GitHub extension operations.',
@@ -49,7 +135,7 @@ function assertFetch(fetchImplementation) {
   return fetchImplementation;
 }
 
-function githubHeaders(accept) {
+function githubHeaders(accept: string): Record<string, string> {
   return {
     Accept: accept,
     'User-Agent': 'sb3-toolchain',
@@ -57,7 +143,11 @@ function githubHeaders(accept) {
   };
 }
 
-function rawArtifactUrl(source, commit, artifactPath = source.artifact) {
+function rawArtifactUrl(
+  source: GitHubExtensionSource,
+  commit: string,
+  artifactPath: string = source.artifact,
+): string {
   const artifact = artifactPath
     .split('/')
     .map((segment) => encodeURIComponent(segment))
@@ -66,17 +156,17 @@ function rawArtifactUrl(source, commit, artifactPath = source.artifact) {
 }
 
 async function downloadExtensionApiManifest(
-  extension,
-  commit,
-  fetchImplementation,
-  maximumManifestBytes,
-  expectedId = extension.id,
-) {
+  extension: EmbeddedExtension,
+  commit: string,
+  fetchImplementation: FetchImplementation,
+  maximumManifestBytes: number,
+  expectedId: string = extension.id,
+): Promise<ApiManifestDownload | null> {
   const metadata = validateExtensionApiManifestSourceMetadata(extension);
   if (!metadata) return null;
   const contents = await fetchBytes(
     fetchImplementation,
-    rawArtifactUrl(extension.source, commit, metadata.artifact),
+    rawArtifactUrl(extension.source as GitHubExtensionSource, commit, metadata.artifact),
     maximumManifestBytes,
     `GitHub extension API manifest download for ${extension.id}`,
     'application/json',
@@ -85,13 +175,17 @@ async function downloadExtensionApiManifest(
   return {contents, manifest};
 }
 
-function githubCommitUrl(source) {
+function githubCommitUrl(source: GitHubExtensionSource): string {
   return (
     `https://api.github.com/repos/${source.repository}/commits/` + encodeURIComponent(source.ref)
   );
 }
 
-async function readLimitedResponse(response, maximumBytes, description) {
+async function readLimitedResponse(
+  response: Response,
+  maximumBytes: number,
+  description: string,
+): Promise<Buffer> {
   const contentLength = response.headers?.get?.('content-length');
   if (contentLength !== null && contentLength !== undefined) {
     const parsedLength = Number(contentLength);
@@ -112,7 +206,7 @@ async function readLimitedResponse(response, maximumBytes, description) {
   }
 
   const reader = response.body.getReader();
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let totalLength = 0;
   try {
     while (true) {
@@ -129,17 +223,23 @@ async function readLimitedResponse(response, maximumBytes, description) {
   return Buffer.concat(chunks, totalLength);
 }
 
-async function fetchBytes(fetchImplementation, url, maximumBytes, description, accept) {
+async function fetchBytes(
+  fetchImplementation: FetchImplementation,
+  url: string,
+  maximumBytes: number,
+  description: string,
+  accept: string,
+): Promise<Buffer> {
   const parsedUrl = new URL(url);
   assert(parsedUrl.protocol === 'https:', `${description} requires HTTPS.`);
-  let response;
+  let response: Response;
   try {
     response = await fetchImplementation(url, {
       headers: githubHeaders(accept),
       redirect: 'error',
     });
   } catch (error) {
-    throw new Error(`${description} request failed: ${error.message}`, {cause: error});
+    throw new Error(`${description} request failed: ${errorMessage(error)}`, {cause: error});
   }
   assert(
     response && typeof response === 'object',
@@ -154,8 +254,11 @@ async function fetchBytes(fetchImplementation, url, maximumBytes, description, a
   return readLimitedResponse(response, maximumBytes, description);
 }
 
-async function resolveGithubCommit(extension, fetchImplementation) {
-  const source = extension.source;
+async function resolveGithubCommit(
+  extension: EmbeddedExtension,
+  fetchImplementation: FetchImplementation,
+): Promise<string> {
+  const source = extension.source as GitHubExtensionSource;
   if (/^[a-f0-9]{40}$/u.test(source.ref)) {
     return source.ref;
   }
@@ -166,7 +269,7 @@ async function resolveGithubCommit(extension, fetchImplementation) {
     `GitHub ref lookup for ${extension.id}`,
     'application/vnd.github+json',
   );
-  let response;
+  let response: {sha?: unknown} | null;
   try {
     response = JSON.parse(contents.toString('utf8'));
   } catch (error) {
@@ -176,19 +279,19 @@ async function resolveGithubCommit(extension, fetchImplementation) {
     typeof response?.sha === 'string' && /^[a-f0-9]{40}$/u.test(response.sha),
     `GitHub ref lookup for ${extension.id} returned an invalid commit SHA.`,
   );
-  return response.sha;
+  return response.sha as string;
 }
 
 async function downloadExtension(
-  extension,
-  commit,
-  fetchImplementation,
-  maximumArtifactBytes,
-  expectedId = extension.id,
-) {
+  extension: EmbeddedExtension,
+  commit: string,
+  fetchImplementation: FetchImplementation,
+  maximumArtifactBytes: number,
+  expectedId: string = extension.id,
+): Promise<Buffer> {
   const contents = await fetchBytes(
     fetchImplementation,
-    rawArtifactUrl(extension.source, commit),
+    rawArtifactUrl(extension.source as GitHubExtensionSource, commit),
     maximumArtifactBytes,
     `GitHub artifact download for ${extension.id}`,
     'application/javascript, text/javascript;q=0.9, */*;q=0.1',
@@ -202,11 +305,14 @@ async function downloadExtension(
   return contents;
 }
 
-function managedExtensions(source) {
+function managedExtensions(source: InspectedSb3Source): EmbeddedExtension[] {
   return source.extensions.filter((extension) => extension.source !== undefined);
 }
 
-async function inspectExtensionSource(sourceDirectory, {willReplace = false} = {}) {
+async function inspectExtensionSource(
+  sourceDirectory: string,
+  {willReplace = false}: {willReplace?: boolean} = {},
+): Promise<InspectedSb3Source> {
   const resolvedSourceDirectory = path.resolve(sourceDirectory);
   if (willReplace) {
     assert(
@@ -235,7 +341,17 @@ async function installCandidate({
   initialSourceFingerprint,
   sourceDirectory,
   yes,
-}) {
+}: {
+  candidateDirectory: string;
+  confirmReplace?: (context: ExtensionSyncConfirmContext) => boolean | Promise<boolean>;
+  initialSourceFingerprint: string;
+  sourceDirectory: string;
+  yes: boolean;
+}): Promise<{
+  changed: boolean;
+  comparison: DirectoryComparison;
+  rollbackCleanupWarning: string | null;
+}> {
   const comparison = await compareDirectories(sourceDirectory, candidateDirectory);
   assert(
     comparison.existingFingerprint === initialSourceFingerprint,
@@ -282,7 +398,7 @@ async function updateCandidate({
   sourceArtifact,
   sourceDirectory,
   yes,
-}) {
+}: UpdateCandidateInput) {
   assert(
     Number.isSafeInteger(maximumArtifactBytes) && maximumArtifactBytes > 0,
     'maximumArtifactBytes must be a positive integer.',
@@ -321,7 +437,7 @@ async function updateCandidate({
     );
     validateNewExtensionId(migrateToId);
     assert(
-      selected.every((extension) => extension.source.provider === 'github'),
+      selected.every((extension) => extension.source?.provider === 'github'),
       'Extension ID migration is not supported for npm-managed extensions.',
     );
   }
@@ -339,7 +455,8 @@ async function updateCandidate({
         path.join(source.resolvedSourceDirectory, source.sourceManifest.embeddedExtensions),
         'utf8',
       ),
-    );
+    ) as EmbeddedExtensionManifest;
+    assert(selectedExtensionId !== undefined, 'Extension ID migration requires an extension ID.');
     rewriteExtensionIdDocuments({
       apiManifestArtifact,
       extensionManifest,
@@ -350,11 +467,11 @@ async function updateCandidate({
     });
   }
 
-  const downloads = await Promise.all(
-    selected.map(async (extension) => {
+  const downloads: ExtensionDownload[] = await Promise.all(
+    selected.map(async (extension): Promise<ExtensionDownload> => {
       let effectiveExtension = extension;
       if (sourceArtifact !== undefined || apiManifestArtifact !== undefined) {
-        const effectiveSource = {...extension.source};
+        const effectiveSource = {...extension.source} as ExtensionSource;
         if (sourceArtifact !== undefined) effectiveSource.artifact = sourceArtifact;
         if (apiManifestArtifact !== undefined) {
           assert(
@@ -369,7 +486,7 @@ async function updateCandidate({
         effectiveExtension = {...extension, source: effectiveSource};
       }
       validateExtensionSourceMetadata(effectiveExtension);
-      if (effectiveExtension.source.provider === 'npm') {
+      if (effectiveExtension.source?.provider === 'npm') {
         const npmSource = await readNpmExtensionSource(
           effectiveExtension,
           source.resolvedSourceDirectory,
@@ -387,7 +504,7 @@ async function updateCandidate({
               }),
             }
           : null;
-        let compatibilityChanges = [];
+        let compatibilityChanges: ExtensionApiCompatibilityChange[] = [];
         if (mode === 'sync') {
           validateManagedExtensionContents(extension, npmSource.contents);
           if (apiManifestDownload) {
@@ -404,7 +521,11 @@ async function updateCandidate({
           const installedApiManifest = validateManagedExtensionApiManifest(
             extension,
             installedApiManifestContents,
-          ).manifest;
+          )?.manifest;
+          assert(
+            installedApiManifest,
+            `Managed extension API manifest is invalid: ${extension.id}`,
+          );
           compatibilityChanges = compareExtensionApiManifests(
             installedApiManifest,
             apiManifestDownload.manifest,
@@ -423,7 +544,7 @@ async function updateCandidate({
       const githubFetch = assertFetch(fetchImplementation);
       const commit =
         mode === 'sync'
-          ? extension.source.resolvedCommit
+          ? (extension.source as GitHubExtensionSource).resolvedCommit
           : await resolveGithubCommit(extension, githubFetch);
       const expectedId = migrateToId ?? extension.id;
       const [contents, apiManifestDownload] = await Promise.all([
@@ -442,7 +563,7 @@ async function updateCandidate({
           expectedId,
         ),
       ]);
-      let compatibilityChanges = [];
+      let compatibilityChanges: ExtensionApiCompatibilityChange[] = [];
       if (mode === 'sync') {
         validateManagedExtensionContents(extension, contents);
         if (apiManifestDownload) {
@@ -457,7 +578,8 @@ async function updateCandidate({
         const installedApiManifest = validateManagedExtensionApiManifest(
           extension,
           installedApiManifestContents,
-        ).manifest;
+        )?.manifest;
+        assert(installedApiManifest, `Managed extension API manifest is invalid: ${extension.id}`);
         compatibilityChanges = compareExtensionApiManifests(
           installedApiManifest,
           apiManifestDownload.manifest,
@@ -507,11 +629,11 @@ async function updateCandidate({
       verbatimSymlinks: true,
     });
     const manifestPath = path.join(candidateDirectory, source.sourceManifest.embeddedExtensions);
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as MutableExtensionManifest;
     const projectPath = path.join(candidateDirectory, source.sourceManifest.project);
-    const entriesById = new Map(manifest.extensions.map((extension) => [extension.id, extension]));
+    const entriesById = new Map(manifest.extensions.map((entry) => [entry.id, entry]));
     let manifestChanged = false;
-    let migration;
+    let migration: RewriteExtensionIdDocumentsResult | undefined;
     for (const {
       apiManifestDownload,
       commit,
@@ -521,20 +643,24 @@ async function updateCandidate({
       npmVersion,
     } of downloads) {
       if (migrateToId !== undefined) {
-        const project = JSON.parse(await readFile(projectPath, 'utf8'));
+        const project = JSON.parse(await readFile(projectPath, 'utf8')) as ProjectJson;
         migration = rewriteExtensionIdDocuments({
           apiManifestArtifact,
-          extensionManifest: manifest,
+          extensionManifest: manifest as unknown as EmbeddedExtensionManifest,
           newId: migrateToId,
           oldId: extension.id,
           project,
-          sourceArtifact: effectiveExtension.source.artifact,
+          sourceArtifact: effectiveExtension.source?.artifact,
         });
-        const migratedExtension = migration.extensionManifest.extensions[migration.extensionIndex];
-        migratedExtension.source.resolvedCommit = commit;
-        migratedExtension.source.integrity = extensionIntegrity(contents);
-        if (apiManifestDownload) {
-          migratedExtension.source.apiManifest.integrity = extensionApiManifestIntegrity(
+        const migratedExtension = migration.extensionManifest.extensions[
+          migration.extensionIndex
+        ] as unknown as MutableManifestExtension;
+        const migratedSource = migratedExtension.source;
+        assert(migratedSource, `Migrated extension has no source metadata: ${extension.id}`);
+        migratedSource.resolvedCommit = commit ?? undefined;
+        migratedSource.integrity = extensionIntegrity(contents);
+        if (apiManifestDownload && migratedSource.apiManifest) {
+          migratedSource.apiManifest.integrity = extensionApiManifestIntegrity(
             apiManifestDownload.contents,
           );
         }
@@ -560,32 +686,34 @@ async function updateCandidate({
       }
       await writeFile(path.join(candidateDirectory, extension.path), contents);
       if (apiManifestDownload) {
+        const apiManifestPath = extension.source?.apiManifest?.path;
+        assert(apiManifestPath, `Managed extension API manifest path is missing: ${extension.id}`);
         await writeFile(
-          path.join(candidateDirectory, extension.source.apiManifest.path),
+          path.join(candidateDirectory, apiManifestPath),
           apiManifestDownload.contents,
         );
       }
       if (mode === 'update') {
         const candidateExtension = entriesById.get(extension.id);
         assert(candidateExtension, `Extension manifest entry disappeared: ${extension.id}`);
+        const candidateSource = candidateExtension.source;
+        assert(candidateSource, `Extension manifest entry has no source: ${extension.id}`);
         const integrity = extensionIntegrity(contents);
-        manifestChanged = manifestChanged || candidateExtension.source.integrity !== integrity;
-        if (candidateExtension.source.provider === 'npm') {
-          manifestChanged = manifestChanged || candidateExtension.source.version !== npmVersion;
-          candidateExtension.source.version = npmVersion;
+        manifestChanged = manifestChanged || candidateSource.integrity !== integrity;
+        if (candidateSource.provider === 'npm') {
+          manifestChanged = manifestChanged || candidateSource.version !== npmVersion;
+          candidateSource.version = npmVersion;
         } else {
-          manifestChanged = manifestChanged || candidateExtension.source.resolvedCommit !== commit;
-          candidateExtension.source.resolvedCommit = commit;
+          manifestChanged = manifestChanged || candidateSource.resolvedCommit !== commit;
+          candidateSource.resolvedCommit = commit ?? undefined;
         }
-        candidateExtension.source.integrity = integrity;
-        if (apiManifestDownload) {
+        candidateSource.integrity = integrity;
+        if (apiManifestDownload && candidateSource.apiManifest) {
           const apiManifestIntegrity = extensionApiManifestIntegrity(apiManifestDownload.contents);
           manifestChanged =
-            manifestChanged ||
-            candidateExtension.source.apiManifest.integrity !== apiManifestIntegrity;
-          candidateExtension.source.apiManifest.integrity = apiManifestIntegrity;
-          candidateExtension.source.apiManifest.formatVersion =
-            apiManifestDownload.manifest.formatVersion;
+            manifestChanged || candidateSource.apiManifest.integrity !== apiManifestIntegrity;
+          candidateSource.apiManifest.integrity = apiManifestIntegrity;
+          candidateSource.apiManifest.formatVersion = apiManifestDownload.manifest.formatVersion;
         }
       }
     }
@@ -614,19 +742,20 @@ async function updateCandidate({
           id: migrateToId ?? extension.id,
           previousId: migrateToId === undefined ? undefined : extension.id,
         })),
-      extensions: downloads.map(({commit, extension, npmVersion}) =>
-        extension.source.provider === 'npm'
+      extensions: downloads.map(({commit, extension, npmVersion}) => {
+        const extensionSource = extension.source;
+        return extensionSource?.provider === 'npm'
           ? {
               id: extension.id,
-              package: extension.source.package,
+              package: extensionSource.package,
               version: npmVersion,
             }
           : {
               id: migrateToId ?? extension.id,
               previousId: migrateToId === undefined ? undefined : extension.id,
               resolvedCommit: commit,
-            },
-      ),
+            };
+      }),
       migration:
         migration === undefined
           ? null
@@ -648,31 +777,34 @@ async function updateCandidate({
 }
 
 export async function extensionStatus(
-  sourceDirectory,
-  {fetch: fetchImplementation = globalThis.fetch} = {},
+  sourceDirectory: string,
+  {fetch: fetchImplementation = globalThis.fetch}: {fetch?: FetchImplementation} = {},
 ) {
   const source = await inspectExtensionSource(sourceDirectory);
   return Promise.all(
     managedExtensions(source).map(async (extension) => {
+      const extensionSource = extension.source;
+      assert(extensionSource, `Managed extension has no source metadata: ${extension.id}`);
       let local = 'valid';
       try {
-        validateManagedExtensionContents(extension, source.extensionContents.get(extension.id));
-        if (extension.source.apiManifest) {
-          validateManagedExtensionApiManifest(
-            extension,
-            source.extensionApiManifestContents.get(extension.id),
-          );
+        const contents = source.extensionContents.get(extension.id);
+        assert(contents, `Managed extension contents are missing: ${extension.id}`);
+        validateManagedExtensionContents(extension, contents);
+        if (extensionSource.apiManifest) {
+          const apiManifestContents = source.extensionApiManifestContents.get(extension.id);
+          assert(apiManifestContents, `Managed extension API manifest is missing: ${extension.id}`);
+          validateManagedExtensionApiManifest(extension, apiManifestContents);
         }
       } catch {
         local = 'modified';
       }
-      if (extension.source.provider === 'npm') {
+      if (extensionSource.provider === 'npm') {
         const npmSource = await readNpmExtensionSource(extension, source.resolvedSourceDirectory, {
           allowVersionMismatch: true,
           maximumArtifactBytes: defaultExtensionArtifactSizeLimit,
           maximumManifestBytes: defaultExtensionApiManifestSizeLimit,
         });
-        if (npmSource.version === extension.source.version) {
+        if (npmSource.version === extensionSource.version) {
           validateManagedExtensionContents(extension, npmSource.contents);
           if (npmSource.apiManifestContents) {
             validateManagedExtensionApiManifest(extension, npmSource.apiManifestContents);
@@ -682,19 +814,19 @@ export async function extensionStatus(
           id: extension.id,
           installedVersion: npmSource.version,
           local,
-          package: extension.source.package,
-          state: npmSource.version === extension.source.version ? 'current' : 'update-available',
-          version: extension.source.version,
+          package: extensionSource.package,
+          state: npmSource.version === extensionSource.version ? 'current' : 'update-available',
+          version: extensionSource.version,
         };
       }
       const remoteCommit = await resolveGithubCommit(extension, assertFetch(fetchImplementation));
       return {
         id: extension.id,
         local,
-        ref: extension.source.ref,
+        ref: extensionSource.ref,
         remoteCommit,
-        resolvedCommit: extension.source.resolvedCommit,
-        state: remoteCommit === extension.source.resolvedCommit ? 'current' : 'update-available',
+        resolvedCommit: extensionSource.resolvedCommit,
+        state: remoteCommit === extensionSource.resolvedCommit ? 'current' : 'update-available',
       };
     }),
   );
@@ -707,7 +839,7 @@ export async function syncExtensions({
   maximumManifestBytes = defaultExtensionApiManifestSizeLimit,
   sourceDirectory,
   yes = false,
-}) {
+}: SyncExtensionsOptions) {
   return updateCandidate({
     allowBreakingApi: false,
     apiManifestArtifact: undefined,
@@ -736,7 +868,7 @@ export async function updateExtensions({
   sourceArtifact,
   sourceDirectory,
   yes = false,
-}) {
+}: UpdateExtensionsOptions) {
   return updateCandidate({
     allowBreakingApi,
     apiManifestArtifact,

@@ -3,27 +3,91 @@
 import {cp, lstat, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
+import {assert} from './assert';
 import {
   buildExtensionBundles,
   validateBundleId,
   validateBundleName,
   validateExtensionBundleConfigurations,
-} from './extension-bundle.js';
+} from './extension-bundle';
+import type {ExtensionBundlePlan} from './extension-bundle';
 import {
   assertNoInterruptedRollback,
   compareDirectories,
   pathExists,
   replaceDirectoryTransactionally,
-} from './output-safety.js';
-import {createDeterministicSb3, inspectSb3SourceForExtensionSync} from './source.js';
+} from './output-safety';
+import type {DirectoryComparison} from './output-safety';
+import {createDeterministicSb3, inspectSb3SourceForExtensionSync} from './source';
+import type {InspectedSb3Source} from './source';
+import type {EmbeddedExtensionManifest, ExtensionBundleConfiguration} from './types';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+interface ExtensionBundleComponentMetadata {
+  author: string | null;
+  description: string | null;
+  id: string | null;
+  license: string | null;
+  name: string | null;
 }
 
-async function inspectConfigurationSource(sourceDirectory, willReplace) {
+interface ConfigurationContext {
+  buildPlan: ReturnType<typeof buildExtensionBundles>;
+  candidateManifest: EmbeddedExtensionManifest;
+  configuredBundle: ExtensionBundlePlan;
+  extensionManifest: EmbeddedExtensionManifest;
+  source: InspectedSb3Source;
+}
+
+interface UnbundleContext {
+  candidateManifest: EmbeddedExtensionManifest;
+  extensionManifest: EmbeddedExtensionManifest;
+  removedBundle: ExtensionBundleConfiguration;
+  source: InspectedSb3Source;
+}
+
+export interface ExtensionBundleConfigurationInput {
+  bundleId: string;
+  bundleName: string;
+  extensionIds?: string[];
+  recoveryCapsule?: boolean;
+  sourceDirectory: string;
+  yes?: boolean;
+}
+
+export interface ExtensionBundlePlanResult {
+  applied: boolean;
+  bundleId: string;
+  bundleName: string;
+  changed: boolean;
+  components: ExtensionBundleComponentMetadata[];
+  counts: ExtensionBundlePlan['counts'];
+  members: string[];
+  recoveryCapsule: boolean;
+  sourceDirectory: string;
+}
+
+export interface ExtensionBundleApplyResult extends ExtensionBundlePlanResult {
+  comparison?: DirectoryComparison;
+  rollbackCleanupWarning: string | null;
+}
+
+export interface ExtensionUnbundlePlanResult {
+  applied: boolean;
+  bundleId: string;
+  changed: boolean;
+  members: string[];
+  sourceDirectory: string;
+}
+
+export interface ExtensionUnbundleApplyResult extends ExtensionUnbundlePlanResult {
+  comparison?: DirectoryComparison;
+  rollbackCleanupWarning: string | null;
+}
+
+async function inspectConfigurationSource(
+  sourceDirectory: string,
+  willReplace: boolean,
+): Promise<InspectedSb3Source> {
   const resolvedSourceDirectory = path.resolve(sourceDirectory);
   if (willReplace) {
     assert(
@@ -44,12 +108,14 @@ async function inspectConfigurationSource(sourceDirectory, willReplace) {
   return inspectSb3SourceForExtensionSync(resolvedSourceDirectory);
 }
 
-async function readExtensionManifest(source) {
+async function readExtensionManifest(
+  source: InspectedSb3Source,
+): Promise<EmbeddedExtensionManifest> {
   const manifestPath = path.join(
     source.resolvedSourceDirectory,
     source.sourceManifest.embeddedExtensions,
   );
-  return JSON.parse(await readFile(manifestPath, 'utf8'));
+  return JSON.parse(await readFile(manifestPath, 'utf8')) as EmbeddedExtensionManifest;
 }
 
 async function configurationContext({
@@ -59,7 +125,15 @@ async function configurationContext({
   recoveryCapsule,
   sourceDirectory,
   willReplace,
-}) {
+}: Required<
+  Pick<
+    ExtensionBundleConfigurationInput,
+    'bundleId' | 'bundleName' | 'recoveryCapsule' | 'sourceDirectory'
+  >
+> & {
+  extensionIds?: string[];
+  willReplace: boolean;
+}): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
   validateBundleName(bundleName);
   assert(typeof recoveryCapsule === 'boolean', 'recoveryCapsule must be a boolean.');
@@ -101,6 +175,7 @@ async function configurationContext({
     project: source.project,
   });
   const configuredBundle = buildPlan.bundlePlans.find((plan) => plan.bundle.id === bundleId);
+  assert(configuredBundle, `Extension bundle plan was not produced: ${bundleId}`);
   return {buildPlan, candidateManifest, configuredBundle, extensionManifest, source};
 }
 
@@ -110,7 +185,7 @@ export async function planExtensionBundle({
   extensionIds,
   recoveryCapsule = false,
   sourceDirectory,
-}) {
+}: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
     bundleId,
     bundleName,
@@ -132,7 +207,10 @@ export async function planExtensionBundle({
   };
 }
 
-async function installManifestConfiguration(context, operation) {
+async function installManifestConfiguration(
+  context: ConfigurationContext | UnbundleContext,
+  operation: string,
+): Promise<{comparison: DirectoryComparison; rollbackCleanupWarning: string | null}> {
   const initialComparison = await compareDirectories(
     context.source.resolvedSourceDirectory,
     context.source.resolvedSourceDirectory,
@@ -194,7 +272,7 @@ export async function bundleExtensions({
   recoveryCapsule = false,
   sourceDirectory,
   yes = false,
-}) {
+}: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
     bundleId,
     bundleName,
@@ -219,7 +297,15 @@ export async function bundleExtensions({
   return {applied: true, changed: true, ...installation, ...plan};
 }
 
-async function unbundleContext({bundleId, sourceDirectory, willReplace}) {
+async function unbundleContext({
+  bundleId,
+  sourceDirectory,
+  willReplace,
+}: {
+  bundleId: string;
+  sourceDirectory: string;
+  willReplace: boolean;
+}): Promise<UnbundleContext> {
   validateBundleId(bundleId);
   const source = await inspectConfigurationSource(sourceDirectory, willReplace);
   const extensionManifest = await readExtensionManifest(source);
@@ -239,7 +325,13 @@ async function unbundleContext({bundleId, sourceDirectory, willReplace}) {
   return {candidateManifest, extensionManifest, removedBundle, source};
 }
 
-export async function planExtensionUnbundle({bundleId, sourceDirectory}) {
+export async function planExtensionUnbundle({
+  bundleId,
+  sourceDirectory,
+}: {
+  bundleId: string;
+  sourceDirectory: string;
+}): Promise<ExtensionUnbundlePlanResult> {
   const context = await unbundleContext({bundleId, sourceDirectory, willReplace: false});
   return {
     applied: false,
@@ -250,7 +342,15 @@ export async function planExtensionUnbundle({bundleId, sourceDirectory}) {
   };
 }
 
-export async function unbundleExtensions({bundleId, sourceDirectory, yes = false}) {
+export async function unbundleExtensions({
+  bundleId,
+  sourceDirectory,
+  yes = false,
+}: {
+  bundleId: string;
+  sourceDirectory: string;
+  yes?: boolean;
+}): Promise<ExtensionUnbundleApplyResult> {
   const context = await unbundleContext({bundleId, sourceDirectory, willReplace: yes});
   const plan = {
     bundleId,

@@ -4,16 +4,40 @@ import {randomUUID} from 'node:crypto';
 import {lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
-import {pathExists} from './output-safety.js';
-import {createDeterministicSb3} from './source.js';
+import {assert, errorMessage} from './assert';
+import {pathExists} from './output-safety';
+import {createDeterministicSb3} from './source';
+import type {DeterministicSb3} from './source';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+interface ExistingOutput {
+  contents: Buffer | null;
+  exists: boolean;
 }
 
-async function assertNoInterruptedRollback(outputPath) {
+export interface WriteSb3ArchiveOptions {
+  archive: Uint8Array;
+  confirmReplace?: (outputPath: string) => boolean | Promise<boolean>;
+  outputPath: string;
+  yes?: boolean;
+}
+
+export interface WriteSb3ArchiveResult {
+  changed: boolean;
+  outputPath: string;
+  rollbackCleanupWarning: string | null;
+}
+
+export interface BuildSb3Options {
+  allowedAssetRoots?: string[];
+  cleanUpBlocks?: boolean;
+  confirmReplace?: (outputPath: string) => boolean | Promise<boolean>;
+  outputPath: string;
+  projectAssetsPath?: string;
+  sourceDirectory: string;
+  yes?: boolean;
+}
+
+async function assertNoInterruptedRollback(outputPath: string): Promise<void> {
   const parentDirectory = path.dirname(outputPath);
   if (!(await pathExists(parentDirectory))) {
     return;
@@ -29,7 +53,7 @@ async function assertNoInterruptedRollback(outputPath) {
   );
 }
 
-async function inspectOutput(outputPath) {
+async function inspectOutput(outputPath: string): Promise<ExistingOutput> {
   if (!(await pathExists(outputPath))) {
     return {contents: null, exists: false};
   }
@@ -41,17 +65,25 @@ async function inspectOutput(outputPath) {
   return {contents: await readFile(outputPath), exists: true};
 }
 
-async function assertOutputUnchanged(outputPath, expectedOutput) {
+async function assertOutputUnchanged(
+  outputPath: string,
+  expectedOutput: ExistingOutput,
+): Promise<void> {
   const currentOutput = await inspectOutput(outputPath);
   assert(
     currentOutput.exists === expectedOutput.exists &&
-      (!currentOutput.exists ||
+      (!currentOutput.contents ||
+        !expectedOutput.contents ||
         Buffer.compare(currentOutput.contents, expectedOutput.contents) === 0),
     `SB3 output changed while the build was running; refusing to replace it: ${outputPath}`,
   );
 }
 
-async function installArchiveTransactionally(archive, outputPath, expectedOutput) {
+async function installArchiveTransactionally(
+  archive: Uint8Array,
+  outputPath: string,
+  expectedOutput: ExistingOutput,
+): Promise<string | null> {
   const parentDirectory = path.dirname(outputPath);
   await assertNoInterruptedRollback(outputPath);
   const temporaryDirectory = await mkdtemp(
@@ -98,7 +130,7 @@ async function installArchiveTransactionally(archive, outputPath, expectedOutput
   } catch (error) {
     return (
       `Built SB3 was installed, but its temporary rollback file could not be removed: ` +
-      `${rollbackPath} (${error.message})`
+      `${rollbackPath} (${errorMessage(error)})`
     );
   }
 }
@@ -108,7 +140,7 @@ export async function writeSb3Archive({
   confirmReplace = undefined,
   outputPath,
   yes = false,
-}) {
+}: WriteSb3ArchiveOptions): Promise<WriteSb3ArchiveResult> {
   assert(archive instanceof Uint8Array, 'SB3 archive contents are required.');
   assert(typeof outputPath === 'string', 'SB3 output path is required.');
   const resolvedOutputPath = path.resolve(outputPath);
@@ -118,7 +150,7 @@ export async function writeSb3Archive({
   );
   await assertNoInterruptedRollback(resolvedOutputPath);
   const existingOutput = await inspectOutput(resolvedOutputPath);
-  if (existingOutput.exists) {
+  if (existingOutput.exists && existingOutput.contents) {
     if (Buffer.compare(existingOutput.contents, Buffer.from(archive)) === 0) {
       return {
         changed: false,
@@ -152,17 +184,6 @@ export async function writeSb3Archive({
   };
 }
 
-/**
- * @param {{
- *   allowedAssetRoots?: string[],
- *   cleanUpBlocks?: boolean,
- *   confirmReplace?: (outputPath: string) => Promise<boolean>,
- *   outputPath: string,
- *   projectAssetsPath?: string,
- *   sourceDirectory: string,
- *   yes?: boolean,
- * }} options
- */
 export async function buildSb3({
   allowedAssetRoots = [],
   cleanUpBlocks = false,
@@ -171,7 +192,7 @@ export async function buildSb3({
   projectAssetsPath,
   sourceDirectory,
   yes = false,
-}) {
+}: BuildSb3Options): Promise<DeterministicSb3 & WriteSb3ArchiveResult> {
   assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
   const built = await createDeterministicSb3(sourceDirectory, {
     allowedAssetRoots,

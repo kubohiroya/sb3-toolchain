@@ -2,13 +2,9 @@
 
 import path from 'node:path';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
+import {assert} from './assert';
 
-export function validateArchiveEntryName(entryName) {
+export function validateArchiveEntryName(entryName: unknown): string {
   assert(
     typeof entryName === 'string' && entryName.length > 0,
     'SB3 archive contains an empty entry name.',

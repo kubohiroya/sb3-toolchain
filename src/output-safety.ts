@@ -5,25 +5,54 @@ import {createHash, randomUUID} from 'node:crypto';
 import {access, lstat, realpath, readdir, readFile, readlink, rename, rm} from 'node:fs/promises';
 import path from 'node:path';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+import {assert, errorMessage} from './assert';
+
+type SnapshotEntry =
+  | {type: 'directory'}
+  | {type: 'file'; size: number; digest: string}
+  | {type: 'symbolic-link'; target: string}
+  | {type: 'other'};
+
+export interface DirectoryDifferences {
+  added: string[];
+  modified: string[];
+  removed: string[];
 }
 
-export async function pathExists(targetPath) {
+export interface DirectoryComparison {
+  candidateFingerprint: string;
+  differences: DirectoryDifferences;
+  existingFilePaths: string[];
+  existingFingerprint: string;
+  identical: boolean;
+}
+
+export interface GitOutputState {
+  clean: boolean;
+  fingerprint: string;
+  managed: boolean;
+  repositoryRoot: string | null;
+  statusEntries: string[];
+  untrackedContent: string[];
+}
+
+function errorCode(error: unknown): string | number | undefined {
+  return (error as NodeJS.ErrnoException | null)?.code;
+}
+
+export async function pathExists(targetPath: string): Promise<boolean> {
   try {
     await access(targetPath);
     return true;
   } catch (error) {
-    if (error?.code === 'ENOENT') {
+    if (errorCode(error) === 'ENOENT') {
       return false;
     }
     throw error;
   }
 }
 
-function isSamePathOrAncestor(candidatePath, targetPath) {
+function isSamePathOrAncestor(candidatePath: string, targetPath: string): boolean {
   const relativePath = path.relative(candidatePath, targetPath);
   return (
     relativePath === '' ||
@@ -33,7 +62,10 @@ function isSamePathOrAncestor(candidatePath, targetPath) {
   );
 }
 
-export function validateOutputDirectoryPath(outputDirectory, protectedRoot) {
+export function validateOutputDirectoryPath(
+  outputDirectory: string,
+  protectedRoot: string,
+): string {
   const resolvedOutputDirectory = path.resolve(outputDirectory);
   const resolvedProtectedRoot = path.resolve(protectedRoot);
   assert(
@@ -51,18 +83,21 @@ export function validateOutputDirectoryPath(outputDirectory, protectedRoot) {
   return resolvedOutputDirectory;
 }
 
-export async function assertRecognizedOutputDirectory(outputDirectory, sourceFormatVersion) {
+export async function assertRecognizedOutputDirectory(
+  outputDirectory: string,
+  sourceFormatVersion: number,
+): Promise<void> {
   const stats = await lstat(outputDirectory);
   assert(
     stats.isDirectory() && !stats.isSymbolicLink(),
     `Refusing to replace a non-directory or symbolic link: ${outputDirectory}`,
   );
 
-  let manifest;
+  let manifest: Record<string, unknown> | null;
   try {
     manifest = JSON.parse(await readFile(path.join(outputDirectory, 'sb3-source.json'), 'utf8'));
   } catch (error) {
-    if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+    if (errorCode(error) !== 'ENOENT' && !(error instanceof SyntaxError)) {
       throw error;
     }
     throw new Error(
@@ -81,14 +116,14 @@ export async function assertRecognizedOutputDirectory(outputDirectory, sourceFor
   );
 }
 
-function digest(value) {
+function digest(value: Uint8Array | string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-async function snapshotDirectory(rootDirectory) {
-  const snapshot = new Map();
+async function snapshotDirectory(rootDirectory: string): Promise<Map<string, SnapshotEntry>> {
+  const snapshot = new Map<string, SnapshotEntry>();
 
-  async function visit(directory, relativeDirectory) {
+  async function visit(directory: string, relativeDirectory: string): Promise<void> {
     const entries = await readdir(directory, {withFileTypes: true});
     entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 
@@ -122,21 +157,24 @@ async function snapshotDirectory(rootDirectory) {
   return snapshot;
 }
 
-function snapshotFingerprint(snapshot) {
+function snapshotFingerprint(snapshot: Map<string, SnapshotEntry>): string {
   return digest(JSON.stringify([...snapshot.entries()]));
 }
 
-function entriesMatch(left, right) {
+function entriesMatch(left: SnapshotEntry, right: SnapshotEntry): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export async function compareDirectories(existingDirectory, candidateDirectory) {
+export async function compareDirectories(
+  existingDirectory: string,
+  candidateDirectory: string,
+): Promise<DirectoryComparison> {
   const [existingSnapshot, candidateSnapshot] = await Promise.all([
     snapshotDirectory(existingDirectory),
     snapshotDirectory(candidateDirectory),
   ]);
   const paths = [...new Set([...existingSnapshot.keys(), ...candidateSnapshot.keys()])].sort();
-  const differences = {added: [], modified: [], removed: []};
+  const differences: DirectoryDifferences = {added: [], modified: [], removed: []};
 
   for (const relativePath of paths) {
     const existingEntry = existingSnapshot.get(relativePath);
@@ -161,16 +199,15 @@ export async function compareDirectories(existingDirectory, candidateDirectory) 
   };
 }
 
-function executeGit(arguments_, cwd) {
-  return new Promise((resolve, reject) => {
+function executeGit(arguments_: string[], cwd: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     execFile(
       'git',
       arguments_,
       {cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024},
       (error, stdout, stderr) => {
         if (error) {
-          error.stdout = stdout;
-          error.stderr = stderr;
+          Object.assign(error, {stdout, stderr});
           reject(error);
           return;
         }
@@ -180,16 +217,19 @@ function executeGit(arguments_, cwd) {
   });
 }
 
-function toPosixPath(value) {
+function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
 }
 
-export async function inspectGitOutputState(outputDirectory, existingFilePaths) {
-  let repositoryRoot;
+export async function inspectGitOutputState(
+  outputDirectory: string,
+  existingFilePaths: string[],
+): Promise<GitOutputState> {
+  let repositoryRoot: string;
   try {
     repositoryRoot = (await executeGit(['rev-parse', '--show-toplevel'], outputDirectory)).trim();
   } catch (error) {
-    if (error?.code === 128) {
+    if (errorCode(error) === 128) {
       return {
         clean: false,
         fingerprint: 'not-git-managed',
@@ -257,7 +297,7 @@ export async function inspectGitOutputState(outputDirectory, existingFilePaths) 
   };
 }
 
-export async function assertNoInterruptedRollback(outputDirectory) {
+export async function assertNoInterruptedRollback(outputDirectory: string): Promise<void> {
   const parentDirectory = path.dirname(outputDirectory);
   const outputName = path.basename(outputDirectory);
   const rollbackPrefixes = [`.${outputName}.rollback-`, `.${outputName}.backup-`];
@@ -271,7 +311,10 @@ export async function assertNoInterruptedRollback(outputDirectory) {
   );
 }
 
-export async function replaceDirectoryTransactionally(temporaryDirectory, outputDirectory) {
+export async function replaceDirectoryTransactionally(
+  temporaryDirectory: string,
+  outputDirectory: string,
+): Promise<{rollbackCleanupWarning: string | null}> {
   const parentDirectory = path.dirname(outputDirectory);
   await assertNoInterruptedRollback(outputDirectory);
   const rollbackDirectory = path.join(
@@ -316,7 +359,7 @@ export async function replaceDirectoryTransactionally(temporaryDirectory, output
     return {
       rollbackCleanupWarning:
         `Imported output was installed, but its temporary rollback ` +
-        `directory could not be removed: ${rollbackDirectory} (${error.message})`,
+        `directory could not be removed: ${rollbackDirectory} (${errorMessage(error)})`,
     };
   }
 }

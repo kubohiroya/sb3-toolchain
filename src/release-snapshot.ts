@@ -5,29 +5,81 @@ import {mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
+import {assert} from './assert';
+import type {UnknownRecord} from './types';
+
 const releaseSnapshotFormatVersion = 1;
 const releaseSnapshotStates = new Set(['candidate', 'frozen', 'published']);
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export type ReleaseSnapshotState = 'candidate' | 'frozen' | 'published';
+
+export type ReleaseSourceFiles = Map<string, Buffer | Uint8Array | string>;
+
+export interface ReleaseSnapshotArtifact {
+  filename: string;
+  sha256: string;
+  size: number;
+  url?: string;
 }
 
-function sha256(contents) {
+export interface ReleaseSnapshotPublication {
+  urls?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface Sb3ReleaseSnapshotMetadata {
+  artifact: ReleaseSnapshotArtifact;
+  formatVersion: number;
+  publication: ReleaseSnapshotPublication;
+  sourceIdentity: string;
+  state: ReleaseSnapshotState;
+  [key: string]: unknown;
+}
+
+export interface CreateReleaseSnapshotMetadataInput {
+  artifact: {archive: Buffer | Uint8Array | string; filename: string; url?: string};
+  metadata?: UnknownRecord;
+  publication?: ReleaseSnapshotPublication;
+  sourceFiles: ReleaseSourceFiles;
+  state?: ReleaseSnapshotState;
+}
+
+export interface BuiltReleaseArtifact {
+  archive: Buffer | Uint8Array | string;
+}
+
+export interface CreateReleaseSnapshotInput {
+  artifact: {filename: string; url?: string};
+  createSb3: () => BuiltReleaseArtifact | Promise<BuiltReleaseArtifact>;
+  metadata?: UnknownRecord;
+  publication?: ReleaseSnapshotPublication;
+  sourceFiles: ReleaseSourceFiles;
+  state?: ReleaseSnapshotState;
+}
+
+export interface VerifyReleaseSnapshotOptions {
+  createSb3?: () => BuiltReleaseArtifact | Promise<BuiltReleaseArtifact>;
+  fetchPublishedArtifact?: (
+    snapshot: Sb3ReleaseSnapshotMetadata,
+  ) => Buffer | Uint8Array | string | Promise<Buffer | Uint8Array | string>;
+  metadata: unknown;
+  sourceFiles?: ReleaseSourceFiles;
+}
+
+function sha256(contents: Buffer | Uint8Array | string): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-function asBuffer(contents, description) {
+function asBuffer(contents: unknown, description: string): Buffer {
   if (Buffer.isBuffer(contents)) return contents;
   if (contents instanceof Uint8Array) return Buffer.from(contents);
   if (typeof contents === 'string') return Buffer.from(contents);
   throw new TypeError(`${description} must be a string, Buffer, or Uint8Array.`);
 }
 
-function normalizedSourceEntries(sourceFiles) {
+function normalizedSourceEntries(sourceFiles: unknown): [string, Buffer][] {
   assert(sourceFiles instanceof Map, 'Release source files must be provided as a Map.');
-  const entries = [...sourceFiles.entries()].map(([relativePath, contents]) => {
+  const entries: [string, Buffer][] = [...sourceFiles.entries()].map(([relativePath, contents]) => {
     assert(
       typeof relativePath === 'string' &&
         relativePath.length > 0 &&
@@ -41,7 +93,7 @@ function normalizedSourceEntries(sourceFiles) {
   return entries;
 }
 
-export function computeReleaseSourceIdentity(sourceFiles) {
+export function computeReleaseSourceIdentity(sourceFiles: ReleaseSourceFiles): string {
   const hash = createHash('sha256');
   for (const [relativePath, contents] of normalizedSourceEntries(sourceFiles)) {
     const pathBytes = Buffer.from(relativePath);
@@ -59,7 +111,7 @@ export function createSb3ReleaseSnapshotMetadata({
   publication = {},
   sourceFiles,
   state = 'candidate',
-}) {
+}: CreateReleaseSnapshotMetadataInput): Sb3ReleaseSnapshotMetadata {
   assert(releaseSnapshotStates.has(state), `Unsupported SB3 release snapshot state: ${state}`);
   const archive = asBuffer(artifact.archive, 'SB3 release artifact archive');
   const filename = artifact.filename;
@@ -67,7 +119,7 @@ export function createSb3ReleaseSnapshotMetadata({
     typeof filename === 'string' && filename.endsWith('.sb3'),
     'Artifact filename is required.',
   );
-  const normalizedArtifact = {
+  const normalizedArtifact: ReleaseSnapshotArtifact = {
     filename,
     sha256: sha256(archive),
     size: archive.byteLength,
@@ -87,7 +139,8 @@ export function createSb3ReleaseSnapshotMetadata({
   };
 }
 
-export function assertSb3ReleaseSnapshotMetadata(metadata) {
+export function assertSb3ReleaseSnapshotMetadata(value: unknown): Sb3ReleaseSnapshotMetadata {
+  const metadata = value as Sb3ReleaseSnapshotMetadata | null | undefined;
   assert(
     metadata?.formatVersion === releaseSnapshotFormatVersion,
     'SB3 release snapshot metadata format is invalid.',
@@ -134,7 +187,11 @@ export async function createSb3ReleaseSnapshot({
   publication,
   sourceFiles,
   state,
-}) {
+}: CreateReleaseSnapshotInput): Promise<{
+  archive: Buffer;
+  metadata: Sb3ReleaseSnapshotMetadata;
+  sourceFiles: ReleaseSourceFiles;
+}> {
   assert(typeof createSb3 === 'function', 'A createSb3 function is required.');
   const built = await createSb3();
   const archive = asBuffer(built.archive, 'SB3 release artifact archive');
@@ -148,7 +205,9 @@ export async function createSb3ReleaseSnapshot({
   return {archive, metadata: assertSb3ReleaseSnapshotMetadata(snapshot), sourceFiles};
 }
 
-export async function verifySb3ReleaseSnapshot(options) {
+export async function verifySb3ReleaseSnapshot(
+  options: VerifyReleaseSnapshotOptions,
+): Promise<Sb3ReleaseSnapshotMetadata> {
   const {createSb3, fetchPublishedArtifact, metadata, sourceFiles} = options;
   const snapshot = assertSb3ReleaseSnapshotMetadata(metadata);
   if (snapshot.state === 'published') {
@@ -172,7 +231,8 @@ export async function verifySb3ReleaseSnapshot(options) {
   }
 
   assert(
-    computeReleaseSourceIdentity(sourceFiles) === snapshot.sourceIdentity,
+    sourceFiles !== undefined &&
+      computeReleaseSourceIdentity(sourceFiles) === snapshot.sourceIdentity,
     'SB3 release source changed. Update the release snapshot.',
   );
   assert(typeof createSb3 === 'function', 'A createSb3 function is required.');
@@ -191,7 +251,7 @@ export async function verifySb3ReleaseSnapshot(options) {
   return snapshot;
 }
 
-async function writeAtomically(filename, contents) {
+async function writeAtomically(filename: string, contents: Buffer | string): Promise<void> {
   await mkdir(path.dirname(filename), {recursive: true});
   const temporaryPath = `${filename}.tmp-${process.pid}`;
   try {
@@ -203,7 +263,17 @@ async function writeAtomically(filename, contents) {
   }
 }
 
-export async function writeSb3ReleaseCandidate({artifactPath, archive, metadata, metadataPath}) {
+export async function writeSb3ReleaseCandidate({
+  artifactPath,
+  archive,
+  metadata,
+  metadataPath,
+}: {
+  artifactPath: string;
+  archive: Buffer | Uint8Array | string;
+  metadata: Sb3ReleaseSnapshotMetadata;
+  metadataPath: string;
+}): Promise<{artifactPath: string; metadataPath: string}> {
   assertSb3ReleaseSnapshotMetadata(metadata);
   const artifactArchive = asBuffer(archive, 'SB3 release candidate archive');
   assert(
@@ -216,18 +286,24 @@ export async function writeSb3ReleaseCandidate({artifactPath, archive, metadata,
   return {artifactPath, metadataPath};
 }
 
-export function freezeSb3ReleaseSnapshot(metadata) {
+export function freezeSb3ReleaseSnapshot(metadata: unknown): Sb3ReleaseSnapshotMetadata {
   const snapshot = assertSb3ReleaseSnapshotMetadata(metadata);
   if (snapshot.state === 'frozen') return snapshot;
   assert(snapshot.state === 'candidate', 'Only candidate SB3 release snapshots can be frozen.');
   return assertSb3ReleaseSnapshotMetadata({...snapshot, state: 'frozen'});
 }
 
-export async function readSb3ReleaseSnapshotMetadata(metadataPath) {
+export async function readSb3ReleaseSnapshotMetadata(
+  metadataPath: string,
+): Promise<Sb3ReleaseSnapshotMetadata> {
   return assertSb3ReleaseSnapshotMetadata(JSON.parse(await readFile(metadataPath, 'utf8')));
 }
 
-export async function recordPublishedSb3ReleaseSnapshot(metadata, urls, options = {}) {
+export async function recordPublishedSb3ReleaseSnapshot(
+  metadata: unknown,
+  urls: Record<string, string>,
+  options: {fetchPublishedArtifact?: VerifyReleaseSnapshotOptions['fetchPublishedArtifact']} = {},
+): Promise<Sb3ReleaseSnapshotMetadata> {
   const {fetchPublishedArtifact} = options;
   const snapshot = assertSb3ReleaseSnapshotMetadata(metadata);
   assert(snapshot.state === 'frozen', 'Only frozen SB3 release snapshots can be published.');

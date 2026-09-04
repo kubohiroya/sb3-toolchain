@@ -4,24 +4,137 @@ import path from 'node:path';
 import process from 'node:process';
 import {createInterface} from 'node:readline/promises';
 
-import {buildSb3} from './build.js';
-import {packageVersion} from './constants.js';
-import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration.js';
-import {unbundleSb3} from './extension-bundle-archive.js';
-import {migrateExtensionId} from './extension-id-migration.js';
-import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync.js';
-import {importSb3} from './import.js';
-import {createDeterministicSb3, validateSb3Source} from './source.js';
+import {assert} from './assert';
+import {buildSb3} from './build';
+import {packageVersion} from './constants';
+import {unbundleSb3} from './extension-bundle-archive';
+import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration';
+import {migrateExtensionId} from './extension-id-migration';
+import type {ExtensionIdMigrationCounts, ExtensionIdReference} from './extension-id-migration';
+import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync';
+import type {ExtensionSyncConfirmContext, FetchImplementation} from './extension-sync';
+import {importSb3} from './import';
+import type {OutputReplacementContext} from './import';
+import type {DirectoryDifferences} from './output-safety';
+import {createDeterministicSb3, validateSb3Source} from './source';
 
-/**
- * @param {unknown} condition
- * @param {string} message
- * @returns {asserts condition}
- */
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface HelpCliOptions {
+  command: 'help';
+}
+
+export interface VersionCliOptions {
+  command: 'version';
+}
+
+export interface ImportCliOptions {
+  command: 'import';
+  discardLocalChanges: boolean;
+  inputPath: string;
+  outputDirectory: string;
+  yes: boolean;
+}
+
+export interface CheckCliOptions {
+  allowedAssetRoots?: string[];
+  command: 'check';
+  projectAssetsPath?: string;
+  sourceDirectory: string;
+}
+
+export interface BuildCliOptions {
+  allowedAssetRoots?: string[];
+  cleanUpBlocks?: boolean;
+  command: 'build';
+  outputPath: string;
+  projectAssetsPath?: string;
+  sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface ExtensionsStatusCliOptions {
+  action: 'status';
+  command: 'extensions';
+  sourceDirectory: string;
+}
+
+export interface ExtensionsMutationCliOptions {
+  action: 'sync' | 'update';
+  allowBreakingApi?: boolean;
+  apiManifestArtifact?: string;
+  command: 'extensions';
+  extensionId?: string;
+  migrateToId?: string;
+  sourceArtifact?: string;
+  sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface ExtensionsMigrateIdCliOptions {
+  action: 'migrate-id';
+  command: 'extensions';
+  fromId: string;
+  sourceDirectory: string;
+  toId: string;
+  yes: boolean;
+}
+
+export interface ExtensionsBundleCliOptions {
+  action: 'bundle';
+  bundleId: string;
+  bundleName: string;
+  command: 'extensions';
+  extensionIds: string[];
+  recoveryCapsule: boolean;
+  sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface ExtensionsUnbundleSourceCliOptions {
+  action: 'unbundle';
+  bundleId: string;
+  command: 'extensions';
+  sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface ExtensionsUnbundleArchiveCliOptions {
+  action: 'unbundle';
+  bundleId: string;
+  command: 'extensions';
+  inputPath: string;
+  outputPath: string;
+  yes: boolean;
+}
+
+export type ExtensionsCliOptions =
+  | ExtensionsStatusCliOptions
+  | ExtensionsMutationCliOptions
+  | ExtensionsMigrateIdCliOptions
+  | ExtensionsBundleCliOptions
+  | ExtensionsUnbundleSourceCliOptions
+  | ExtensionsUnbundleArchiveCliOptions;
+
+export type CliOptions =
+  | HelpCliOptions
+  | VersionCliOptions
+  | ImportCliOptions
+  | CheckCliOptions
+  | BuildCliOptions
+  | ExtensionsCliOptions;
+
+export interface RunCliOptions {
+  fetch?: FetchImplementation;
+  log?: (message: string) => void;
+}
+
+interface MigrationLogResult {
+  applied: boolean;
+  artifactReady: boolean;
+  counts: ExtensionIdMigrationCounts;
+  fromId: string | undefined;
+  toId: string | undefined;
+  totalChanges: number;
+  unclassifiedReferences: ExtensionIdReference[];
 }
 
 export function usage() {
@@ -60,15 +173,15 @@ Replacement safety:
   --discard-local-changes is also specified. --force is not supported.`;
 }
 
-function takeValue(arguments_, index, option) {
+function takeValue(arguments_: string[], index: number, option: string): string {
   const value = arguments_[index + 1];
   assert(value && !value.startsWith('-'), `${option} requires a value.`);
   return value;
 }
 
-function parseImportArguments(arguments_) {
-  let inputPath;
-  let outputDirectory;
+function parseImportArguments(arguments_: string[]): ImportCliOptions {
+  let inputPath: string | undefined;
+  let outputDirectory: string | undefined;
   let discardLocalChanges = false;
   let yes = false;
 
@@ -98,14 +211,10 @@ function parseImportArguments(arguments_) {
   return {command: 'import', discardLocalChanges, inputPath, outputDirectory, yes};
 }
 
-/**
- * @param {string[]} arguments_
- * @returns {{allowedAssetRoots?: string[], command: 'check', projectAssetsPath?: string, sourceDirectory: string}}
- */
-function parseCheckArguments(arguments_) {
-  const allowedAssetRoots = [];
-  let projectAssetsPath;
-  let sourceDirectory;
+function parseCheckArguments(arguments_: string[]): CheckCliOptions {
+  const allowedAssetRoots: string[] = [];
+  let projectAssetsPath: string | undefined;
+  let sourceDirectory: string | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === '--project-assets') {
@@ -133,16 +242,12 @@ function parseCheckArguments(arguments_) {
   };
 }
 
-/**
- * @param {string[]} arguments_
- * @returns {{allowedAssetRoots?: string[], cleanUpBlocks?: boolean, command: 'build', outputPath: string, projectAssetsPath?: string, sourceDirectory: string, yes: boolean}}
- */
-function parseBuildArguments(arguments_) {
-  const allowedAssetRoots = [];
+function parseBuildArguments(arguments_: string[]): BuildCliOptions {
+  const allowedAssetRoots: string[] = [];
   let cleanUpBlocks = false;
-  let sourceDirectory;
-  let outputPath;
-  let projectAssetsPath;
+  let sourceDirectory: string | undefined;
+  let outputPath: string | undefined;
+  let projectAssetsPath: string | undefined;
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -184,13 +289,16 @@ function parseBuildArguments(arguments_) {
   };
 }
 
-function parseExtensionMutationArguments(action, arguments_) {
+function parseExtensionMutationArguments(
+  action: 'sync' | 'update',
+  arguments_: string[],
+): ExtensionsMutationCliOptions {
   let allowBreakingApi = false;
-  let apiManifestArtifact;
-  let sourceDirectory;
-  let extensionId;
-  let migrateToId;
-  let sourceArtifact;
+  let apiManifestArtifact: string | undefined;
+  let sourceDirectory: string | undefined;
+  let extensionId: string | undefined;
+  let migrateToId: string | undefined;
+  let sourceArtifact: string | undefined;
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -255,10 +363,10 @@ function parseExtensionMutationArguments(action, arguments_) {
   };
 }
 
-function parseExtensionIdMigrationArguments(arguments_) {
-  let fromId;
-  let sourceDirectory;
-  let toId;
+function parseExtensionIdMigrationArguments(arguments_: string[]): ExtensionsMigrateIdCliOptions {
+  let fromId: string | undefined;
+  let sourceDirectory: string | undefined;
+  let toId: string | undefined;
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -290,12 +398,12 @@ function parseExtensionIdMigrationArguments(arguments_) {
   };
 }
 
-function parseExtensionBundleArguments(arguments_) {
-  let bundleId;
-  let bundleName;
+function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCliOptions {
+  let bundleId: string | undefined;
+  let bundleName: string | undefined;
   let recoveryCapsule = false;
-  let sourceDirectory;
-  const extensionIds = [];
+  let sourceDirectory: string | undefined;
+  const extensionIds: string[] = [];
   let yes = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -338,10 +446,12 @@ function parseExtensionBundleArguments(arguments_) {
   };
 }
 
-function parseExtensionUnbundleArguments(arguments_) {
-  let bundleId;
-  let input;
-  let outputPath;
+function parseExtensionUnbundleArguments(
+  arguments_: string[],
+): ExtensionsUnbundleSourceCliOptions | ExtensionsUnbundleArchiveCliOptions {
+  let bundleId: string | undefined;
+  let input: string | undefined;
+  let outputPath: string | undefined;
   let yes = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -383,7 +493,7 @@ function parseExtensionUnbundleArguments(arguments_) {
   };
 }
 
-function parseExtensionsArguments(arguments_) {
+function parseExtensionsArguments(arguments_: string[]): ExtensionsCliOptions {
   const [action, ...actionArguments] = arguments_;
   assert(
     action === 'bundle' ||
@@ -417,7 +527,7 @@ function parseExtensionsArguments(arguments_) {
   return parseExtensionMutationArguments(action, actionArguments);
 }
 
-export function parseCliArguments(arguments_) {
+export function parseCliArguments(arguments_: string[]): CliOptions {
   const normalized = arguments_.filter((argument) => argument !== '--');
   if (normalized.length === 0 || normalized[0] === '--help' || normalized[0] === '-h') {
     return {command: 'help'};
@@ -437,10 +547,10 @@ export function parseCliArguments(arguments_) {
   throw new Error(`Unknown command: ${command}`);
 }
 
-function formatDifferenceLines(differences) {
-  const labels = {added: '+', modified: '~', removed: '-'};
+function formatDifferenceLines(differences: DirectoryDifferences): string {
+  const labels: Record<string, string> = {added: '+', modified: '~', removed: '-'};
   const lines = Object.entries(differences).flatMap(([kind, paths]) =>
-    paths.map((relativePath) => `${labels[kind]} ${relativePath}`),
+    paths.map((relativePath: string) => `${labels[kind]} ${relativePath}`),
   );
   const visibleLines = lines.slice(0, 12);
   if (lines.length > visibleLines.length) {
@@ -449,7 +559,7 @@ function formatDifferenceLines(differences) {
   return visibleLines.join('\n');
 }
 
-async function confirmImportReplacement(context) {
+async function confirmImportReplacement(context: OutputReplacementContext): Promise<boolean> {
   const {comparison, discardLocalChanges, gitState, outputDirectory} = context;
   assert(
     process.stdin.isTTY && process.stdout.isTTY,
@@ -475,7 +585,7 @@ async function confirmImportReplacement(context) {
   }
 }
 
-async function confirmBuildReplacement(outputPath) {
+async function confirmBuildReplacement(outputPath: string): Promise<boolean> {
   assert(
     process.stdin.isTTY && process.stdout.isTTY,
     `Existing SB3 output differs: ${outputPath}. Non-interactive replacement requires --yes.`,
@@ -491,7 +601,10 @@ async function confirmBuildReplacement(outputPath) {
   }
 }
 
-async function confirmExtensionReplacement({comparison, sourceDirectory}) {
+async function confirmExtensionReplacement({
+  comparison,
+  sourceDirectory,
+}: ExtensionSyncConfirmContext): Promise<boolean> {
   assert(
     process.stdin.isTTY && process.stdout.isTTY,
     `Managed extension files differ in ${sourceDirectory}. ` +
@@ -511,7 +624,7 @@ async function confirmExtensionReplacement({comparison, sourceDirectory}) {
   }
 }
 
-function logMigrationResult(result, log) {
+function logMigrationResult(result: MigrationLogResult, log: (message: string) => void): void {
   const counts = Object.entries(result.counts)
     .filter(([, count]) => count > 0)
     .map(([kind, count]) => `${kind}=${count}`)
@@ -531,9 +644,9 @@ function logMigrationResult(result, log) {
 }
 
 export async function runCli(
-  arguments_,
-  {fetch: fetchImplementation = globalThis.fetch, log = console.log} = {},
-) {
+  arguments_: string[],
+  {fetch: fetchImplementation = globalThis.fetch, log = console.log}: RunCliOptions = {},
+): Promise<void> {
   const options = parseCliArguments(arguments_);
   if (options.command === 'help') {
     log(usage());
@@ -660,7 +773,7 @@ export async function runCli(
         return;
       }
       for (const status of statuses) {
-        if (status.package) {
+        if ('package' in status) {
           log(
             `${status.id}: ${status.state}; local=${status.local}; ` +
               `${status.package}@${status.version} (installed ${status.installedVersion})`,

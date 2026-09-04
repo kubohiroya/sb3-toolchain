@@ -2,26 +2,36 @@
 
 import {createHash} from 'node:crypto';
 
-import {validateArchiveEntryName} from './archive.js';
-import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest.js';
+import {validateArchiveEntryName} from './archive';
+import {assert} from './assert';
+import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest';
+import type {EmbeddedExtension, ExtensionSource} from './types';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface ExtensionHeaderMetadata {
+  author: string | null;
+  description: string | null;
+  id: string | null;
+  license: string | null;
+  name: string | null;
 }
 
-export function extensionIntegrity(contents) {
+export interface ManagedExtensionContents {
+  actualId: string | null;
+  integrity: string;
+  source: ExtensionSource;
+}
+
+export function extensionIntegrity(contents: Uint8Array | string): string {
   return `sha256-${createHash('sha256').update(contents).digest('base64')}`;
 }
 
-export function extensionHeaderId(contents) {
+export function extensionHeaderId(contents: Uint8Array | string): string | null {
   return extensionHeaderMetadata(contents).id;
 }
 
-export function extensionHeaderMetadata(contents) {
+export function extensionHeaderMetadata(contents: Uint8Array | string): ExtensionHeaderMetadata {
   const source = Buffer.from(contents).toString('utf8');
-  const readField = (field) =>
+  const readField = (field: string): string | null =>
     source.match(new RegExp(`^// ${field}: (.+)\\r?$`, 'mu'))?.[1]?.trim() ?? null;
   const id = readField('ID');
   return {
@@ -33,12 +43,14 @@ export function extensionHeaderMetadata(contents) {
   };
 }
 
-export function validateExtensionSourceMetadata(extension) {
+export function validateExtensionSourceMetadata(
+  extension: EmbeddedExtension,
+): ExtensionSource | null {
   if (extension.source === undefined) {
     return null;
   }
 
-  const source = extension.source;
+  const source = extension.source as unknown as Record<string, unknown> | undefined;
   assert(
     source && typeof source === 'object' && !Array.isArray(source),
     `Managed extension source must be an object: ${extension.id}`,
@@ -89,10 +101,13 @@ export function validateExtensionSourceMetadata(extension) {
     `Managed extension ${extension.id} requires SHA-256 integrity.`,
   );
   validateExtensionApiManifestSourceMetadata(extension);
-  return source;
+  return source as unknown as ExtensionSource;
 }
 
-export function validateManagedExtensionContents(extension, contents) {
+export function validateManagedExtensionContents(
+  extension: EmbeddedExtension,
+  contents: Uint8Array | string,
+): ManagedExtensionContents | null {
   const source = validateExtensionSourceMetadata(extension);
   if (!source) {
     return null;

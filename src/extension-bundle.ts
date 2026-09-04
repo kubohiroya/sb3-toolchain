@@ -1,20 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import {extensionHeaderMetadata} from './extension-dependencies.js';
+import {assert} from './assert';
+import {extensionHeaderMetadata} from './extension-dependencies';
+import type {ExtensionHeaderMetadata} from './extension-dependencies';
+import type {
+  EmbeddedExtension,
+  ExtensionBundleConfiguration,
+  ProjectJson,
+  UnknownRecord,
+} from './types';
 
 export const extensionBundleRecoveryMarker = 'SB3-Toolchain-Reversible-Bundle-v1';
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface ExtensionBundleComponent {
+  contents: string;
+  extension: EmbeddedExtension;
+  metadata: ExtensionHeaderMetadata;
+  originalContents: Buffer;
 }
 
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
+export interface ExtensionBundleCounts {
+  extensionStorage: number;
+  extensionUrls: number;
+  opcodes: number;
+  projectExtensions: number;
 }
 
-function validateBundleId(id, description = 'Extension bundle ID') {
+export interface ExtensionBundlePlan {
+  bundle: ExtensionBundleConfiguration;
+  components: ExtensionBundleComponent[];
+  contents: Buffer;
+  counts: ExtensionBundleCounts;
+}
+
+export interface BuildExtensionBundlesInput {
+  extensionBundles: ExtensionBundleConfiguration[];
+  extensionContents: Map<string, Uint8Array>;
+  extensions: EmbeddedExtension[];
+  project: ProjectJson;
+}
+
+export interface BuildExtensionBundlesResult {
+  bundlePlans: ExtensionBundlePlan[];
+  extensionContents: Map<string, Uint8Array>;
+  extensions: EmbeddedExtension[];
+  project: ProjectJson;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateBundleId(id: unknown, description = 'Extension bundle ID'): string {
   assert(
     typeof id === 'string' && /^[a-z0-9]+$/u.test(id),
     `${description} must use TurboWarp's [a-z0-9]+ format: ${JSON.stringify(id)}`,
@@ -22,7 +59,7 @@ function validateBundleId(id, description = 'Extension bundle ID') {
   return id;
 }
 
-function validateBundleName(name) {
+function validateBundleName(name: unknown): string {
   assert(
     typeof name === 'string' && name.trim() === name && name.length > 0 && !/[\r\n]/u.test(name),
     `Extension bundle name must be a non-empty single line: ${JSON.stringify(name)}`,
@@ -30,7 +67,10 @@ function validateBundleName(name) {
   return name;
 }
 
-export function validateExtensionBundleConfigurations(extensionBundles, extensions) {
+export function validateExtensionBundleConfigurations(
+  extensionBundles: unknown,
+  extensions: EmbeddedExtension[],
+): ExtensionBundleConfiguration[] {
   if (extensionBundles === undefined) return [];
   assert(
     Array.isArray(extensionBundles),
@@ -38,60 +78,65 @@ export function validateExtensionBundleConfigurations(extensionBundles, extensio
   );
 
   const extensionsById = new Map(extensions.map((extension) => [extension.id, extension]));
-  const bundleIds = new Set();
-  const bundledMemberIds = new Set();
+  const bundleIds = new Set<string>();
+  const bundledMemberIds = new Set<string>();
 
-  return extensionBundles.map((bundle, bundleIndex) => {
+  return (extensionBundles as unknown[]).map((bundle, bundleIndex) => {
     assert(isObject(bundle), `Extension bundle ${bundleIndex} must be an object.`);
-    validateBundleId(bundle.id, `Extension bundle ${bundleIndex} ID`);
-    validateBundleName(bundle.name);
-    assert(
-      !extensionsById.has(bundle.id),
-      `Extension bundle ID collides with an extension: ${bundle.id}`,
-    );
-    assert(!bundleIds.has(bundle.id), `Duplicate extension bundle ID: ${bundle.id}`);
-    bundleIds.add(bundle.id);
+    const id = validateBundleId(bundle.id, `Extension bundle ${bundleIndex} ID`);
+    const name = validateBundleName(bundle.name);
+    assert(!extensionsById.has(id), `Extension bundle ID collides with an extension: ${id}`);
+    assert(!bundleIds.has(id), `Duplicate extension bundle ID: ${id}`);
+    bundleIds.add(id);
     assert(
       Array.isArray(bundle.members) && bundle.members.length >= 2,
-      `Extension bundle ${bundle.id} must contain at least two members.`,
+      `Extension bundle ${id} must contain at least two members.`,
     );
     assert(
       bundle.recoveryCapsule === undefined || typeof bundle.recoveryCapsule === 'boolean',
-      `Extension bundle ${bundle.id} recoveryCapsule must be a boolean when present.`,
+      `Extension bundle ${id} recoveryCapsule must be a boolean when present.`,
     );
+    const capsuleFlag = bundle.recoveryCapsule;
 
-    const localMemberIds = new Set();
-    for (const memberId of bundle.members) {
-      validateBundleId(memberId, `Extension bundle ${bundle.id} member ID`);
+    const localMemberIds = new Set<string>();
+    const members: string[] = [];
+    for (const rawMemberId of bundle.members as unknown[]) {
+      const memberId = validateBundleId(rawMemberId, `Extension bundle ${id} member ID`);
       assert(
         extensionsById.has(memberId),
-        `Extension bundle ${bundle.id} has unknown member: ${memberId}`,
+        `Extension bundle ${id} has unknown member: ${memberId}`,
       );
-      assert(
-        !localMemberIds.has(memberId),
-        `Extension bundle ${bundle.id} repeats member: ${memberId}`,
-      );
+      assert(!localMemberIds.has(memberId), `Extension bundle ${id} repeats member: ${memberId}`);
       assert(
         !bundledMemberIds.has(memberId),
         `Embedded extension belongs to more than one bundle: ${memberId}`,
       );
       localMemberIds.add(memberId);
       bundledMemberIds.add(memberId);
+      members.push(memberId);
     }
     return {
-      id: bundle.id,
-      members: [...bundle.members],
-      name: bundle.name,
-      ...(bundle.recoveryCapsule === undefined ? {} : {recoveryCapsule: bundle.recoveryCapsule}),
+      id,
+      members,
+      name,
+      ...(capsuleFlag === undefined ? {} : {recoveryCapsule: capsuleFlag}),
     };
   });
 }
 
-function readBundleComponents(bundle, extensionsById, extensionContents) {
+function readBundleComponents(
+  bundle: ExtensionBundleConfiguration,
+  extensionsById: Map<string, EmbeddedExtension>,
+  extensionContents: Map<string, Uint8Array>,
+): ExtensionBundleComponent[] {
   return bundle.members.map((memberId) => {
     const extension = extensionsById.get(memberId);
     const contents = extensionContents.get(memberId);
     assert(contents, `Extension bundle ${bundle.id} has no contents for member: ${memberId}`);
+    assert(
+      extension,
+      `Extension bundle ${bundle.id} has no manifest entry for member: ${memberId}`,
+    );
     assert(
       extension.mediaType === 'text/javascript' || extension.mediaType === 'application/javascript',
       `Extension bundle ${bundle.id} member ${memberId} must be JavaScript, got ${extension.mediaType}.`,
@@ -107,7 +152,7 @@ function readBundleComponents(bundle, extensionsById, extensionContents) {
       ['author', 'By'],
       ['description', 'Description'],
       ['license', 'License'],
-    ]) {
+    ] as const) {
       assert(
         metadata[property],
         `Extension bundle ${bundle.id} member ${memberId} requires a // ${label}: header.`,
@@ -132,11 +177,14 @@ function readBundleComponents(bundle, extensionsById, extensionContents) {
   });
 }
 
-function commentLine(value) {
+function commentLine(value: unknown): string {
   return String(value).replaceAll('\r', ' ').replaceAll('\n', ' ');
 }
 
-function bundleHeader(bundle, components) {
+function bundleHeader(
+  bundle: ExtensionBundleConfiguration,
+  components: ExtensionBundleComponent[],
+): string {
   const authors = [...new Set(components.map((component) => component.metadata.author))];
   const lines = [
     `// Name: ${commentLine(bundle.name)}`,
@@ -159,19 +207,19 @@ function bundleHeader(bundle, components) {
   return `${lines.join('\n')}\n`;
 }
 
-function componentLoadSource(component) {
+function componentLoadSource(component: ExtensionBundleComponent): string {
   const memberId = JSON.stringify(component.metadata.id);
   const source = component.contents.endsWith('\n') ? component.contents : `${component.contents}\n`;
   return `loadComponent(${memberId}, function (Scratch) {\n${source}});\n`;
 }
 
-function percentEncode(contents) {
+function percentEncode(contents: Uint8Array | string): string {
   return [...Buffer.from(contents)]
     .map((byte) => `%${byte.toString(16).padStart(2, '0').toUpperCase()}`)
     .join('');
 }
 
-function componentDataUrl(component) {
+function componentDataUrl(component: ExtensionBundleComponent): string {
   const metadata = [component.extension.mediaType, ...component.extension.parameters].join(';');
   const originalContents = component.originalContents ?? Buffer.from(component.contents);
   if (component.extension.encoding === 'base64') {
@@ -180,7 +228,11 @@ function componentDataUrl(component) {
   return `data:${metadata},${percentEncode(originalContents)}`;
 }
 
-function recoveryCapsule(bundle, components, originalProject) {
+function recoveryCapsule(
+  bundle: ExtensionBundleConfiguration,
+  components: ExtensionBundleComponent[],
+  originalProject: ProjectJson | undefined,
+): UnknownRecord {
   return {
     formatVersion: 1,
     bundle: {id: bundle.id, name: bundle.name},
@@ -189,13 +241,17 @@ function recoveryCapsule(bundle, components, originalProject) {
       id: component.metadata.id,
     })),
     originalExtensionIds: Array.isArray(originalProject?.extensions)
-      ? [...originalProject.extensions]
+      ? [...(originalProject.extensions as unknown[])]
       : null,
     originalExtensionUrlIds: Object.keys(originalProject?.extensionURLs ?? {}),
   };
 }
 
-export function createStaticExtensionBundle(bundle, components, originalProject = undefined) {
+export function createStaticExtensionBundle(
+  bundle: ExtensionBundleConfiguration,
+  components: ExtensionBundleComponent[],
+  originalProject: ProjectJson | undefined = undefined,
+): Buffer {
   const componentIds = JSON.stringify(components.map((component) => component.metadata.id));
   const header = bundleHeader(bundle, components);
   const loaders = components.map(componentLoadSource).join('\n');
@@ -500,8 +556,13 @@ ${loaders}
   return Buffer.from(`${header}\n${runtime}\n// ${extensionBundleRecoveryMarker}: ${capsule}\n`);
 }
 
-function replaceMemberKeys(object, memberIds, bundleId, bundleValue) {
-  const replacement = {};
+function replaceMemberKeys(
+  object: UnknownRecord,
+  memberIds: Set<string>,
+  bundleId: string,
+  bundleValue: (value: unknown) => unknown,
+): {inserted: boolean; replacement: UnknownRecord} {
+  const replacement: UnknownRecord = {};
   let inserted = false;
   for (const [key, value] of Object.entries(object)) {
     if (memberIds.has(key)) {
@@ -516,10 +577,10 @@ function replaceMemberKeys(object, memberIds, bundleId, bundleValue) {
   return {inserted, replacement};
 }
 
-function bundleStorage(storage, bundle) {
+function bundleStorage(storage: unknown, bundle: ExtensionBundleConfiguration): unknown {
   if (!isObject(storage)) return storage;
   const memberIds = new Set(bundle.members);
-  const componentStorage = {};
+  const componentStorage: UnknownRecord = {};
   for (const memberId of bundle.members) {
     if (Object.hasOwn(storage, memberId)) componentStorage[memberId] = storage[memberId];
   }
@@ -534,18 +595,23 @@ function bundleStorage(storage, bundle) {
   })).replacement;
 }
 
-function rewriteOpcodeValues(value, bundle, counts) {
+function rewriteOpcodeValues(
+  value: unknown,
+  bundle: ExtensionBundleConfiguration,
+  counts: ExtensionBundleCounts,
+): void {
   if (!value || typeof value !== 'object') return;
   if (Array.isArray(value)) {
-    for (const entry of value) rewriteOpcodeValues(entry, bundle, counts);
+    for (const entry of value as unknown[]) rewriteOpcodeValues(entry, bundle, counts);
     return;
   }
-  for (const [key, entry] of Object.entries(value)) {
+  const record = value as UnknownRecord;
+  for (const [key, entry] of Object.entries(record)) {
     if (key === 'opcode' && typeof entry === 'string') {
       for (const memberId of bundle.members) {
         const prefix = `${memberId}_`;
         if (entry.startsWith(prefix)) {
-          value[key] = `${bundle.id}_${memberId}__${entry.slice(prefix.length)}`;
+          record[key] = `${bundle.id}_${memberId}__${entry.slice(prefix.length)}`;
           counts.opcodes += 1;
           break;
         }
@@ -556,29 +622,42 @@ function rewriteOpcodeValues(value, bundle, counts) {
   }
 }
 
-function collectRemainingOpcodeReferences(value, bundle) {
-  const references = [];
+function collectRemainingOpcodeReferences(
+  value: unknown,
+  bundle: ExtensionBundleConfiguration,
+): string[] {
+  const references: string[] = [];
   const prefixes = bundle.members.map((memberId) => `${memberId}_`);
-  function visit(current, pointer) {
+  function visit(current: unknown, pointer: string): void {
     if (typeof current === 'string') {
       if (prefixes.some((prefix) => current.startsWith(prefix))) references.push(pointer || '/');
       return;
     }
     if (!current || typeof current !== 'object') return;
     if (Array.isArray(current)) {
-      current.forEach((entry, index) => visit(entry, `${pointer}/${index}`));
+      (current as unknown[]).forEach((entry, index) => visit(entry, `${pointer}/${index}`));
       return;
     }
-    for (const [key, entry] of Object.entries(current)) visit(entry, `${pointer}/${key}`);
+    for (const [key, entry] of Object.entries(current as UnknownRecord)) {
+      visit(entry, `${pointer}/${key}`);
+    }
   }
   visit(value, '');
   return references;
 }
 
-function rewriteProjectForBundle(project, bundle) {
+function rewriteProjectForBundle(
+  project: ProjectJson,
+  bundle: ExtensionBundleConfiguration,
+): {counts: ExtensionBundleCounts; project: ProjectJson} {
   const rewritten = structuredClone(project);
   const memberIds = new Set(bundle.members);
-  const counts = {extensionStorage: 0, extensionUrls: 0, opcodes: 0, projectExtensions: 0};
+  const counts: ExtensionBundleCounts = {
+    extensionStorage: 0,
+    extensionUrls: 0,
+    opcodes: 0,
+    projectExtensions: 0,
+  };
   assert(isObject(rewritten.extensionURLs), 'project.source.json extensionURLs must be an object.');
   assert(
     !Object.hasOwn(rewritten.extensionURLs, bundle.id),
@@ -608,10 +687,10 @@ function rewriteProjectForBundle(project, bundle) {
       Array.isArray(rewritten.extensions),
       'project.source.json extensions must be an array when present.',
     );
-    const output = [];
+    const output: unknown[] = [];
     let inserted = false;
-    for (const id of rewritten.extensions) {
-      if (memberIds.has(id)) {
+    for (const id of rewritten.extensions as unknown[]) {
+      if (typeof id === 'string' && memberIds.has(id)) {
         counts.projectExtensions += 1;
         if (!inserted) {
           output.push(bundle.id);
@@ -627,10 +706,11 @@ function rewriteProjectForBundle(project, bundle) {
   const originalGlobalStorage = rewritten.extensionStorage;
   rewritten.extensionStorage = bundleStorage(rewritten.extensionStorage, bundle);
   if (rewritten.extensionStorage !== originalGlobalStorage) counts.extensionStorage += 1;
-  for (const target of rewritten.targets ?? []) {
-    const originalTargetStorage = target?.extensionStorage;
-    if (target) target.extensionStorage = bundleStorage(target.extensionStorage, bundle);
-    if (target?.extensionStorage !== originalTargetStorage) counts.extensionStorage += 1;
+  for (const target of (rewritten.targets as unknown[] | undefined) ?? []) {
+    if (!isObject(target)) continue;
+    const originalTargetStorage = target.extensionStorage;
+    target.extensionStorage = bundleStorage(target.extensionStorage, bundle);
+    if (target.extensionStorage !== originalTargetStorage) counts.extensionStorage += 1;
   }
 
   rewriteOpcodeValues(rewritten.targets, bundle, counts);
@@ -644,13 +724,18 @@ function rewriteProjectForBundle(project, bundle) {
   return {counts, project: rewritten};
 }
 
-export function buildExtensionBundles({extensionBundles, extensionContents, extensions, project}) {
+export function buildExtensionBundles({
+  extensionBundles,
+  extensionContents,
+  extensions,
+  project,
+}: BuildExtensionBundlesInput): BuildExtensionBundlesResult {
   if (extensionBundles.length === 0) {
     return {bundlePlans: [], extensionContents, extensions, project};
   }
   const extensionsById = new Map(extensions.map((extension) => [extension.id, extension]));
-  const bundlesByMemberId = new Map();
-  const bundlePlans = [];
+  const bundlesByMemberId = new Map<string, ExtensionBundleConfiguration>();
+  const bundlePlans: ExtensionBundlePlan[] = [];
   let bundledProject = project;
   const bundledContents = new Map(extensionContents);
 
@@ -667,8 +752,8 @@ export function buildExtensionBundles({extensionBundles, extensionContents, exte
     bundlePlans.push({bundle, components, contents, counts: rewrite.counts});
   }
 
-  const bundledExtensions = [];
-  const emittedBundleIds = new Set();
+  const bundledExtensions: EmbeddedExtension[] = [];
+  const emittedBundleIds = new Set<string>();
   for (const extension of extensions) {
     const bundle = bundlesByMemberId.get(extension.id);
     if (!bundle) {

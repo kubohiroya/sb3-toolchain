@@ -6,36 +6,82 @@ import path from 'node:path';
 
 import {strToU8, zipSync} from 'fflate';
 
-import {validateArchiveEntryName} from './archive.js';
-import {validateManagedExtensionApiManifest} from './extension-api-manifest.js';
-import {buildExtensionBundles, validateExtensionBundleConfigurations} from './extension-bundle.js';
+import {validateArchiveEntryName} from './archive';
+import {assert, errorMessage} from './assert';
+import {validateManagedExtensionApiManifest} from './extension-api-manifest';
+import {buildExtensionBundles, validateExtensionBundleConfigurations} from './extension-bundle';
+import type {ExtensionBundlePlan} from './extension-bundle';
 import {
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
-} from './extension-dependencies.js';
-import {applyProjectAssetAdditions} from './project-asset-additions.js';
-import {cleanUpTurboWarpBlocks} from './turbowarp-clean-up.js';
+} from './extension-dependencies';
+import {applyProjectAssetAdditions} from './project-asset-additions';
+import type {ProjectAssetAdditionsSummary} from './project-asset-additions';
+import {cleanUpTurboWarpBlocks} from './turbowarp-clean-up';
+import type {
+  EmbeddedExtension,
+  ExtensionBundleConfiguration,
+  ProjectAssetReference,
+  ProjectJson,
+  Sb3SourceManifest,
+  UnknownRecord,
+} from './types';
 
 export const sourceFormatVersion = 1;
 export const fixedZipTimestamp = new Date(1980, 0, 1, 0, 0, 0, 0);
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface InspectedSb3Source {
+  assetContents: Map<string, Uint8Array>;
+  assetReferenceCount: number;
+  extensions: EmbeddedExtension[];
+  extensionApiManifestContents: Map<string, Uint8Array>;
+  extensionBundles: ExtensionBundleConfiguration[];
+  extensionContents: Map<string, Uint8Array>;
+  project: ProjectJson;
+  resolvedSourceDirectory: string;
+  sourceManifest: Sb3SourceManifest;
 }
 
-async function readJson(filePath, description) {
+export interface BlockCleanUpSummary {
+  movedCommentCount: number;
+  movedScriptCount: number;
+  scriptCount: number;
+  targetCount: number;
+}
+
+export interface DeterministicSb3Options {
+  allowedAssetRoots?: string[];
+  cleanUpBlocks?: boolean;
+  projectAssetsPath?: string;
+}
+
+export interface DeterministicSb3 {
+  archive: Uint8Array;
+  assetCount: number;
+  assetReferenceCount: number;
+  blockCleanUp: BlockCleanUpSummary | null;
+  bundlePlans: ExtensionBundlePlan[];
+  embeddedExtensionCount: number;
+  entryCount: number;
+  projectAssetAdditions: Readonly<ProjectAssetAdditionsSummary> | null;
+  source: InspectedSb3Source;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readJson(filePath: string, description: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(filePath, 'utf8'));
   } catch (error) {
-    throw new Error(`${description} is not valid JSON: ${filePath} (${error.message})`, {
+    throw new Error(`${description} is not valid JSON: ${filePath} (${errorMessage(error)})`, {
       cause: error,
     });
   }
 }
 
-async function assertDirectory(directoryPath, description) {
+async function assertDirectory(directoryPath: string, description: string): Promise<void> {
   const stats = await lstat(directoryPath);
   assert(
     stats.isDirectory() && !stats.isSymbolicLink(),
@@ -43,11 +89,11 @@ async function assertDirectory(directoryPath, description) {
   );
 }
 
-async function listRegularFiles(rootDirectory, description) {
+async function listRegularFiles(rootDirectory: string, description: string): Promise<string[]> {
   await assertDirectory(rootDirectory, description);
-  const files = [];
+  const files: string[] = [];
 
-  async function visit(directory, relativeDirectory) {
+  async function visit(directory: string, relativeDirectory: string): Promise<void> {
     const entries = await readdir(directory, {withFileTypes: true});
     entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
     for (const entry of entries) {
@@ -71,7 +117,11 @@ async function listRegularFiles(rootDirectory, description) {
   return files;
 }
 
-function assertSameFileSet(actualFiles, expectedFiles, description) {
+function assertSameFileSet(
+  actualFiles: string[],
+  expectedFiles: string[],
+  description: string,
+): void {
   const actual = new Set(actualFiles);
   const expected = new Set(expectedFiles);
   const missing = [...expected].filter((filePath) => !actual.has(filePath)).sort();
@@ -83,15 +133,12 @@ function assertSameFileSet(actualFiles, expectedFiles, description) {
   );
 }
 
-function md5(contents) {
+function md5(contents: Uint8Array | string): string {
   return createHash('md5').update(contents).digest('hex');
 }
 
-function validateSourceManifest(manifest) {
-  assert(
-    manifest && typeof manifest === 'object' && !Array.isArray(manifest),
-    'sb3-source.json must contain an object.',
-  );
+function validateSourceManifest(manifest: unknown): asserts manifest is Sb3SourceManifest {
+  assert(isObject(manifest), 'sb3-source.json must contain an object.');
   assert(
     manifest.formatVersion === sourceFormatVersion,
     `Unsupported SB3 source format version: ${manifest.formatVersion}`,
@@ -113,10 +160,10 @@ function validateSourceManifest(manifest) {
     'sb3-source.json archiveEntries must be a non-empty array.',
   );
 
-  const seenEntries = new Set();
+  const seenEntries = new Set<string>();
   let projectEntryCount = 0;
-  for (const entryName of manifest.archiveEntries) {
-    validateArchiveEntryName(entryName);
+  for (const rawEntryName of manifest.archiveEntries as unknown[]) {
+    const entryName = validateArchiveEntryName(rawEntryName);
     assert(!seenEntries.has(entryName), `Duplicate archive entry in manifest: ${entryName}`);
     assert(
       !entryName.endsWith('/'),
@@ -132,14 +179,14 @@ function validateSourceManifest(manifest) {
     }
   }
   assert(projectEntryCount === 1, 'archiveEntries must contain project.json exactly once.');
-  return manifest.archiveEntries.filter((entryName) => entryName !== 'project.json');
 }
 
-function validateExtensionManifest(extensionManifest, project, extensionFiles) {
-  assert(
-    extensionManifest && typeof extensionManifest === 'object' && !Array.isArray(extensionManifest),
-    'embedded-extensions.json must contain an object.',
-  );
+function validateExtensionManifest(
+  extensionManifest: unknown,
+  project: ProjectJson,
+  extensionFiles: string[],
+): {extensionBundles: ExtensionBundleConfiguration[]; extensions: EmbeddedExtension[]} {
+  assert(isObject(extensionManifest), 'embedded-extensions.json must contain an object.');
   assert(
     extensionManifest.formatVersion === sourceFormatVersion,
     `Unsupported embedded extension manifest version: ${extensionManifest.formatVersion}`,
@@ -149,19 +196,18 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
     'embedded-extensions.json extensions must be an array.',
   );
 
-  const extensionUrls = project.extensionURLs ?? {};
+  const extensionUrls: unknown = project.extensionURLs ?? {};
   assert(
-    extensionUrls && typeof extensionUrls === 'object' && !Array.isArray(extensionUrls),
+    isObject(extensionUrls),
     'project.source.json extensionURLs must be an object when present.',
   );
-  const extensionsById = new Map();
-  const expectedFiles = [];
+  const extensionsById = new Map<string, EmbeddedExtension>();
+  const expectedFiles: string[] = [];
+  const extensions: EmbeddedExtension[] = [];
 
-  for (const extension of extensionManifest.extensions) {
-    assert(
-      extension && typeof extension === 'object' && !Array.isArray(extension),
-      'Each embedded extension manifest entry must be an object.',
-    );
+  for (const entry of extensionManifest.extensions as unknown[]) {
+    assert(isObject(entry), 'Each embedded extension manifest entry must be an object.');
+    const extension = entry as unknown as EmbeddedExtension;
     assert(
       typeof extension.id === 'string' && /^[A-Za-z0-9._-]+$/u.test(extension.id),
       `Invalid embedded extension ID: ${JSON.stringify(extension.id)}`,
@@ -196,6 +242,7 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
     );
     validateExtensionSourceMetadata(extension);
     extensionsById.set(extension.id, extension);
+    extensions.push(extension);
     expectedFiles.push(`${extension.id}.js`);
     if (extension.source?.apiManifest) {
       expectedFiles.push(path.posix.relative('extensions', extension.source.apiManifest.path));
@@ -219,34 +266,30 @@ function validateExtensionManifest(extensionManifest, project, extensionFiles) {
   return {
     extensionBundles: validateExtensionBundleConfigurations(
       extensionManifest.extensionBundles,
-      extensionManifest.extensions,
+      extensions,
     ),
-    extensions: extensionManifest.extensions,
+    extensions,
   };
 }
 
-function collectAssetReferences(project) {
+function collectAssetReferences(
+  project: ProjectJson,
+): {asset: ProjectAssetReference; description: string}[] {
   assert(Array.isArray(project.targets), 'project.source.json targets must be an array.');
-  const references = [];
-  for (const [targetIndex, target] of project.targets.entries()) {
-    assert(
-      target && typeof target === 'object' && !Array.isArray(target),
-      `Project target ${targetIndex} must be an object.`,
-    );
+  const references: {asset: ProjectAssetReference; description: string}[] = [];
+  for (const [targetIndex, target] of (project.targets as unknown[]).entries()) {
+    assert(isObject(target), `Project target ${targetIndex} must be an object.`);
     for (const [collectionName, kind] of [
       ['costumes', 'costume'],
       ['sounds', 'sound'],
-    ]) {
-      const assets = target[collectionName] ?? [];
+    ] as const) {
+      const assets: unknown = target[collectionName] ?? [];
       assert(
         Array.isArray(assets),
         `Project target ${targetIndex} ${collectionName} must be an array.`,
       );
-      for (const [assetIndex, asset] of assets.entries()) {
-        assert(
-          asset && typeof asset === 'object' && !Array.isArray(asset),
-          `Project ${kind} ${targetIndex}:${assetIndex} must be an object.`,
-        );
+      for (const [assetIndex, asset] of (assets as unknown[]).entries()) {
+        assert(isObject(asset), `Project ${kind} ${targetIndex}:${assetIndex} must be an object.`);
         references.push({asset, description: `${kind} ${targetIndex}:${assetIndex}`});
       }
     }
@@ -254,13 +297,13 @@ function collectAssetReferences(project) {
   return references;
 }
 
-function percentEncode(contents) {
+function percentEncode(contents: Uint8Array): string {
   return [...contents]
     .map((byte) => `%${byte.toString(16).padStart(2, '0').toUpperCase()}`)
     .join('');
 }
 
-function encodeExtensionDataUrl(extension, contents) {
+function encodeExtensionDataUrl(extension: EmbeddedExtension, contents: Uint8Array): string {
   const metadata = [extension.mediaType, ...extension.parameters].join(';');
   if (extension.encoding === 'base64') {
     return `data:${metadata};base64,${Buffer.from(contents).toString('base64')}`;
@@ -268,22 +311,25 @@ function encodeExtensionDataUrl(extension, contents) {
   return `data:${metadata},${percentEncode(contents)}`;
 }
 
-async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
+async function inspectSb3Source(
+  sourceDirectory: string,
+  validateManagedExtensions: boolean,
+): Promise<InspectedSb3Source> {
   const resolvedSourceDirectory = path.resolve(sourceDirectory);
   await assertDirectory(resolvedSourceDirectory, 'SB3 source');
   const sourceManifest = await readJson(
     path.join(resolvedSourceDirectory, 'sb3-source.json'),
     'SB3 source manifest',
   );
-  const assetEntries = validateSourceManifest(sourceManifest);
-  const project = await readJson(
+  validateSourceManifest(sourceManifest);
+  const assetEntries = sourceManifest.archiveEntries.filter(
+    (entryName) => entryName !== 'project.json',
+  );
+  const project: unknown = await readJson(
     path.join(resolvedSourceDirectory, sourceManifest.project),
     'SB3 project source',
   );
-  assert(
-    project && typeof project === 'object' && !Array.isArray(project),
-    'project.source.json must contain an object.',
-  );
+  assert(isObject(project), 'project.source.json must contain an object.');
   const extensionManifest = await readJson(
     path.join(resolvedSourceDirectory, sourceManifest.embeddedExtensions),
     'Embedded extension manifest',
@@ -302,13 +348,13 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
     extensionFiles,
   );
 
-  const assetContents = new Map();
+  const assetContents = new Map<string, Uint8Array>();
   await Promise.all(
     assetFiles.map(async (assetPath) => {
       assetContents.set(assetPath, await readFile(path.join(assetsDirectory, assetPath)));
     }),
   );
-  const referencedAssets = new Set();
+  const referencedAssets = new Set<string>();
   const references = collectAssetReferences(project);
   for (const {asset, description} of references) {
     assert(
@@ -339,8 +385,8 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
     `Asset manifest contains unreferenced files: ${unreferencedAssets.join(', ')}`,
   );
 
-  const extensionContents = new Map();
-  const extensionApiManifestContents = new Map();
+  const extensionContents = new Map<string, Uint8Array>();
+  const extensionApiManifestContents = new Map<string, Uint8Array>();
   await Promise.all(
     extensions.map(async (extension) => {
       const contents = await readFile(path.join(resolvedSourceDirectory, extension.path));
@@ -373,11 +419,13 @@ async function inspectSb3Source(sourceDirectory, validateManagedExtensions) {
   };
 }
 
-export async function inspectSb3SourceForExtensionSync(sourceDirectory) {
+export async function inspectSb3SourceForExtensionSync(
+  sourceDirectory: string,
+): Promise<InspectedSb3Source> {
   return inspectSb3Source(sourceDirectory, false);
 }
 
-export async function validateSb3Source(sourceDirectory) {
+export async function validateSb3Source(sourceDirectory: string): Promise<InspectedSb3Source> {
   const source = await inspectSb3Source(sourceDirectory, true);
   buildExtensionBundles({
     extensionBundles: source.extensionBundles,
@@ -388,11 +436,10 @@ export async function validateSb3Source(sourceDirectory) {
   return source;
 }
 
-/**
- * @param {string} sourceDirectory
- * @param {{allowedAssetRoots?: string[], cleanUpBlocks?: boolean, projectAssetsPath?: string}} [options]
- */
-export async function createDeterministicSb3(sourceDirectory, options = {}) {
+export async function createDeterministicSb3(
+  sourceDirectory: string,
+  options: DeterministicSb3Options = {},
+): Promise<DeterministicSb3> {
   const {allowedAssetRoots = [], cleanUpBlocks = false, projectAssetsPath} = options;
   assert(typeof cleanUpBlocks === 'boolean', 'cleanUpBlocks must be a boolean.');
   assert(Array.isArray(allowedAssetRoots), 'allowedAssetRoots must be an array.');
@@ -401,7 +448,13 @@ export async function createDeterministicSb3(sourceDirectory, options = {}) {
     'projectAssetsPath must be a string when provided.',
   );
   const source = await validateSb3Source(sourceDirectory);
-  const projectAssets = projectAssetsPath
+  const projectAssets: {
+    archiveEntries: string[];
+    assetContents: Map<string, Uint8Array>;
+    assetReferenceCount: number;
+    project: ProjectJson;
+    summary: Readonly<ProjectAssetAdditionsSummary> | null;
+  } = projectAssetsPath
     ? await applyProjectAssetAdditions({
         allowedAssetRoots,
         assetContents: source.assetContents,
@@ -423,7 +476,7 @@ export async function createDeterministicSb3(sourceDirectory, options = {}) {
     project: projectAssets.project,
   });
   let project = structuredClone(bundled.project);
-  let blockCleanUp = null;
+  let blockCleanUp: BlockCleanUpSummary | null = null;
   if (cleanUpBlocks) {
     const cleaned = cleanUpTurboWarpBlocks(project);
     project = cleaned.project;
@@ -434,20 +487,23 @@ export async function createDeterministicSb3(sourceDirectory, options = {}) {
       targetCount: cleaned.targetCount,
     };
   }
+  const extensionUrls: Record<string, unknown> = project.extensionURLs ?? {};
   for (const extension of bundled.extensions) {
-    project.extensionURLs[extension.id] = encodeExtensionDataUrl(
-      extension,
-      bundled.extensionContents.get(extension.id),
-    );
+    const contents = bundled.extensionContents.get(extension.id);
+    assert(contents, `Embedded extension has no contents: ${extension.id}`);
+    extensionUrls[extension.id] = encodeExtensionDataUrl(extension, contents);
   }
+  project.extensionURLs = extensionUrls;
 
-  /** @type {Record<string, Uint8Array>} */
-  const archiveEntries = {};
+  const archiveEntries: Record<string, Uint8Array> = {};
   for (const entryName of projectAssets.archiveEntries) {
-    archiveEntries[entryName] =
-      entryName === 'project.json'
-        ? strToU8(`${JSON.stringify(project)}\n`)
-        : projectAssets.assetContents.get(entryName);
+    if (entryName === 'project.json') {
+      archiveEntries[entryName] = strToU8(`${JSON.stringify(project)}\n`);
+      continue;
+    }
+    const contents = projectAssets.assetContents.get(entryName);
+    assert(contents, `Archive entry has no contents: ${entryName}`);
+    archiveEntries[entryName] = contents;
   }
   const archive = zipSync(archiveEntries, {
     level: 6,

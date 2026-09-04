@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import {assert} from './assert';
+import type {ProjectJson, UnknownRecord} from './types';
+
 export const turboWarpCleanUpLayout = Object.freeze({
   columnGap: 96,
   columnTolerance: 256,
@@ -14,29 +17,63 @@ const nestedStackIndent = 64;
 const nestedStackPadding = 24;
 const nextBlockOverlap = 4;
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+interface BlockSize {
+  height: number;
+  width: number;
 }
 
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
+interface Script {
+  block: UnknownRecord;
+  blockId: string;
+  inputOrder: number;
+  originalX: number;
+  originalY: number;
+  size: BlockSize;
 }
 
-function compareNumbers(left, right) {
+interface ScriptColumn {
+  count: number;
+  scripts: Script[];
+  x: number;
+}
+
+interface ScriptMovement {
+  deltaX: number;
+  deltaY: number;
+}
+
+export interface TargetCleanUpResult {
+  movedCommentCount: number;
+  movedScriptCount: number;
+  scriptCount: number;
+}
+
+export interface TurboWarpCleanUpResult extends TargetCleanUpResult {
+  project: ProjectJson;
+  targetCount: number;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function compareNumbers(left: number, right: number): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function inputBlockId(input, blocks) {
+function inputBlockId(input: unknown, blocks: UnknownRecord): string | null {
   if (!Array.isArray(input)) return null;
-  for (const value of input.slice(1)) {
+  for (const value of (input as unknown[]).slice(1)) {
     if (typeof value === 'string' && Object.hasOwn(blocks, value)) return value;
   }
   return null;
 }
 
-function displayTextLength(block) {
+function displayTextLength(block: UnknownRecord): number {
   let length = typeof block.opcode === 'string' ? block.opcode.length : 0;
   if (isObject(block.fields)) {
     for (const field of Object.values(block.fields)) {
@@ -51,12 +88,16 @@ function displayTextLength(block) {
   return length;
 }
 
-function inputDisplayTextLength(input, blocks) {
+function inputDisplayTextLength(input: unknown, blocks: UnknownRecord): number {
   const childId = inputBlockId(input, blocks);
-  if (childId) return displayTextLength(blocks[childId]);
-  for (const value of input.slice(1)) {
+  if (childId) {
+    const child = blocks[childId];
+    return isObject(child) ? displayTextLength(child) : 0;
+  }
+  if (!Array.isArray(input)) return 0;
+  for (const value of (input as unknown[]).slice(1)) {
     if (!Array.isArray(value) || value.length < 2) continue;
-    const displayValue = value[1];
+    const displayValue: unknown = value[1];
     if (
       typeof displayValue === 'string' ||
       typeof displayValue === 'number' ||
@@ -68,8 +109,8 @@ function inputDisplayTextLength(input, blocks) {
   return 0;
 }
 
-function verticalChildIds(block, blocks) {
-  const childIds = [];
+function verticalChildIds(block: UnknownRecord, blocks: UnknownRecord): string[] {
+  const childIds: string[] = [];
   if (isObject(block.inputs)) {
     for (const [inputName, input] of Object.entries(block.inputs)) {
       const childId = inputBlockId(input, blocks);
@@ -82,15 +123,16 @@ function verticalChildIds(block, blocks) {
   return childIds;
 }
 
-function measureStack(blockId, blocks) {
-  const measured = new Map();
-  const active = new Set();
-  const work = [{blockId, finalize: false}];
+function measureStack(blockId: string, blocks: UnknownRecord): BlockSize {
+  const measured = new Map<string, BlockSize>();
+  const active = new Set<string>();
+  const work: {blockId: string; finalize: boolean}[] = [{blockId, finalize: false}];
 
   while (work.length > 0) {
     const frame = work.pop();
-    if (measured.has(frame.blockId) || !isObject(blocks[frame.blockId])) continue;
+    if (!frame) break;
     const block = blocks[frame.blockId];
+    if (measured.has(frame.blockId) || !isObject(block)) continue;
     if (!frame.finalize) {
       if (active.has(frame.blockId)) continue;
       active.add(frame.blockId);
@@ -131,10 +173,10 @@ function measureStack(blockId, blocks) {
   return measured.get(blockId) ?? {height: 0, width: 0};
 }
 
-function groupIntoColumns(scripts) {
-  const columns = [];
+function groupIntoColumns(scripts: Script[]): ScriptColumn[] {
+  const columns: ScriptColumn[] = [];
   for (const script of scripts) {
-    let bestColumn = null;
+    let bestColumn: ScriptColumn | null = null;
     let bestError = Number(turboWarpCleanUpLayout.columnTolerance);
     for (const column of columns) {
       const error = Math.abs(script.originalX - column.x);
@@ -162,9 +204,9 @@ function groupIntoColumns(scripts) {
   return columns;
 }
 
-function findTopBlockId(blockId, blocks) {
-  const visited = new Set();
-  let currentId = blockId;
+function findTopBlockId(blockId: unknown, blocks: UnknownRecord): string | null {
+  const visited = new Set<string>();
+  let currentId: unknown = blockId;
   while (typeof currentId === 'string' && !visited.has(currentId)) {
     visited.add(currentId);
     const block = blocks[currentId];
@@ -175,54 +217,59 @@ function findTopBlockId(blockId, blocks) {
   return null;
 }
 
-function moveAttachedComments(target, blocks, movements) {
+function moveAttachedComments(
+  target: UnknownRecord,
+  blocks: UnknownRecord,
+  movements: Map<string, ScriptMovement>,
+): number {
   if (!isObject(target.comments)) return 0;
   let movedCommentCount = 0;
   for (const comment of Object.values(target.comments)) {
     if (!isObject(comment) || typeof comment.blockId !== 'string') continue;
     const topBlockId = findTopBlockId(comment.blockId, blocks);
-    const movement = movements.get(topBlockId);
+    const movement = topBlockId === null ? undefined : movements.get(topBlockId);
     if (!movement || (!movement.deltaX && !movement.deltaY)) continue;
-    if (Number.isFinite(comment.x)) comment.x += movement.deltaX;
-    if (Number.isFinite(comment.y)) comment.y += movement.deltaY;
+    if (isFiniteNumber(comment.x)) comment.x += movement.deltaX;
+    if (isFiniteNumber(comment.y)) comment.y += movement.deltaY;
     movedCommentCount += 1;
   }
   return movedCommentCount;
 }
 
-function attachedCommentWidths(target, blocks) {
-  const widths = new Map();
+function attachedCommentWidths(target: UnknownRecord, blocks: UnknownRecord): Map<string, number> {
+  const widths = new Map<string, number>();
   if (!isObject(target.comments)) return widths;
   for (const comment of Object.values(target.comments)) {
     if (
       !isObject(comment) ||
       typeof comment.blockId !== 'string' ||
-      !Number.isFinite(comment.x) ||
-      !Number.isFinite(comment.width)
+      !isFiniteNumber(comment.x) ||
+      !isFiniteNumber(comment.width)
     ) {
       continue;
     }
     const topBlockId = findTopBlockId(comment.blockId, blocks);
+    if (!topBlockId) continue;
     const topBlock = blocks[topBlockId];
-    if (!topBlockId || !isObject(topBlock) || !Number.isFinite(topBlock.x)) continue;
+    if (!isObject(topBlock) || !isFiniteNumber(topBlock.x)) continue;
     const width = Math.max(comment.width, comment.x + comment.width - topBlock.x);
     widths.set(topBlockId, Math.max(widths.get(topBlockId) ?? 0, width));
   }
   return widths;
 }
 
-function cleanUpTarget(target, targetIndex) {
+function cleanUpTarget(target: UnknownRecord, targetIndex: number): TargetCleanUpResult {
   if (target.blocks === undefined) {
     return {movedCommentCount: 0, movedScriptCount: 0, scriptCount: 0};
   }
   assert(isObject(target.blocks), `Project target ${targetIndex} blocks must be an object.`);
   const blocks = target.blocks;
-  const scripts = [];
+  const scripts: Script[] = [];
   let inputOrder = 0;
   for (const [blockId, block] of Object.entries(blocks)) {
     if (!isObject(block) || block.topLevel !== true) continue;
     assert(
-      Number.isFinite(block.x) && Number.isFinite(block.y),
+      isFiniteNumber(block.x) && isFiniteNumber(block.y),
       `Top-level block ${JSON.stringify(blockId)} in project target ${targetIndex} requires numeric x and y coordinates.`,
     );
     scripts.push({
@@ -236,12 +283,12 @@ function cleanUpTarget(target, targetIndex) {
     inputOrder += 1;
   }
 
-  const movements = new Map();
+  const movements = new Map<string, ScriptMovement>();
   const commentWidths = attachedCommentWidths(target, blocks);
-  let cursorX = turboWarpCleanUpLayout.startX;
+  let cursorX: number = turboWarpCleanUpLayout.startX;
   let movedScriptCount = 0;
   for (const column of groupIntoColumns(scripts)) {
-    let cursorY = turboWarpCleanUpLayout.startY;
+    let cursorY: number = turboWarpCleanUpLayout.startY;
     let columnWidth = 0;
     for (const script of column.scripts) {
       const deltaX = cursorX - script.originalX;
@@ -267,16 +314,17 @@ function cleanUpTarget(target, targetIndex) {
   };
 }
 
-export function cleanUpTurboWarpBlocks(project) {
+export function cleanUpTurboWarpBlocks(project: ProjectJson): TurboWarpCleanUpResult {
   assert(isObject(project), 'TurboWarp project must be an object.');
   assert(Array.isArray(project.targets), 'TurboWarp project targets must be an array.');
   const cleanedProject = structuredClone(project);
+  const targets = cleanedProject.targets as unknown[];
   let movedCommentCount = 0;
   let movedScriptCount = 0;
   let scriptCount = 0;
   let targetCount = 0;
 
-  for (const [targetIndex, target] of cleanedProject.targets.entries()) {
+  for (const [targetIndex, target] of targets.entries()) {
     assert(isObject(target), `Project target ${targetIndex} must be an object.`);
     const result = cleanUpTarget(target, targetIndex);
     if (result.scriptCount > 0) targetCount += 1;

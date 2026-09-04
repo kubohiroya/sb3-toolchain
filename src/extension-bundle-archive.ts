@@ -5,26 +5,60 @@ import path from 'node:path';
 
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 
-import {validateArchiveEntryName} from './archive.js';
-import {writeSb3Archive} from './build.js';
-import {extensionBundleRecoveryMarker} from './extension-bundle.js';
-import {extensionHeaderMetadata} from './extension-dependencies.js';
-import {decodeExtensionDataUrl} from './import.js';
-import {fixedZipTimestamp} from './source.js';
+import {validateArchiveEntryName} from './archive';
+import {assert, errorMessage} from './assert';
+import {writeSb3Archive} from './build';
+import {extensionBundleRecoveryMarker} from './extension-bundle';
+import {extensionHeaderMetadata} from './extension-dependencies';
+import {decodeExtensionDataUrl} from './import';
+import {fixedZipTimestamp} from './source';
+import type {ProjectJson, UnknownRecord} from './types';
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
+interface RecoveryComponent {
+  dataUrl: string;
+  id: string;
 }
 
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
+interface RecoveryCapsule {
+  bundle: {id: string; name: string};
+  components: RecoveryComponent[];
+  members: string[];
+  originalExtensionIds: string[] | null;
+  originalExtensionUrlIds: string[];
 }
 
-function arraysEqual(left, right) {
+interface RestoreCounts {
+  extensionStorage: number;
+  extensionUrls: number;
+  opcodes: number;
+  projectExtensions: number;
+}
+
+export interface BundledSb3UnbundleOptions {
+  bundleId: string;
+  inputPath: string;
+  outputPath: string;
+  yes?: boolean;
+}
+
+export interface BundledSb3UnbundlePlan {
+  bundleId: string;
+  counts: RestoreCounts;
+  entryCount: number;
+  inputPath: string;
+  members: string[];
+  outputPath: string;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function arraysEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function validateId(id, description) {
+function validateId(id: unknown, description: string): string {
   assert(
     typeof id === 'string' && /^[a-z0-9]+$/u.test(id),
     `${description} must use TurboWarp's [a-z0-9]+ format: ${JSON.stringify(id)}`,
@@ -32,7 +66,7 @@ function validateId(id, description) {
   return id;
 }
 
-function decodeBase64Json(payload, description) {
+function decodeBase64Json(payload: unknown, description: string): unknown {
   assert(
     typeof payload === 'string' && /^[A-Za-z0-9+/]*={0,2}$/u.test(payload),
     `${description} contains invalid base64.`,
@@ -46,11 +80,14 @@ function decodeBase64Json(payload, description) {
       ),
     );
   } catch (error) {
-    throw new Error(`${description} contains invalid JSON: ${error.message}`, {cause: error});
+    throw new Error(`${description} contains invalid JSON: ${errorMessage(error)}`, {cause: error});
   }
 }
 
-function recoveryPayloadFromSource(source, requiredBundleId = undefined) {
+function recoveryPayloadFromSource(
+  source: string,
+  requiredBundleId: string | undefined = undefined,
+): string | null {
   const prefix = `// ${extensionBundleRecoveryMarker}: `;
   const payloads = source
     .split(/\r?\n/u)
@@ -67,20 +104,30 @@ function recoveryPayloadFromSource(source, requiredBundleId = undefined) {
   return payloads[0];
 }
 
-function validateOriginalOrder(value, description, nullable = false) {
+function validateOriginalOrder(
+  value: unknown,
+  description: string,
+  nullable = false,
+): string[] | null {
   if (nullable && value === null) return null;
   assert(
-    Array.isArray(value) && value.every((id) => typeof id === 'string' && id.length > 0),
+    Array.isArray(value) &&
+      (value as unknown[]).every((id) => typeof id === 'string' && id.length > 0),
     `Recovery capsule ${description} must be an array of IDs${nullable ? ' or null' : ''}.`,
   );
+  const ids = value as string[];
   assert(
-    new Set(value).size === value.length,
+    new Set(ids).size === ids.length,
     `Recovery capsule ${description} contains duplicate IDs.`,
   );
-  return [...value];
+  return [...ids];
 }
 
-function readRecoveryCapsule(extensionId, dataUrl, required = false) {
+function readRecoveryCapsule(
+  extensionId: string,
+  dataUrl: unknown,
+  required = false,
+): RecoveryCapsule | null {
   assert(typeof dataUrl === 'string', `Extension URL for ${extensionId} must be a string.`);
   if (!dataUrl.startsWith('data:')) {
     assert(!required, `Extension ${extensionId} is not embedded as a data URL.`);
@@ -99,44 +146,48 @@ function readRecoveryCapsule(extensionId, dataUrl, required = false) {
     `Unsupported extension bundle recovery format: ${capsule.formatVersion}`,
   );
   assert(isObject(capsule.bundle), `Extension ${extensionId} recovery capsule has no bundle.`);
-  validateId(capsule.bundle.id, 'Recovery capsule bundle ID');
+  const bundle = capsule.bundle;
+  const bundleId = validateId(bundle.id, 'Recovery capsule bundle ID');
   assert(
-    capsule.bundle.id === extensionId,
-    `Recovery capsule bundle ID mismatch: expected ${extensionId}, got ${capsule.bundle.id}.`,
+    bundleId === extensionId,
+    `Recovery capsule bundle ID mismatch: expected ${extensionId}, got ${bundleId}.`,
   );
   assert(
-    typeof capsule.bundle.name === 'string' && capsule.bundle.name.length > 0,
+    typeof bundle.name === 'string' && bundle.name.length > 0,
     `Recovery capsule for ${extensionId} has no bundle name.`,
   );
+  const bundleName = bundle.name;
   assert(
     Array.isArray(capsule.components) && capsule.components.length >= 2,
     `Recovery capsule for ${extensionId} must contain at least two components.`,
   );
 
-  const seenIds = new Set();
-  const components = capsule.components.map((component, index) => {
-    assert(
-      isObject(component),
-      `Recovery component ${index} for ${extensionId} must be an object.`,
-    );
-    validateId(component.id, `Recovery component ${index} ID`);
-    assert(!seenIds.has(component.id), `Recovery capsule repeats component: ${component.id}`);
-    seenIds.add(component.id);
-    const decoded = decodeExtensionDataUrl(component.dataUrl);
-    assert(
-      decoded.mediaType === 'text/javascript' || decoded.mediaType === 'application/javascript',
-      `Recovery component ${component.id} must contain JavaScript.`,
-    );
-    const metadata = extensionHeaderMetadata(decoded.source);
-    assert(
-      metadata.id === component.id,
-      `Recovery component header ID mismatch: expected ${component.id}, got ${metadata.id ?? '(missing)'}.`,
-    );
-    return {dataUrl: component.dataUrl, id: component.id};
-  });
+  const seenIds = new Set<string>();
+  const components = (capsule.components as unknown[]).map(
+    (component, index): RecoveryComponent => {
+      assert(
+        isObject(component),
+        `Recovery component ${index} for ${extensionId} must be an object.`,
+      );
+      const componentId = validateId(component.id, `Recovery component ${index} ID`);
+      assert(!seenIds.has(componentId), `Recovery capsule repeats component: ${componentId}`);
+      seenIds.add(componentId);
+      const decoded = decodeExtensionDataUrl(component.dataUrl);
+      assert(
+        decoded.mediaType === 'text/javascript' || decoded.mediaType === 'application/javascript',
+        `Recovery component ${componentId} must contain JavaScript.`,
+      );
+      const metadata = extensionHeaderMetadata(decoded.source);
+      assert(
+        metadata.id === componentId,
+        `Recovery component header ID mismatch: expected ${componentId}, got ${metadata.id ?? '(missing)'}.`,
+      );
+      return {dataUrl: component.dataUrl as string, id: componentId};
+    },
+  );
 
   return {
-    bundle: {id: capsule.bundle.id, name: capsule.bundle.name},
+    bundle: {id: bundleId, name: bundleName},
     components,
     members: components.map((component) => component.id),
     originalExtensionIds: validateOriginalOrder(
@@ -147,12 +198,12 @@ function readRecoveryCapsule(extensionId, dataUrl, required = false) {
     originalExtensionUrlIds: validateOriginalOrder(
       capsule.originalExtensionUrlIds,
       'originalExtensionUrlIds',
-    ),
+    ) as string[],
   };
 }
 
-function collapseOrder(originalIds, bundles) {
-  const bundlesByMember = new Map();
+function collapseOrder(originalIds: string[], bundles: RecoveryCapsule[]): string[] {
+  const bundlesByMember = new Map<string, string>();
   for (const bundle of bundles) {
     for (const memberId of bundle.members) {
       assert(
@@ -162,8 +213,8 @@ function collapseOrder(originalIds, bundles) {
       bundlesByMember.set(memberId, bundle.bundle.id);
     }
   }
-  const emittedBundles = new Set();
-  const output = [];
+  const emittedBundles = new Set<string>();
+  const output: string[] = [];
   for (const id of originalIds) {
     const bundleId = bundlesByMember.get(id);
     if (!bundleId) {
@@ -176,7 +227,11 @@ function collapseOrder(originalIds, bundles) {
   return output;
 }
 
-function replaceBundledStorage(storage, target, counts) {
+function replaceBundledStorage(
+  storage: unknown,
+  target: RecoveryCapsule,
+  counts: RestoreCounts,
+): unknown {
   if (!isObject(storage) || !Object.hasOwn(storage, target.bundle.id)) return storage;
   const bundleStorage = storage[target.bundle.id];
   assert(
@@ -189,8 +244,9 @@ function replaceBundledStorage(storage, target, counts) {
     Object.keys(bundleStorage).every((key) => key === 'formatVersion' || key === 'components'),
     `Extension storage for ${target.bundle.id} has unsupported bundle-level fields.`,
   );
+  const bundleComponents = bundleStorage.components as UnknownRecord;
   const memberIds = new Set(target.members);
-  for (const componentId of Object.keys(bundleStorage.components)) {
+  for (const componentId of Object.keys(bundleComponents)) {
     assert(
       memberIds.has(componentId),
       `Extension storage for ${target.bundle.id} contains unknown component: ${componentId}`,
@@ -200,15 +256,15 @@ function replaceBundledStorage(storage, target, counts) {
       `Cannot restore extension storage because member ID already exists: ${componentId}`,
     );
   }
-  const replacement = {};
+  const replacement: UnknownRecord = {};
   for (const [id, value] of Object.entries(storage)) {
     if (id !== target.bundle.id) {
       replacement[id] = value;
       continue;
     }
     for (const memberId of target.members) {
-      if (Object.hasOwn(bundleStorage.components, memberId)) {
-        replacement[memberId] = bundleStorage.components[memberId];
+      if (Object.hasOwn(bundleComponents, memberId)) {
+        replacement[memberId] = bundleComponents[memberId];
       }
     }
   }
@@ -216,20 +272,21 @@ function replaceBundledStorage(storage, target, counts) {
   return replacement;
 }
 
-function restoreOpcodeValues(value, target, counts) {
+function restoreOpcodeValues(value: unknown, target: RecoveryCapsule, counts: RestoreCounts): void {
   if (!value || typeof value !== 'object') return;
   if (Array.isArray(value)) {
-    for (const entry of value) restoreOpcodeValues(entry, target, counts);
+    for (const entry of value as unknown[]) restoreOpcodeValues(entry, target, counts);
     return;
   }
-  for (const [key, entry] of Object.entries(value)) {
+  const record = value as UnknownRecord;
+  for (const [key, entry] of Object.entries(record)) {
     if (key === 'opcode' && typeof entry === 'string') {
       const bundlePrefix = `${target.bundle.id}_`;
       if (!entry.startsWith(bundlePrefix)) continue;
       const localOpcode = entry.slice(bundlePrefix.length);
       const memberId = target.members.find((id) => localOpcode.startsWith(`${id}__`));
       assert(memberId, `Bundle opcode cannot be assigned to a recovery component: ${entry}`);
-      value[key] = `${memberId}_${localOpcode.slice(memberId.length + 2)}`;
+      record[key] = `${memberId}_${localOpcode.slice(memberId.length + 2)}`;
       counts.opcodes += 1;
     } else {
       restoreOpcodeValues(entry, target, counts);
@@ -237,32 +294,44 @@ function restoreOpcodeValues(value, target, counts) {
   }
 }
 
-function collectRemainingBundleReferences(value, bundleId) {
-  const references = [];
+function collectRemainingBundleReferences(value: unknown, bundleId: string): string[] {
+  const references: string[] = [];
   const prefix = `${bundleId}_`;
-  function visit(current, pointer) {
+  function visit(current: unknown, pointer: string): void {
     if (typeof current === 'string') {
       if (current.startsWith(prefix)) references.push(pointer || '/');
       return;
     }
     if (!current || typeof current !== 'object') return;
     if (Array.isArray(current)) {
-      current.forEach((entry, index) => visit(entry, `${pointer}/${index}`));
+      (current as unknown[]).forEach((entry, index) => visit(entry, `${pointer}/${index}`));
       return;
     }
-    for (const [key, entry] of Object.entries(current)) visit(entry, `${pointer}/${key}`);
+    for (const [key, entry] of Object.entries(current as UnknownRecord)) {
+      visit(entry, `${pointer}/${key}`);
+    }
   }
   visit(value, '');
   return references;
 }
 
-function restoreProject(project, target, activeBundles) {
+function restoreProject(
+  project: ProjectJson,
+  target: RecoveryCapsule,
+  activeBundles: RecoveryCapsule[],
+): {counts: RestoreCounts; project: ProjectJson} {
   const restored = structuredClone(project);
-  const counts = {extensionStorage: 0, extensionUrls: 0, opcodes: 0, projectExtensions: 0};
+  const counts: RestoreCounts = {
+    extensionStorage: 0,
+    extensionUrls: 0,
+    opcodes: 0,
+    projectExtensions: 0,
+  };
   const remainingBundles = activeBundles.filter((bundle) => bundle.bundle.id !== target.bundle.id);
 
   assert(isObject(restored.extensionURLs), 'SB3 project.json extensionURLs must be an object.');
-  const currentUrlIds = Object.keys(restored.extensionURLs);
+  const existingUrls = restored.extensionURLs;
+  const currentUrlIds = Object.keys(existingUrls);
   const expectedUrlIds = collapseOrder(target.originalExtensionUrlIds, activeBundles);
   assert(
     arraysEqual(currentUrlIds, expectedUrlIds),
@@ -276,7 +345,7 @@ function restoreProject(project, target, activeBundles) {
   restored.extensionURLs = Object.fromEntries(
     restoredUrlIds.map((id) => [
       id,
-      componentUrls.has(id) ? componentUrls.get(id) : restored.extensionURLs[id],
+      componentUrls.has(id) ? componentUrls.get(id) : existingUrls[id],
     ]),
   );
   counts.extensionUrls = target.members.length + 1;
@@ -299,8 +368,8 @@ function restoreProject(project, target, activeBundles) {
   }
 
   restored.extensionStorage = replaceBundledStorage(restored.extensionStorage, target, counts);
-  for (const targetEntry of restored.targets ?? []) {
-    if (targetEntry) {
+  for (const targetEntry of (restored.targets as unknown[] | undefined) ?? []) {
+    if (isObject(targetEntry)) {
       targetEntry.extensionStorage = replaceBundledStorage(
         targetEntry.extensionStorage,
         target,
@@ -320,18 +389,24 @@ function restoreProject(project, target, activeBundles) {
   return {counts, project: restored};
 }
 
-function parseProject(projectEntry) {
+function parseProject(projectEntry: Uint8Array): ProjectJson {
   try {
-    const project = JSON.parse(strFromU8(projectEntry));
+    const project: unknown = JSON.parse(strFromU8(projectEntry));
     assert(isObject(project), 'SB3 project.json must contain an object.');
     return project;
   } catch (error) {
-    if (error.message === 'SB3 project.json must contain an object.') throw error;
-    throw new Error(`SB3 project.json is invalid JSON: ${error.message}`, {cause: error});
+    if (errorMessage(error) === 'SB3 project.json must contain an object.') throw error;
+    throw new Error(`SB3 project.json is invalid JSON: ${errorMessage(error)}`, {cause: error});
   }
 }
 
-async function createArchiveUnbundlePlan({bundleId, inputPath, outputPath}) {
+async function createArchiveUnbundlePlan({
+  bundleId,
+  inputPath,
+  outputPath,
+}: Omit<BundledSb3UnbundleOptions, 'yes'>): Promise<
+  BundledSb3UnbundlePlan & {archive: Uint8Array}
+> {
   validateId(bundleId, 'Extension bundle ID');
   assert(typeof inputPath === 'string', 'Input SB3 path is required.');
   assert(typeof outputPath === 'string', 'Unbundled SB3 output path is required.');
@@ -364,7 +439,7 @@ async function createArchiveUnbundlePlan({bundleId, inputPath, outputPath}) {
   const project = parseProject(archiveEntries['project.json']);
   assert(isObject(project.extensionURLs), 'SB3 project.json extensionURLs must be an object.');
 
-  const activeBundles = [];
+  const activeBundles: RecoveryCapsule[] = [];
   for (const [extensionId, dataUrl] of Object.entries(project.extensionURLs)) {
     const recovery = readRecoveryCapsule(extensionId, dataUrl, extensionId === bundleId);
     if (recovery) activeBundles.push(recovery);
@@ -390,7 +465,7 @@ async function createArchiveUnbundlePlan({bundleId, inputPath, outputPath}) {
   };
 }
 
-function publicArchivePlan(plan) {
+function publicArchivePlan(plan: BundledSb3UnbundlePlan): BundledSb3UnbundlePlan {
   return {
     bundleId: plan.bundleId,
     counts: plan.counts,
@@ -401,12 +476,19 @@ function publicArchivePlan(plan) {
   };
 }
 
-export async function planBundledSb3Unbundle(options) {
+export async function planBundledSb3Unbundle(
+  options: Omit<BundledSb3UnbundleOptions, 'yes'>,
+): Promise<BundledSb3UnbundlePlan & {applied: boolean; changed: boolean}> {
   const plan = await createArchiveUnbundlePlan(options);
   return {applied: false, changed: true, ...publicArchivePlan(plan)};
 }
 
-export async function unbundleSb3({bundleId, inputPath, outputPath, yes = false}) {
+export async function unbundleSb3({
+  bundleId,
+  inputPath,
+  outputPath,
+  yes = false,
+}: BundledSb3UnbundleOptions) {
   const plan = await createArchiveUnbundlePlan({bundleId, inputPath, outputPath});
   const publicPlan = publicArchivePlan(plan);
   if (!yes) {

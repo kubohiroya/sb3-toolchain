@@ -1,13 +1,82 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import {createHash} from 'node:crypto';
+import type {Stats} from 'node:fs';
 import {lstat, readFile, realpath} from 'node:fs/promises';
 import path from 'node:path';
 
 import {parseBuffer} from 'music-metadata';
 import {isAlias, isPair, parseAllDocuments, visit} from 'yaml';
 
+import {assert} from './assert';
+import type {ProjectJson, UnknownRecord} from './types';
+
 export const projectAssetAdditionsFormatVersion = 1;
+
+interface AllowedAssetRoot {
+  lexical: string;
+  real: string;
+}
+
+interface SpriteSpecification {
+  direction: number;
+  draggable: boolean;
+  layerOrder: number;
+  rotationStyle: string;
+  size: number;
+  visible: boolean;
+  volume: number;
+  x: number;
+  y: number;
+}
+
+interface AssetSpecification {
+  bitmapResolution?: unknown;
+  dataFormat?: unknown;
+  file?: unknown;
+  kind: 'backdrop' | 'costume' | 'sound';
+  license?: unknown;
+  name?: string;
+  rate?: unknown;
+  rotationCenterX?: unknown;
+  rotationCenterY?: unknown;
+  sampleCount?: unknown;
+  sha256?: unknown;
+  size?: unknown;
+  target?: string;
+}
+
+interface ResolvedAssetFile {
+  contents: Buffer;
+  dataFormat: string;
+  file: string;
+  name: string | undefined;
+}
+
+export interface ProjectAssetAdditionsSummary {
+  assetFileCount: number;
+  backdropCount: number;
+  costumeCount: number;
+  soundCount: number;
+  spriteCount: number;
+}
+
+export interface ProjectAssetAdditionsInput {
+  allowedAssetRoots?: string[];
+  archiveEntries: string[];
+  assetContents: Map<string, Uint8Array>;
+  manifestPath: string;
+  project: ProjectJson;
+}
+
+export interface ProjectAssetAdditionsResult {
+  archiveEntries: string[];
+  assetContents: Map<string, Uint8Array>;
+  assetReferenceCount: number;
+  manifestPath: string;
+  project: ProjectJson;
+  summary: Readonly<ProjectAssetAdditionsSummary>;
+}
 
 const maximumManifestBytes = 1024 * 1024;
 const forbiddenMappingKeys = new Set(['__proto__', 'constructor', 'prototype']);
@@ -27,20 +96,16 @@ const soundFormats = new Map([
   ['mp3', 'audio/mpeg'],
 ]);
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function isRecord(value) {
+function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function exactKeys(value, allowed, description) {
+function exactKeys(value: UnknownRecord, allowed: Set<string>, description: string): void {
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   assert(unknown.length === 0, `${description} has unknown properties: ${unknown.join(', ')}`);
 }
 
-function nonEmptyString(value, description) {
+function nonEmptyString(value: unknown, description: string): string {
   assert(
     typeof value === 'string' &&
       value.length > 0 &&
@@ -52,28 +117,28 @@ function nonEmptyString(value, description) {
   return value;
 }
 
-function finiteNumber(value, description) {
+function finiteNumber(value: unknown, description: string): number {
   assert(typeof value === 'number' && Number.isFinite(value), `${description} must be finite.`);
   return value;
 }
 
-function safeInteger(value, description, minimum = 0) {
+function safeInteger(value: unknown, description: string, minimum = 0): number {
   assert(
-    Number.isSafeInteger(value) && value >= minimum,
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum,
     `${description} must be a safe integer greater than or equal to ${minimum}.`,
   );
   return value;
 }
 
-function sha256(contents) {
+function sha256(contents: Uint8Array | string): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-function md5(contents) {
+function md5(contents: Uint8Array | string): string {
   return createHash('md5').update(contents).digest('hex');
 }
 
-function parseRestrictedYaml(source, manifestPath) {
+function parseRestrictedYaml(source: string, manifestPath: string): unknown {
   const documents = parseAllDocuments(source, {
     prettyErrors: false,
     strict: true,
@@ -90,15 +155,15 @@ function parseRestrictedYaml(source, manifestPath) {
     documents.length === 1,
     `Project asset additions manifest must contain exactly one YAML document: ${manifestPath}`,
   );
-  let restrictedFeature;
+  let restrictedFeature: string | undefined;
   visit(documents[0], (_key, node) => {
     if (restrictedFeature) return visit.BREAK;
-    const yamlNode = /** @type {any} */ (node);
+    const yamlNode = node as {anchor?: unknown; key?: {value?: unknown}; tag?: unknown} | null;
     if (isAlias(node) || yamlNode?.anchor) restrictedFeature = 'aliases and anchors';
-    else if (isPair(node) && yamlNode.key?.value === '<<') restrictedFeature = 'merge keys';
+    else if (isPair(node) && yamlNode?.key?.value === '<<') restrictedFeature = 'merge keys';
     else if (yamlNode?.tag) restrictedFeature = 'custom tags';
-    else if (isPair(node) && forbiddenMappingKeys.has(String(yamlNode.key?.value))) {
-      restrictedFeature = `mapping key ${String(yamlNode.key.value)}`;
+    else if (isPair(node) && forbiddenMappingKeys.has(String(yamlNode?.key?.value))) {
+      restrictedFeature = `mapping key ${String(yamlNode?.key?.value)}`;
     }
     return undefined;
   });
@@ -109,8 +174,8 @@ function parseRestrictedYaml(source, manifestPath) {
   return documents[0].toJS({maxAliasCount: 0});
 }
 
-async function readManifestFile(filePath) {
-  let stats;
+async function readManifestFile(filePath: string): Promise<unknown> {
+  let stats: Stats;
   try {
     stats = await lstat(filePath);
   } catch (error) {
@@ -133,7 +198,7 @@ async function readManifestFile(filePath) {
     `Project asset additions manifest must use .json, .yml, or .yaml: ${filePath}`,
   );
   if (extension === '.json') {
-    let value;
+    let value: unknown;
     try {
       value = JSON.parse(source);
     } catch (error) {
@@ -147,14 +212,17 @@ async function readManifestFile(filePath) {
   return parseRestrictedYaml(source, filePath);
 }
 
-function isContained(root, candidate) {
+function isContained(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..');
 }
 
-async function validateAllowedRoots(manifestDirectory, allowedAssetRoots) {
+async function validateAllowedRoots(
+  manifestDirectory: string,
+  allowedAssetRoots: unknown,
+): Promise<AllowedAssetRoot[]> {
   assert(Array.isArray(allowedAssetRoots), 'allowedAssetRoots must be an array.');
-  const roots = [manifestDirectory, ...allowedAssetRoots].map((root) => {
+  const roots = [manifestDirectory, ...(allowedAssetRoots as unknown[])].map((root) => {
     assert(typeof root === 'string', 'Every allowed project asset root must be a string.');
     return path.resolve(root);
   });
@@ -171,7 +239,11 @@ async function validateAllowedRoots(manifestDirectory, allowedAssetRoots) {
   );
 }
 
-async function assertNoSymlinkPath(root, candidate, description) {
+async function assertNoSymlinkPath(
+  root: string,
+  candidate: string,
+  description: string,
+): Promise<void> {
   const relative = path.relative(root, candidate);
   assert(isContained(root, candidate), `${description} escapes its allowed root: ${candidate}`);
   let current = root;
@@ -182,7 +254,12 @@ async function assertNoSymlinkPath(root, candidate, description) {
   }
 }
 
-async function readAssetFile(manifestDirectory, allowedRoots, specification, description) {
+async function readAssetFile(
+  manifestDirectory: string,
+  allowedRoots: AllowedAssetRoot[],
+  specification: AssetSpecification,
+  description: string,
+): Promise<ResolvedAssetFile> {
   const file = nonEmptyString(specification.file, `${description}.file`);
   assert(!path.isAbsolute(file) && !file.includes('\\'), `${description}.file must be relative.`);
   const resolved = path.resolve(manifestDirectory, file);
@@ -241,10 +318,14 @@ async function readAssetFile(manifestDirectory, allowedRoots, specification, des
   };
 }
 
-async function inferSoundMetadata(contents, dataFormat, description) {
+async function inferSoundMetadata(
+  contents: Buffer,
+  dataFormat: string,
+  description: string,
+): Promise<{rate: number; sampleCount: number}> {
   const mimeType = soundFormats.get(dataFormat);
   assert(mimeType, `${description}.file uses unsupported sound format: ${dataFormat}`);
-  let metadata;
+  let metadata: Awaited<ReturnType<typeof parseBuffer>>;
   try {
     metadata = await parseBuffer(
       contents,
@@ -260,12 +341,13 @@ async function inferSoundMetadata(contents, dataFormat, description) {
     (typeof metadata.format.duration === 'number' && typeof rate === 'number'
       ? Math.round(metadata.format.duration * rate)
       : undefined);
-  safeInteger(rate, `${description} inferred sample rate`, 1);
-  safeInteger(sampleCount, `${description} inferred sample count`);
-  return {rate, sampleCount};
+  return {
+    rate: safeInteger(rate, `${description} inferred sample rate`, 1),
+    sampleCount: safeInteger(sampleCount, `${description} inferred sample count`),
+  };
 }
 
-function validateSprite(specification, name) {
+function validateSprite(specification: unknown, name: string): SpriteSpecification {
   const description = `Project asset sprite ${JSON.stringify(name)}`;
   assert(isRecord(specification), `${description} must be an object.`);
   exactKeys(
@@ -283,23 +365,40 @@ function validateSprite(specification, name) {
     ]),
     description,
   );
-  safeInteger(specification.layerOrder, `${description}.layerOrder`);
+  const layerOrder = safeInteger(specification.layerOrder, `${description}.layerOrder`);
   assert(typeof specification.visible === 'boolean', `${description}.visible must be boolean.`);
-  finiteNumber(specification.x, `${description}.x`);
-  finiteNumber(specification.y, `${description}.y`);
+  const x = finiteNumber(specification.x, `${description}.x`);
+  const y = finiteNumber(specification.y, `${description}.y`);
   const size = finiteNumber(specification.size, `${description}.size`);
   assert(size > 0, `${description}.size must be greater than zero.`);
-  finiteNumber(specification.direction, `${description}.direction`);
+  const direction = finiteNumber(specification.direction, `${description}.direction`);
   assert(typeof specification.draggable === 'boolean', `${description}.draggable must be boolean.`);
+  const rotationStyle = specification.rotationStyle;
   assert(
-    ['all around', 'left-right', "don't rotate"].includes(specification.rotationStyle),
-    `${description}.rotationStyle is invalid: ${specification.rotationStyle}`,
+    rotationStyle === 'all around' ||
+      rotationStyle === 'left-right' ||
+      rotationStyle === "don't rotate",
+    `${description}.rotationStyle is invalid: ${String(rotationStyle)}`,
   );
   const volume = finiteNumber(specification.volume, `${description}.volume`);
   assert(volume >= 0 && volume <= 100, `${description}.volume must be between 0 and 100.`);
+  return {
+    direction,
+    draggable: specification.draggable,
+    layerOrder,
+    rotationStyle,
+    size,
+    visible: specification.visible,
+    volume,
+    x,
+    y,
+  };
 }
 
-function validateAsset(specification, assetId) {
+function validateAsset(
+  specification: unknown,
+  assetId: string,
+): {description: string; specification: AssetSpecification} {
   const description = `Project asset ${JSON.stringify(assetId)}`;
   assert(isRecord(specification), `${description} must be an object.`);
   assert(
@@ -324,10 +423,16 @@ function validateAsset(specification, assetId) {
     nonEmptyString(specification.target, `${description}.target`);
   }
   if (specification.name !== undefined) nonEmptyString(specification.name, `${description}.name`);
-  return description;
+  return {description, specification: specification as unknown as AssetSpecification};
 }
 
-function addAssetContents(assetContents, archiveEntries, contents, filename, description) {
+function addAssetContents(
+  assetContents: Map<string, Uint8Array>,
+  archiveEntries: string[],
+  contents: Buffer,
+  filename: string,
+  description: string,
+): boolean {
   const existing = assetContents.get(filename);
   if (existing) {
     assert(
@@ -351,7 +456,7 @@ export async function applyProjectAssetAdditions({
   archiveEntries,
   manifestPath,
   project,
-}) {
+}: ProjectAssetAdditionsInput): Promise<ProjectAssetAdditionsResult> {
   assert(typeof manifestPath === 'string', 'projectAssetsPath must be a string.');
   assert(isRecord(project), 'Project asset additions require a project object.');
   assert(assetContents instanceof Map, 'Project asset additions require an asset contents Map.');
@@ -383,10 +488,12 @@ export async function applyProjectAssetAdditions({
   assert(Array.isArray(project.targets), 'Project asset additions require project.targets.');
 
   const composedProject = structuredClone(project);
-  const composedAssetContents = new Map(assetContents);
+  const composedTargets = composedProject.targets as UnknownRecord[];
+  const composedAssetContents = new Map<string, Uint8Array>(assetContents);
   const composedArchiveEntries = [...archiveEntries];
-  const targetByName = new Map();
-  for (const target of composedProject.targets) {
+  const targetByName = new Map<string, UnknownRecord>();
+  for (const target of composedTargets) {
+    assert(isRecord(target), 'Existing project target must be an object.');
     const targetName = nonEmptyString(target.name, 'Existing project target name');
     assert(!targetByName.has(targetName), `Project has duplicate target name: ${targetName}`);
     assert(
@@ -396,16 +503,16 @@ export async function applyProjectAssetAdditions({
     assert(Array.isArray(target.sounds), `Project target ${targetName}.sounds must be an array.`);
     targetByName.set(targetName, target);
   }
-  const stages = composedProject.targets.filter(({isStage}) => isStage);
+  const stages = composedTargets.filter(({isStage}) => isStage);
   assert(stages.length === 1, 'Project asset additions require exactly one Stage target.');
   const stage = stages[0];
-  const newSpriteNames = [];
+  const newSpriteNames: string[] = [];
 
-  for (const [rawName, specification] of Object.entries(manifest.sprites ?? {})) {
+  for (const [rawName, rawSprite] of Object.entries(manifest.sprites ?? {})) {
     const name = nonEmptyString(rawName, 'Project asset sprite name');
-    validateSprite(specification, name);
+    const specification = validateSprite(rawSprite, name);
     assert(!targetByName.has(name), `Project asset sprite already exists in the project: ${name}`);
-    const target = {
+    const target: UnknownRecord = {
       isStage: false,
       name,
       variables: {},
@@ -426,7 +533,7 @@ export async function applyProjectAssetAdditions({
       draggable: specification.draggable,
       rotationStyle: specification.rotationStyle,
     };
-    composedProject.targets.push(target);
+    composedTargets.push(target);
     targetByName.set(name, target);
     newSpriteNames.push(name);
   }
@@ -436,9 +543,9 @@ export async function applyProjectAssetAdditions({
   let soundCount = 0;
   let assetFileCount = 0;
 
-  for (const [rawAssetId, specification] of Object.entries(manifest.assets)) {
+  for (const [rawAssetId, rawSpecification] of Object.entries(manifest.assets)) {
     const assetId = nonEmptyString(rawAssetId, 'Project asset ID');
-    const description = validateAsset(specification, assetId);
+    const {description, specification} = validateAsset(rawSpecification, assetId);
     const asset = await readAssetFile(manifestDirectory, allowedRoots, specification, description);
     if (specification.kind !== 'sound') {
       assert(
@@ -460,7 +567,9 @@ export async function applyProjectAssetAdditions({
       specification.kind !== 'sound' || specification.target === undefined || !owner.isStage,
       `${description}.target must be omitted for a Stage sound.`,
     );
-    const collection = specification.kind === 'sound' ? owner.sounds : owner.costumes;
+    const collection = (
+      specification.kind === 'sound' ? owner.sounds : owner.costumes
+    ) as UnknownRecord[];
     assert(
       !collection.some(({name}) => name === scratchName),
       `${description}.name already exists on target ${owner.name}: ${scratchName}`,
@@ -537,8 +646,9 @@ export async function applyProjectAssetAdditions({
   }
 
   for (const name of newSpriteNames) {
+    const costumes = targetByName.get(name)?.costumes;
     assert(
-      targetByName.get(name).costumes.length > 0,
+      Array.isArray(costumes) && costumes.length > 0,
       `Project asset sprite must receive at least one costume: ${name}`,
     );
   }

@@ -2,22 +2,60 @@
 
 import {createHash} from 'node:crypto';
 
-import {validateArchiveEntryName} from './archive.js';
+import {validateArchiveEntryName} from './archive';
+import {assert, errorMessage} from './assert';
+import type {EmbeddedExtension, ExtensionApiManifestSource, UnknownRecord} from './types';
 
 export const extensionApiManifestFormatVersion = 1;
 export const defaultExtensionApiManifestSizeLimit = 1024 * 1024;
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+export interface ExtensionApiManifestArgument {
+  id: string;
+  menu?: string;
+  type: string;
 }
 
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
+export interface ExtensionApiManifestBlock {
+  arguments: ExtensionApiManifestArgument[];
+  blockType: string;
+  opcode: string;
 }
 
-function assertExactProperties(value, expected, description) {
+export interface ExtensionApiManifestMenu {
+  acceptReporters: boolean;
+  id: string;
+}
+
+export interface ExtensionApiManifest {
+  blocks: ExtensionApiManifestBlock[];
+  formatVersion: number;
+  id: string;
+  menus: ExtensionApiManifestMenu[];
+}
+
+export interface ExtensionApiCompatibilityChange {
+  after: unknown;
+  before: unknown;
+  breaking: boolean;
+  kind: string;
+  path: string;
+}
+
+export interface ValidatedExtensionApiManifest {
+  integrity: string;
+  manifest: ExtensionApiManifest;
+  metadata: ExtensionApiManifestSource;
+}
+
+function isObject(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertExactProperties(
+  value: UnknownRecord,
+  expected: string[],
+  description: string,
+): void {
   const expectedProperties = new Set(expected);
   const unexpected = Object.keys(value).filter((property) => !expectedProperties.has(property));
   assert(
@@ -26,7 +64,7 @@ function assertExactProperties(value, expected, description) {
   );
 }
 
-function assertNonEmptyString(value, description) {
+function assertNonEmptyString(value: unknown, description: string): string {
   assert(
     typeof value === 'string' && value.length > 0,
     `${description} must be a non-empty string.`,
@@ -34,24 +72,26 @@ function assertNonEmptyString(value, description) {
   return value;
 }
 
-function compareIds(left, right) {
+function compareIds(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function escapeJsonPointer(value) {
+function escapeJsonPointer(value: string): string {
   return value.replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
-export function extensionApiManifestIntegrity(contents) {
+export function extensionApiManifestIntegrity(contents: Uint8Array | string): string {
   return `sha256-${createHash('sha256').update(contents).digest('base64')}`;
 }
 
-export function extensionApiManifestLocalPath(extensionId) {
+export function extensionApiManifestLocalPath(extensionId: string): string {
   return `extensions/${extensionId}.manifest.json`;
 }
 
-export function validateExtensionApiManifestSourceMetadata(extension) {
-  const metadata = extension.source?.apiManifest;
+export function validateExtensionApiManifestSourceMetadata(
+  extension: EmbeddedExtension,
+): ExtensionApiManifestSource | null {
+  const metadata: unknown = extension.source?.apiManifest;
   if (metadata === undefined) return null;
   assert(
     isObject(metadata),
@@ -66,14 +106,14 @@ export function validateExtensionApiManifestSourceMetadata(extension) {
     metadata.formatVersion === extensionApiManifestFormatVersion,
     `Managed extension ${extension.id} requires API manifest formatVersion ${extensionApiManifestFormatVersion}.`,
   );
-  assertNonEmptyString(
+  const artifact = assertNonEmptyString(
     metadata.artifact,
     `Managed extension ${extension.id} API manifest artifact`,
   );
-  validateArchiveEntryName(metadata.artifact);
+  validateArchiveEntryName(artifact);
   assert(
-    !metadata.artifact.endsWith('/'),
-    `Managed extension API manifest artifact must be a file: ${metadata.artifact}`,
+    !artifact.endsWith('/'),
+    `Managed extension API manifest artifact must be a file: ${artifact}`,
   );
   const expectedPath = extensionApiManifestLocalPath(extension.id);
   assert(
@@ -85,10 +125,15 @@ export function validateExtensionApiManifestSourceMetadata(extension) {
       /^sha256-[A-Za-z0-9+/]{43}=$/u.test(metadata.integrity),
     `Managed extension ${extension.id} API manifest requires SHA-256 integrity.`,
   );
-  return metadata;
+  return metadata as unknown as ExtensionApiManifestSource;
 }
 
-function normalizeArgument(value, blockOpcode, index, menuIds) {
+function normalizeArgument(
+  value: unknown,
+  blockOpcode: string,
+  index: number,
+  menuIds: Set<string>,
+): ExtensionApiManifestArgument {
   assert(isObject(value), `API manifest block ${blockOpcode} argument ${index} must be an object.`);
   assertExactProperties(
     value,
@@ -103,17 +148,25 @@ function normalizeArgument(value, blockOpcode, index, menuIds) {
     value.type,
     `API manifest block ${blockOpcode} argument ${id} type`,
   );
-  if (value.menu !== undefined) {
-    assertNonEmptyString(value.menu, `API manifest block ${blockOpcode} argument ${id} menu`);
-    assert(
-      menuIds.has(value.menu),
-      `API manifest block ${blockOpcode} argument ${id} references unknown menu: ${value.menu}`,
-    );
+  if (value.menu === undefined) {
+    return {id, type};
   }
-  return value.menu === undefined ? {id, type} : {id, menu: value.menu, type};
+  const menu = assertNonEmptyString(
+    value.menu,
+    `API manifest block ${blockOpcode} argument ${id} menu`,
+  );
+  assert(
+    menuIds.has(menu),
+    `API manifest block ${blockOpcode} argument ${id} references unknown menu: ${menu}`,
+  );
+  return {id, menu, type};
 }
 
-function normalizeBlock(value, index, menuIds) {
+function normalizeBlock(
+  value: unknown,
+  index: number,
+  menuIds: Set<string>,
+): ExtensionApiManifestBlock {
   assert(isObject(value), `API manifest block ${index} must be an object.`);
   assertExactProperties(value, ['arguments', 'blockType', 'opcode'], `API manifest block ${index}`);
   const opcode = assertNonEmptyString(value.opcode, `API manifest block ${index} opcode`);
@@ -122,10 +175,10 @@ function normalizeBlock(value, index, menuIds) {
     Array.isArray(value.arguments),
     `API manifest block ${opcode} arguments must be an array.`,
   );
-  const arguments_ = value.arguments.map((argument, argumentIndex) =>
+  const arguments_ = (value.arguments as unknown[]).map((argument, argumentIndex) =>
     normalizeArgument(argument, opcode, argumentIndex, menuIds),
   );
-  const argumentIds = new Set();
+  const argumentIds = new Set<string>();
   for (const argument of arguments_) {
     assert(
       !argumentIds.has(argument.id),
@@ -137,7 +190,7 @@ function normalizeBlock(value, index, menuIds) {
   return {arguments: arguments_, blockType, opcode};
 }
 
-function normalizeMenu(value, index) {
+function normalizeMenu(value: unknown, index: number): ExtensionApiManifestMenu {
   assert(isObject(value), `API manifest menu ${index} must be an object.`);
   assertExactProperties(value, ['acceptReporters', 'id'], `API manifest menu ${index}`);
   const id = assertNonEmptyString(value.id, `API manifest menu ${index} ID`);
@@ -148,16 +201,17 @@ function normalizeMenu(value, index) {
   return {acceptReporters: value.acceptReporters, id};
 }
 
-/**
- * @param {string | Uint8Array} contents
- * @param {{expectedId?: string}} [options]
- */
-export function parseExtensionApiManifest(contents, {expectedId} = {}) {
-  let manifest;
+export function parseExtensionApiManifest(
+  contents: Uint8Array | string,
+  {expectedId}: {expectedId?: string} = {},
+): ExtensionApiManifest {
+  let manifest: unknown;
   try {
     manifest = JSON.parse(Buffer.from(contents).toString('utf8'));
   } catch (error) {
-    throw new Error(`Extension API manifest is not valid JSON: ${error.message}`, {cause: error});
+    throw new Error(`Extension API manifest is not valid JSON: ${errorMessage(error)}`, {
+      cause: error,
+    });
   }
   assert(isObject(manifest), 'Extension API manifest must contain an object.');
   assertExactProperties(
@@ -180,15 +234,17 @@ export function parseExtensionApiManifest(contents, {expectedId} = {}) {
     );
   }
   assert(Array.isArray(manifest.menus), 'Extension API manifest menus must be an array.');
-  const menus = manifest.menus.map(normalizeMenu);
-  const menuIds = new Set();
+  const menus = (manifest.menus as unknown[]).map(normalizeMenu);
+  const menuIds = new Set<string>();
   for (const menu of menus) {
     assert(!menuIds.has(menu.id), `Extension API manifest has duplicate menu ID: ${menu.id}`);
     menuIds.add(menu.id);
   }
   assert(Array.isArray(manifest.blocks), 'Extension API manifest blocks must be an array.');
-  const blocks = manifest.blocks.map((block, index) => normalizeBlock(block, index, menuIds));
-  const blockOpcodes = new Set();
+  const blocks = (manifest.blocks as unknown[]).map((block, index) =>
+    normalizeBlock(block, index, menuIds),
+  );
+  const blockOpcodes = new Set<string>();
   for (const block of blocks) {
     assert(
       !blockOpcodes.has(block.opcode),
@@ -202,10 +258,10 @@ export function parseExtensionApiManifest(contents, {expectedId} = {}) {
 }
 
 export function validateManagedExtensionApiManifest(
-  extension,
-  contents,
-  {expectedId = extension.id} = {},
-) {
+  extension: EmbeddedExtension,
+  contents: Uint8Array | string,
+  {expectedId = extension.id}: {expectedId?: string} = {},
+): ValidatedExtensionApiManifest | null {
   const metadata = validateExtensionApiManifestSourceMetadata(extension);
   if (!metadata) return null;
   const actualIntegrity = extensionApiManifestIntegrity(contents);
@@ -222,12 +278,22 @@ export function validateManagedExtensionApiManifest(
   return {integrity: actualIntegrity, manifest, metadata};
 }
 
-function addChange(changes, kind, path, before, after, breaking) {
+function addChange(
+  changes: ExtensionApiCompatibilityChange[],
+  kind: string,
+  path: string,
+  before: unknown,
+  after: unknown,
+  breaking: boolean,
+): void {
   changes.push({after, before, breaking, kind, path});
 }
 
-export function compareExtensionApiManifests(installed, candidate) {
-  const changes = [];
+export function compareExtensionApiManifests(
+  installed: ExtensionApiManifest,
+  candidate: ExtensionApiManifest,
+): ExtensionApiCompatibilityChange[] {
+  const changes: ExtensionApiCompatibilityChange[] = [];
   const installedBlocks = new Map(installed.blocks.map((block) => [block.opcode, block]));
   const candidateBlocks = new Map(candidate.blocks.map((block) => [block.opcode, block]));
   for (const [opcode, block] of installedBlocks) {
@@ -258,7 +324,7 @@ export function compareExtensionApiManifests(installed, candidate) {
         addChange(changes, 'argument-removed', argumentPath, argument, null, true);
         continue;
       }
-      for (const property of ['type', 'menu']) {
+      for (const property of ['type', 'menu'] as const) {
         if (argument[property] !== replacementArgument[property]) {
           addChange(
             changes,
@@ -292,7 +358,7 @@ export function compareExtensionApiManifests(installed, candidate) {
 
   const installedMenus = new Map(installed.menus.map((menu) => [menu.id, menu]));
   const candidateMenus = new Map(candidate.menus.map((menu) => [menu.id, menu]));
-  const referencedInstalledMenus = new Set();
+  const referencedInstalledMenus = new Set<string>();
   for (const block of installed.blocks) {
     for (const argument of block.arguments) {
       if (argument.menu !== undefined) referencedInstalledMenus.add(argument.menu);
@@ -326,7 +392,10 @@ export function compareExtensionApiManifests(installed, candidate) {
   );
 }
 
-export function formatExtensionApiCompatibilityChanges(extensionId, changes) {
+export function formatExtensionApiCompatibilityChanges(
+  extensionId: string,
+  changes: ExtensionApiCompatibilityChange[],
+): string {
   return changes
     .map(
       (change) =>
