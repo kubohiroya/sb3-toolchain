@@ -1,13 +1,22 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "noEmit": true,
-    "strict": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
     "target": "ES2023",
-    "types": ["node"]
+    "types": ["node"],
+    "useDefineForClassFields": true,
+    "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.js", "bin/**/*.mjs"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vite.config.ts"]
 }

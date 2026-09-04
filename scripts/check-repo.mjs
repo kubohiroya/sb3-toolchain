@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import {readFile} from 'node:fs/promises';
-import process from 'node:process';
 
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 const policy = JSON.parse(await readFile('repo-policy.json', 'utf8'));
