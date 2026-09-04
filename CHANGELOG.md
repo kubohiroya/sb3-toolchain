@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-09-05
 
 - Migrate the source, tests, and build to TypeScript with `strict` type checking.
 - Build the published package with Vite in library mode; `dist/` now holds ESM output, `.d.ts`
