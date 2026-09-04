@@ -8,7 +8,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts', 'vite.config.ts'],
+    files: ['eslint.config.ts', 'scripts/**/*.ts', 'src/**/*.ts', 'test/**/*.ts', 'vite.config.ts'],
     rules: {
       eqeqeq: 'error',
       '@typescript-eslint/no-unused-vars': ['error', {argsIgnorePattern: '^_'}],
@@ -21,23 +21,6 @@ export default tseslint.config(
       // Test fixtures build and mutate loose JSON-shaped data on purpose.
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-this-alias': 'off',
-    },
-  },
-  {
-    files: ['scripts/**/*.mjs'],
-    extends: [tseslint.configs.disableTypeChecked],
-    languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-      },
-    },
-    rules: {
-      eqeqeq: 'error',
-      'no-undef': 'error',
-      'no-unused-vars': ['error', {argsIgnorePattern: '^_'}],
     },
   },
 );

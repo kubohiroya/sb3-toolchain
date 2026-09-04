@@ -40,14 +40,14 @@
   "scripts": {
     "build": "vite build",
     "lint": "eslint .",
-    "format": "prettier --check .github docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
-    "format:write": "prettier --write .github docs scripts src test CHANGELOG.md eslint.config.mjs package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
+    "format": "prettier --check .github docs scripts src test CHANGELOG.md eslint.config.ts package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
+    "format:write": "prettier --write .github docs scripts src test CHANGELOG.md eslint.config.ts package.json README.md README.ja.md repo-policy.json tsconfig.json vite.config.ts",
     "typecheck": "tsc --project tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "release:check": "npm publish --dry-run --access public",
-    "repo:check": "node scripts/check-repo.mjs",
+    "repo:check": "node --experimental-strip-types scripts/check-repo.ts",
     "check": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run repo:check && pnpm run pack:check",
     "prepack": "pnpm run check"
   },
@@ -59,6 +59,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "eslint": "^9.0.0",
+    "jiti": "^2.7.0",
     "prettier": "^3.0.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.69.0",

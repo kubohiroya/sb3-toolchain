@@ -2,8 +2,30 @@
 
 import {readFile} from 'node:fs/promises';
 
-const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
-const policy = JSON.parse(await readFile('repo-policy.json', 'utf8'));
+interface PackageJson {
+  author: string;
+  files: string[];
+  homepage: string;
+  license: string;
+  name: string;
+  packageManager: string;
+  scripts: Record<string, string>;
+  version: string;
+}
+
+interface RepoPolicy {
+  authorPolicy: {email: boolean; name: string};
+  homepage: string;
+  license: string;
+  packageName: string;
+}
+
+async function readJson<T>(filePath: string): Promise<T> {
+  return JSON.parse(await readFile(filePath, 'utf8')) as T;
+}
+
+const packageJson = await readJson<PackageJson>('package.json');
+const policy = await readJson<RepoPolicy>('repo-policy.json');
 const readme = await readFile('README.md', 'utf8');
 const readmeJa = await readFile('README.ja.md', 'utf8');
 const changelog = await readFile('CHANGELOG.md', 'utf8');
@@ -11,13 +33,13 @@ const license = await readFile('LICENSE', 'utf8');
 const migrationDocs = await readFile('docs/extension-id-migration.md', 'utf8');
 const migrationDocsJa = await readFile('docs/ja/extension-id-migration.md', 'utf8');
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-function includesEvery(value, snippets, description) {
+function includesEvery(value: string, snippets: string[], description: string): void {
   for (const snippet of snippets) {
     assert(value.includes(snippet), `${description} is missing: ${snippet}`);
   }
@@ -38,7 +60,7 @@ assert(!packageJson.author.includes('@'), 'package author must not include email
 assert(packageJson.homepage === policy.homepage, 'package homepage must use GitHub Pages.');
 assert(packageJson.packageManager === 'pnpm@11.11.0', 'package manager must stay pinned.');
 assert(
-  packageJson.scripts['repo:check'] === 'node scripts/check-repo.mjs',
+  packageJson.scripts['repo:check'] === 'node --experimental-strip-types scripts/check-repo.ts',
   'repo:check script missing.',
 );
 assert(packageJson.scripts.check.includes('pnpm run repo:check'), 'check must include repo:check.');
@@ -87,13 +109,14 @@ includesEvery(
   'docs/ja/extension-id-migration.md',
 );
 
-for (const [description, value] of [
+const legacyScannedFiles: [string, string][] = [
   ['README.md', readme],
   ['README.ja.md', readmeJa],
   ['docs/extension-id-migration.md', migrationDocs],
   ['docs/ja/extension-id-migration.md', migrationDocsJa],
   ['repo-policy.json', JSON.stringify(policy)],
-]) {
+];
+for (const [description, value] of legacyScannedFiles) {
   assert(!legacyPosePattern.test(value), `${description} contains legacy pose-era spelling.`);
 }
 
