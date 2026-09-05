@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {
   createDeterministicSb3,
@@ -55,17 +54,17 @@ test('computes extension integrity and reads Extension Gallery metadata', () => 
     '// Name: Example\n// ID: example\n// Description: Example extension.\n' +
       '// By: Example Author\n// License: MPL-2.0\n',
   );
-  assert.equal(extensionHeaderId(contents), 'example');
-  assert.deepEqual(extensionHeaderMetadata(contents), {
+  expect(extensionHeaderId(contents)).toBe('example');
+  expect(extensionHeaderMetadata(contents)).toStrictEqual({
     author: 'Example Author',
     description: 'Example extension.',
     id: 'example',
     license: 'MPL-2.0',
     name: 'Example',
   });
-  assert.equal(extensionHeaderId(Buffer.from('const id = "example";\n')), null);
-  assert.match(extensionIntegrity(contents), /^sha256-[A-Za-z0-9+/]{43}=$/u);
-  assert.deepEqual(validateManagedExtensionContents(managedExtension(contents), contents), {
+  expect(extensionHeaderId(Buffer.from('const id = "example";\n'))).toBe(null);
+  expect(extensionIntegrity(contents)).toMatch(/^sha256-[A-Za-z0-9+/]{43}=$/u);
+  expect(validateManagedExtensionContents(managedExtension(contents), contents)).toStrictEqual({
     actualId: 'example',
     integrity: extensionIntegrity(contents),
     source: managedExtension(contents).source,
@@ -75,8 +74,8 @@ test('computes extension integrity and reads Extension Gallery metadata', () => 
 test('validates managed GitHub extension metadata', () => {
   const contents = Buffer.from('// ID: example\n');
   const extension = managedExtension(contents);
-  assert.equal(validateExtensionSourceMetadata({...extension, source: undefined}), null);
-  assert.equal(validateExtensionSourceMetadata(extension), extension.source);
+  expect(validateExtensionSourceMetadata({...extension, source: undefined})).toBe(null);
+  expect(validateExtensionSourceMetadata(extension)).toBe(extension.source);
 
   const githubCases: [string, string, RegExp][] = [
     ['provider', 'url', /provider/u],
@@ -87,14 +86,12 @@ test('validates managed GitHub extension metadata', () => {
     ['integrity', 'sha256-invalid', /SHA-256/u],
   ];
   for (const [property, value, message] of githubCases) {
-    assert.throws(
-      () =>
-        validateExtensionSourceMetadata({
-          ...extension,
-          source: {...extension.source, [property]: value},
-        } as unknown as EmbeddedExtension),
-      message,
-    );
+    expect(() =>
+      validateExtensionSourceMetadata({
+        ...extension,
+        source: {...extension.source, [property]: value},
+      } as unknown as EmbeddedExtension),
+    ).toThrow(message);
   }
 });
 
@@ -110,7 +107,7 @@ test('validates exact npm extension source metadata', () => {
       version: '1.2.3',
     },
   };
-  assert.equal(validateExtensionSourceMetadata(extension), extension.source);
+  expect(validateExtensionSourceMetadata(extension)).toBe(extension.source);
 
   const npmCases: [string, string, RegExp][] = [
     ['package', '../escape', /npm package/u],
@@ -119,14 +116,12 @@ test('validates exact npm extension source metadata', () => {
     ['integrity', 'sha256-invalid', /SHA-256/u],
   ];
   for (const [property, value, message] of npmCases) {
-    assert.throws(
-      () =>
-        validateExtensionSourceMetadata({
-          ...extension,
-          source: {...extension.source, [property]: value},
-        } as unknown as EmbeddedExtension),
-      message,
-    );
+    expect(() =>
+      validateExtensionSourceMetadata({
+        ...extension,
+        source: {...extension.source, [property]: value},
+      } as unknown as EmbeddedExtension),
+    ).toThrow(message);
   }
 });
 
@@ -145,17 +140,17 @@ test('rejects managed extension content or ID drift without changing unmanaged s
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
     const validated = await validateSb3Source(sourceDirectory);
-    assert.equal(validated.extensions[0].source?.integrity, extensionIntegrity(contents));
+    expect(validated.extensions[0].source?.integrity).toBe(extensionIntegrity(contents));
     await createDeterministicSb3(sourceDirectory);
 
     await writeFile(extensionPath, Buffer.concat([contents, Buffer.from('// drift\n')]));
-    await assert.rejects(validateSb3Source(sourceDirectory), /integrity mismatch/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(/integrity mismatch/u);
 
     const wrongIdContents = Buffer.from('// ID: another\n');
     manifest.extensions[0].source.integrity = extensionIntegrity(wrongIdContents);
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     await writeFile(extensionPath, wrongIdContents);
-    await assert.rejects(validateSb3Source(sourceDirectory), /header ID mismatch/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(/header ID mismatch/u);
   });
 });
 
@@ -199,12 +194,14 @@ test('validates an opt-in API manifest offline without changing the generated SB
     ]);
     await validateSb3Source(sourceDirectory);
     const withApiManifest = await createDeterministicSb3(sourceDirectory);
-    assert.deepEqual(withApiManifest.archive, withoutApiManifest.archive);
+    expect(withApiManifest.archive).toStrictEqual(withoutApiManifest.archive);
 
     await writeFile(
       path.join(sourceDirectory, 'extensions/example.manifest.json'),
       Buffer.from('{}\n'),
     );
-    await assert.rejects(validateSb3Source(sourceDirectory), /API manifest integrity mismatch/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(
+      /API manifest integrity mismatch/u,
+    );
   });
 });

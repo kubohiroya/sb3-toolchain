@@ -58,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@vitest/eslint-plugin": "^1.6.27",
     "eslint": "^9.0.0",
     "jiti": "^2.7.0",
     "prettier": "^3.0.0",

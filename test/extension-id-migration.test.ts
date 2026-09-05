@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {access, cp, mkdtemp, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {runCli} from '../src/cli';
 import {
@@ -155,7 +154,7 @@ async function writeMigrationSource(
 }
 
 async function assertMissing(filePath: string): Promise<void> {
-  await assert.rejects(access(filePath), (error: any) => error?.code === 'ENOENT');
+  await expect(access(filePath)).rejects.toSatisfy((error: any) => error?.code === 'ENOENT');
 }
 
 async function writeTurboWarpTmMigrationSource(sourceDirectory: string) {
@@ -268,8 +267,8 @@ test('plans schema-aware changes and reports strings it will not rewrite', async
       sourceDirectory,
       toId: newId,
     });
-    assert.equal(plan.artifactReady, false);
-    assert.deepEqual(plan.counts, {
+    expect(plan.artifactReady).toBe(false);
+    expect(plan.counts).toStrictEqual({
       apiManifestArtifacts: 0,
       blockOpcodes: 2,
       extensionFiles: 1,
@@ -281,52 +280,50 @@ test('plans schema-aware changes and reports strings it will not rewrite', async
       projectExtensions: 1,
       sourceArtifacts: 0,
     });
-    assert.equal(plan.totalChanges, 9);
-    assert.ok(
+    expect(plan.totalChanges).toBe(9);
+    expect(
       plan.unclassifiedReferences.some(
         (reference) =>
           reference.path === '/targets/0/variables/variableId/0' &&
           reference.value === `${oldId} variable name`,
       ),
-    );
-    assert.ok(
+    ).toBeTruthy();
+    expect(
       plan.unclassifiedReferences.some(
         (reference) =>
           reference.path === '/targets/0/blocks/block/fields/TEXT/0' &&
           reference.value === `${oldId} literal`,
       ),
-    );
-    assert.ok(
+    ).toBeTruthy();
+    expect(
       plan.unclassifiedReferences.some(
         (reference) => reference.value === `other_${oldId}_operation`,
       ),
-    );
+    ).toBeTruthy();
     const output: string[] = [];
     await runCli(['extensions', 'migrate-id', sourceDirectory, '--from', oldId, '--to', newId], {
       log: (message) => output.push(message),
     });
-    assert.match(output[0], /^Dry run:/u);
-    assert.ok(output.some((line) => line.startsWith('Unclassified value:')));
+    expect(output[0]).toMatch(/^Dry run:/u);
+    expect(output.some((line) => line.startsWith('Unclassified value:'))).toBeTruthy();
 
-    await assert.rejects(
+    await expect(
       planExtensionIdMigration({
         fromId: oldId,
         sourceDirectory,
         toId: 'New-ID',
       }),
-      /\[a-z0-9\]\+/u,
-    );
+    ).rejects.toThrow(/\[a-z0-9\]\+/u);
     const project = await readJson(path.join(sourceDirectory, 'project.source.json'));
     project.extensionURLs[newId] = 'https://example.com/collision.js';
     await writeJson(path.join(sourceDirectory, 'project.source.json'), project);
-    await assert.rejects(
+    await expect(
       planExtensionIdMigration({
         fromId: oldId,
         sourceDirectory,
         toId: newId,
       }),
-      /already contains/u,
-    );
+    ).rejects.toThrow(/already contains/u);
   });
 });
 
@@ -334,19 +331,17 @@ test('requires a new-ID artifact, then migrates known schema fields atomically',
   await withTemporaryDirectory(async (directory) => {
     const sourceDirectory = path.join(directory, 'source');
     const {oldPath} = await writeMigrationSource(sourceDirectory);
-    await assert.rejects(
+    await expect(
       migrateExtensionId({
         fromId: oldId,
         sourceDirectory,
         toId: newId,
         yes: true,
       }),
-      /must declare/u,
-    );
-    assert.equal(
+    ).rejects.toThrow(/must declare/u);
+    expect(
       (await readJson(path.join(sourceDirectory, 'embedded-extensions.json'))).extensions[0].id,
-      oldId,
-    );
+    ).toBe(oldId);
 
     await writeFile(oldPath, extensionContents(newId));
     const dryRun = await migrateExtensionId({
@@ -354,12 +349,11 @@ test('requires a new-ID artifact, then migrates known schema fields atomically',
       sourceDirectory,
       toId: newId,
     });
-    assert.equal(dryRun.applied, false);
-    assert.equal(dryRun.artifactReady, true);
-    assert.equal(
+    expect(dryRun.applied).toBe(false);
+    expect(dryRun.artifactReady).toBe(true);
+    expect(
       (await readJson(path.join(sourceDirectory, 'embedded-extensions.json'))).extensions[0].id,
-      oldId,
-    );
+    ).toBe(oldId);
 
     const migrated = await migrateExtensionId({
       fromId: oldId,
@@ -367,26 +361,25 @@ test('requires a new-ID artifact, then migrates known schema fields atomically',
       toId: newId,
       yes: true,
     });
-    assert.equal(migrated.applied, true);
+    expect(migrated.applied).toBe(true);
     await assertMissing(path.join(sourceDirectory, `extensions/${oldId}.js`));
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, `extensions/${newId}.js`)),
+    expect(await readFile(path.join(sourceDirectory, `extensions/${newId}.js`))).toStrictEqual(
       extensionContents(newId),
     );
 
     const manifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
-    assert.equal(manifest.extensions[0].id, newId);
-    assert.equal(manifest.extensions[0].path, `extensions/${newId}.js`);
+    expect(manifest.extensions[0].id).toBe(newId);
+    expect(manifest.extensions[0].path).toBe(`extensions/${newId}.js`);
     const project = await readJson(path.join(sourceDirectory, 'project.source.json'));
-    assert.deepEqual(project.extensions, [newId, 'external']);
-    assert.equal(project.extensionURLs[newId], `embedded-extension:extensions/${newId}.js`);
-    assert.equal(project.targets[0].blocks.block.opcode, `${newId}_doThing`);
-    assert.equal(project.targets[0].blocks.menu.opcode, `${newId}_menu`);
-    assert.equal(project.targets[0].blocks.unrelated.opcode, `other_${oldId}_operation`);
-    assert.equal(project.monitors[0].opcode, `${newId}_value`);
-    assert.equal(project.monitors[1].opcode, `other_${oldId}_value`);
-    assert.equal(project.targets[0].variables.variableId[0], `${oldId} variable name`);
-    assert.equal(project.targets[0].blocks.block.fields.TEXT[0], `${oldId} literal`);
+    expect(project.extensions).toStrictEqual([newId, 'external']);
+    expect(project.extensionURLs[newId]).toBe(`embedded-extension:extensions/${newId}.js`);
+    expect(project.targets[0].blocks.block.opcode).toBe(`${newId}_doThing`);
+    expect(project.targets[0].blocks.menu.opcode).toBe(`${newId}_menu`);
+    expect(project.targets[0].blocks.unrelated.opcode).toBe(`other_${oldId}_operation`);
+    expect(project.monitors[0].opcode).toBe(`${newId}_value`);
+    expect(project.monitors[1].opcode).toBe(`other_${oldId}_value`);
+    expect(project.targets[0].variables.variableId[0]).toBe(`${oldId} variable name`);
+    expect(project.targets[0].blocks.block.fields.TEXT[0]).toBe(`${oldId} literal`);
     await validateSb3Source(sourceDirectory);
     await createDeterministicSb3(sourceDirectory);
   });
@@ -403,19 +396,18 @@ test('updates a managed artifact and migrates its ID and provenance together', a
     let servedContents = extensionContents(oldId, 'V2');
     const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
       calls.push(String(url));
-      assert.equal(options.redirect, 'error');
+      expect(options.redirect).toBe('error');
       const parsedUrl = new URL(String(url));
       if (parsedUrl.hostname === 'api.github.com') {
         return new Response(JSON.stringify({sha: updatedCommit}));
       }
-      assert.equal(
-        parsedUrl.pathname,
+      expect(parsedUrl.pathname).toBe(
         `/example/migration-extension/${updatedCommit}/dist/${newId}.js`,
       );
       return new Response(servedContents);
     };
 
-    await assert.rejects(
+    await expect(
       updateExtensions({
         extensionId: oldId,
         fetch: fetchImplementation,
@@ -424,12 +416,10 @@ test('updates a managed artifact and migrates its ID and provenance together', a
         sourceDirectory,
         yes: true,
       }),
-      /expected newext/u,
-    );
-    assert.equal(
+    ).rejects.toThrow(/expected newext/u);
+    expect(
       (await readJson(path.join(sourceDirectory, 'embedded-extensions.json'))).extensions[0].id,
-      oldId,
-    );
+    ).toBe(oldId);
 
     servedContents = updatedContents;
     calls.length = 0;
@@ -441,23 +431,22 @@ test('updates a managed artifact and migrates its ID and provenance together', a
       sourceDirectory,
       yes: true,
     });
-    assert.equal(result.changed, true);
-    assert.equal(result.extensions[0].id, newId);
-    assert.equal(result.extensions[0].previousId, oldId);
-    assert.equal(result.migration?.fromId, oldId);
-    assert.equal(calls.length, 2);
-    assert.notDeepEqual(
-      await readFile(path.join(sourceDirectory, `extensions/${newId}.js`)),
+    expect(result.changed).toBe(true);
+    expect(result.extensions[0].id).toBe(newId);
+    expect(result.extensions[0].previousId).toBe(oldId);
+    expect(result.migration?.fromId).toBe(oldId);
+    expect(calls.length).toBe(2);
+    expect(await readFile(path.join(sourceDirectory, `extensions/${newId}.js`))).not.toStrictEqual(
       originalContents,
     );
 
     const manifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
     const extension = manifest.extensions[0];
-    assert.equal(extension.id, newId);
-    assert.equal(extension.path, `extensions/${newId}.js`);
-    assert.equal(extension.source.artifact, `dist/${newId}.js`);
-    assert.equal(extension.source.resolvedCommit, updatedCommit);
-    assert.equal(extension.source.integrity, extensionIntegrity(updatedContents));
+    expect(extension.id).toBe(newId);
+    expect(extension.path).toBe(`extensions/${newId}.js`);
+    expect(extension.source.artifact).toBe(`dist/${newId}.js`);
+    expect(extension.source.resolvedCommit).toBe(updatedCommit);
+    expect(extension.source.integrity).toBe(extensionIntegrity(updatedContents));
     await validateSb3Source(sourceDirectory);
     await createDeterministicSb3(sourceDirectory);
   });
@@ -473,8 +462,8 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       sourceDirectory,
       toId: tmId,
     });
-    assert.equal(plan.artifactReady, false);
-    assert.deepEqual(plan.counts, {
+    expect(plan.artifactReady).toBe(false);
+    expect(plan.counts).toStrictEqual({
       apiManifestArtifacts: 0,
       blockOpcodes: 2,
       extensionFiles: 1,
@@ -486,10 +475,10 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       projectExtensions: 1,
       sourceArtifacts: 0,
     });
-    assert.equal(plan.totalChanges, 10);
-    assert.ok(
+    expect(plan.totalChanges).toBe(10);
+    expect(
       plan.unclassifiedReferences.some((reference) => reference.value.includes(`${legacyTmId}`)),
-    );
+    ).toBeTruthy();
 
     const output: string[] = [];
     await runCli(
@@ -498,16 +487,16 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
         log: (message) => output.push(message),
       },
     );
-    assert.ok(output.some((line) => line.includes('Dry run:')));
-    assert.ok(output.some((line) => line.includes('manifestPaths=2')));
-    assert.ok(output.some((line) => line.includes('Unclassified value:')));
+    expect(output.some((line) => line.includes('Dry run:'))).toBeTruthy();
+    expect(output.some((line) => line.includes('manifestPaths=2'))).toBeTruthy();
+    expect(output.some((line) => line.includes('Unclassified value:'))).toBeTruthy();
 
     const updatedContents = extensionContents(tmId, 'V2');
     const updatedApiManifest = apiManifestContents(tmId);
     const calls: string[] = [];
     const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
       calls.push(String(url));
-      assert.equal(options.redirect, 'error');
+      expect(options.redirect).toBe('error');
       const parsedUrl = new URL(String(url));
       if (parsedUrl.hostname === 'api.github.com') {
         return new Response(JSON.stringify({sha: updatedCommit}));
@@ -515,7 +504,7 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       if (parsedUrl.pathname.endsWith(`/dist/${tmId}.js`)) {
         return new Response(updatedContents);
       }
-      assert.ok(parsedUrl.pathname.endsWith(`/dist/${tmId}.manifest.json`));
+      expect(parsedUrl.pathname.endsWith(`/dist/${tmId}.manifest.json`)).toBeTruthy();
       return new Response(updatedApiManifest);
     };
 
@@ -528,45 +517,41 @@ test('migrates the TurboWarp TM legacy extension ID fixture with the generic wor
       sourceDirectory,
       yes: true,
     });
-    assert.equal(result.changed, true);
-    assert.equal(result.migration?.fromId, legacyTmId);
-    assert.equal(result.migration?.toId, tmId);
-    assert.deepEqual(result.apiCompatibility[0].changes, []);
-    assert.equal(calls.length, 3);
+    expect(result.changed).toBe(true);
+    expect(result.migration?.fromId).toBe(legacyTmId);
+    expect(result.migration?.toId).toBe(tmId);
+    expect(result.apiCompatibility[0].changes).toStrictEqual([]);
+    expect(calls.length).toBe(3);
 
     await assertMissing(path.join(sourceDirectory, `extensions/${legacyTmId}.js`));
     await assertMissing(path.join(sourceDirectory, `extensions/${legacyTmId}.manifest.json`));
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, `extensions/${tmId}.js`)),
+    expect(await readFile(path.join(sourceDirectory, `extensions/${tmId}.js`))).toStrictEqual(
       updatedContents,
     );
-    assert.deepEqual(
+    expect(
       await readFile(path.join(sourceDirectory, `extensions/${tmId}.manifest.json`)),
-      updatedApiManifest,
-    );
+    ).toStrictEqual(updatedApiManifest);
 
     const manifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
     const extension = manifest.extensions[0];
-    assert.equal(extension.id, tmId);
-    assert.equal(extension.path, `extensions/${tmId}.js`);
-    assert.equal(extension.source.artifact, `dist/${tmId}.js`);
-    assert.equal(extension.source.integrity, extensionIntegrity(updatedContents));
-    assert.equal(extension.source.apiManifest.artifact, `dist/${tmId}.manifest.json`);
-    assert.equal(
-      extension.source.apiManifest.integrity,
+    expect(extension.id).toBe(tmId);
+    expect(extension.path).toBe(`extensions/${tmId}.js`);
+    expect(extension.source.artifact).toBe(`dist/${tmId}.js`);
+    expect(extension.source.integrity).toBe(extensionIntegrity(updatedContents));
+    expect(extension.source.apiManifest.artifact).toBe(`dist/${tmId}.manifest.json`);
+    expect(extension.source.apiManifest.integrity).toBe(
       extensionApiManifestIntegrity(updatedApiManifest),
     );
 
     const project = await readJson(path.join(sourceDirectory, 'project.source.json'));
-    assert.deepEqual(project.extensions, [tmId, 'textlines']);
-    assert.equal(project.extensionURLs[tmId], `embedded-extension:extensions/${tmId}.js`);
-    assert.equal(project.targets[0].blocks.tmReporter.opcode, `${tmId}_accumulatedPose`);
-    assert.equal(project.targets[0].blocks.tmMenu.opcode, `${tmId}_targetMenu`);
-    assert.equal(
-      project.targets[0].blocks.otherExtension.opcode,
+    expect(project.extensions).toStrictEqual([tmId, 'textlines']);
+    expect(project.extensionURLs[tmId]).toBe(`embedded-extension:extensions/${tmId}.js`);
+    expect(project.targets[0].blocks.tmReporter.opcode).toBe(`${tmId}_accumulatedPose`);
+    expect(project.targets[0].blocks.tmMenu.opcode).toBe(`${tmId}_targetMenu`);
+    expect(project.targets[0].blocks.otherExtension.opcode).toBe(
       `textlines_contains_${legacyTmId}`,
     );
-    assert.equal(project.monitors[0].opcode, `${tmId}_accumulatedPose`);
+    expect(project.monitors[0].opcode).toBe(`${tmId}_accumulatedPose`);
     await validateSb3Source(sourceDirectory);
     await createDeterministicSb3(sourceDirectory);
   });
@@ -581,13 +566,12 @@ test('rejects the TurboWarp TM target ID when the fixture already contains it', 
     project.extensions.push(tmId);
     await writeJson(projectPath, project);
 
-    await assert.rejects(
+    await expect(
       planExtensionIdMigration({
         fromId: legacyTmId,
         sourceDirectory,
         toId: tmId,
       }),
-      /already contains/u,
-    );
+    ).rejects.toThrow(/already contains/u);
   });
 });

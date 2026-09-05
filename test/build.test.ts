@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
@@ -8,7 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, strToU8, unzipSync} from 'fflate';
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {parseCliArguments, runCli} from '../src/cli';
 import {
@@ -102,12 +101,12 @@ function readCentralDirectory(archive: Uint8Array) {
       break;
     }
   }
-  assert.notEqual(endOffset, -1, 'ZIP end-of-central-directory record is missing');
+  expect(endOffset, 'ZIP end-of-central-directory record is missing').not.toBe(-1);
   const entryCount = bytes.readUInt16LE(endOffset + 10);
   let offset = bytes.readUInt32LE(endOffset + 16);
   const entries = [];
   for (let index = 0; index < entryCount; index += 1) {
-    assert.equal(bytes.readUInt32LE(offset), 0x02014b50);
+    expect(bytes.readUInt32LE(offset)).toBe(0x02014b50);
     const fileNameLength = bytes.readUInt16LE(offset + 28);
     const extraLength = bytes.readUInt16LE(offset + 30);
     const commentLength = bytes.readUInt16LE(offset + 32);
@@ -123,29 +122,25 @@ function readCentralDirectory(archive: Uint8Array) {
 
 test('validates the fixture source and builds bit-for-bit deterministic SB3 archives', async () => {
   const validated = await validateSb3Source(fixtureSourceDirectory);
-  assert.equal(validated.assetContents.size, 1);
-  assert.equal(validated.assetReferenceCount, 1);
-  assert.equal(validated.extensions.length, 1);
+  expect(validated.assetContents.size).toBe(1);
+  expect(validated.assetReferenceCount).toBe(1);
+  expect(validated.extensions.length).toBe(1);
 
   const [first, second] = await Promise.all([
     createDeterministicSb3(fixtureSourceDirectory),
     createDeterministicSb3(fixtureSourceDirectory),
   ]);
-  assert.deepEqual(Buffer.from(first.archive), Buffer.from(second.archive));
+  expect(Buffer.from(first.archive)).toStrictEqual(Buffer.from(second.archive));
   const centralEntries = readCentralDirectory(first.archive);
-  assert.deepEqual(
-    centralEntries.map((entry) => entry.name),
+  expect(centralEntries.map((entry) => entry.name)).toStrictEqual(
     validated.sourceManifest.archiveEntries,
   );
-  assert.equal(
-    centralEntries.every((entry) => entry.time === 0 && entry.date === 33),
-    true,
-  );
+  expect(centralEntries.every((entry) => entry.time === 0 && entry.date === 33)).toBe(true);
 
   const archive = unzipSync(first.archive);
   const project = JSON.parse(strFromU8(archive['project.json']));
-  assert.match(project.extensionURLs.example, /^data:text\/javascript;base64,/u);
-  assert.equal(project.extensionURLs.external, 'https://extensions.turbowarp.org/text.js');
+  expect(project.extensionURLs.example).toMatch(/^data:text\/javascript;base64,/u);
+  expect(project.extensionURLs.external).toBe('https://extensions.turbowarp.org/text.js');
 });
 
 test('build leaves identical output untouched and round-trips without source differences', async () => {
@@ -154,13 +149,13 @@ test('build leaves identical output untouched and round-trips without source dif
     const roundTripDirectory = path.join(directory, 'round-trip');
     const first = await buildSb3({sourceDirectory: fixtureSourceDirectory, outputPath});
     const second = await buildSb3({sourceDirectory: fixtureSourceDirectory, outputPath});
-    assert.equal(first.changed, true);
-    assert.equal(second.changed, false);
+    expect(first.changed).toBe(true);
+    expect(second.changed).toBe(false);
 
     await importSb3({inputPath: outputPath, outputDirectory: roundTripDirectory});
     const comparison = await compareDirectories(fixtureSourceDirectory, roundTripDirectory);
-    assert.equal(comparison.identical, true);
-    assert.deepEqual(comparison.differences, {added: [], modified: [], removed: []});
+    expect(comparison.identical).toBe(true);
+    expect(comparison.differences).toStrictEqual({added: [], modified: [], removed: []});
   });
 });
 
@@ -171,13 +166,12 @@ test('build preserves differing output unless replacement is explicitly authoriz
     await writeMinimalSource(sourceDirectory);
     await writeFile(outputPath, 'existing output');
 
-    await assert.rejects(
-      buildSb3({sourceDirectory, outputPath}),
+    await expect(buildSb3({sourceDirectory, outputPath})).rejects.toThrow(
       /Non-interactive replacement requires --yes/u,
     );
-    assert.equal(await readFile(outputPath, 'utf8'), 'existing output');
+    expect(await readFile(outputPath, 'utf8')).toBe('existing output');
 
-    await assert.rejects(
+    await expect(
       buildSb3({
         sourceDirectory,
         outputPath,
@@ -186,13 +180,12 @@ test('build preserves differing output unless replacement is explicitly authoriz
           return true;
         },
       }),
-      /changed while the build was running/u,
-    );
-    assert.equal(await readFile(outputPath, 'utf8'), 'changed during confirmation');
+    ).rejects.toThrow(/changed while the build was running/u);
+    expect(await readFile(outputPath, 'utf8')).toBe('changed during confirmation');
 
     const result = await buildSb3({sourceDirectory, outputPath, yes: true});
-    assert.equal(result.changed, true);
-    assert.ok(unzipSync(await readFile(outputPath))['project.json']);
+    expect(result.changed).toBe(true);
+    expect(unzipSync(await readFile(outputPath))['project.json']).toBeTruthy();
   });
 });
 
@@ -205,8 +198,7 @@ test('build stops when an interrupted rollback file exists', async () => {
     await buildSb3({sourceDirectory, outputPath});
     await writeFile(rollbackPath, 'previous output');
 
-    await assert.rejects(
-      buildSb3({sourceDirectory, outputPath}),
+    await expect(buildSb3({sourceDirectory, outputPath})).rejects.toThrow(
       /interrupted SB3 build rollback file/u,
     );
   });
@@ -220,12 +212,12 @@ test('rejects duplicate archive entries and extra asset files', async () => {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     manifest.archiveEntries.push(assetFilename);
     await writeJson(manifestPath, manifest);
-    await assert.rejects(validateSb3Source(sourceDirectory), /Duplicate archive entry/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(/Duplicate archive entry/u);
 
     manifest.archiveEntries.pop();
     await writeJson(manifestPath, manifest);
     await writeFile(path.join(sourceDirectory, 'assets/extra.svg'), '<svg/>');
-    await assert.rejects(validateSb3Source(sourceDirectory), /Extra: extra.svg/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(/Extra: extra.svg/u);
   });
 });
 
@@ -234,38 +226,39 @@ test('rejects asset content hash and embedded extension mapping mismatches', asy
     const sourceDirectory = path.join(directory, 'source');
     const {assetFilename} = await writeMinimalSource(sourceDirectory);
     await writeFile(path.join(sourceDirectory, 'assets', assetFilename), '<svg>changed</svg>');
-    await assert.rejects(validateSb3Source(sourceDirectory), /Asset content hash mismatch/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(
+      /Asset content hash mismatch/u,
+    );
 
     await writeMinimalSource(sourceDirectory);
     const projectPath = path.join(sourceDirectory, 'project.source.json');
     const project = JSON.parse(await readFile(projectPath, 'utf8'));
     project.extensionURLs.custom = 'embedded-extension:extensions/other.js';
     await writeJson(projectPath, project);
-    await assert.rejects(validateSb3Source(sourceDirectory), /mapping does not match/u);
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(/mapping does not match/u);
   });
 });
 
 test('parses build and check CLI options', () => {
-  assert.deepEqual(parseCliArguments(['--help']), {command: 'help'});
-  assert.deepEqual(
+  expect(parseCliArguments(['--help'])).toStrictEqual({command: 'help'});
+  expect(
     parseCliArguments(['build', 'custom-source', '--output', 'project.sb3', '--yes']),
-    {
-      command: 'build',
-      outputPath: path.resolve('project.sb3'),
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.deepEqual(parseCliArguments(['check', 'custom-source']), {
+  ).toStrictEqual({
+    command: 'build',
+    outputPath: path.resolve('project.sb3'),
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(parseCliArguments(['check', 'custom-source'])).toStrictEqual({
     command: 'check',
     sourceDirectory: path.resolve('custom-source'),
   });
-  assert.deepEqual(parseCliArguments(['extensions', 'status', 'custom-source']), {
+  expect(parseCliArguments(['extensions', 'status', 'custom-source'])).toStrictEqual({
     action: 'status',
     command: 'extensions',
     sourceDirectory: path.resolve('custom-source'),
   });
-  assert.deepEqual(parseCliArguments(['extensions', 'sync', 'custom-source', '--yes']), {
+  expect(parseCliArguments(['extensions', 'sync', 'custom-source', '--yes'])).toStrictEqual({
     action: 'sync',
     command: 'extensions',
     extensionId: undefined,
@@ -274,19 +267,18 @@ test('parses build and check CLI options', () => {
     sourceDirectory: path.resolve('custom-source'),
     yes: true,
   });
-  assert.deepEqual(
+  expect(
     parseCliArguments(['extensions', 'update', 'custom-source', 'example', '--yes']),
-    {
-      action: 'update',
-      command: 'extensions',
-      extensionId: 'example',
-      migrateToId: undefined,
-      sourceArtifact: undefined,
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    action: 'update',
+    command: 'extensions',
+    extensionId: 'example',
+    migrateToId: undefined,
+    sourceArtifact: undefined,
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(
     parseCliArguments([
       'extensions',
       'update',
@@ -295,18 +287,17 @@ test('parses build and check CLI options', () => {
       '--allow-breaking-api',
       '--yes',
     ]),
-    {
-      action: 'update',
-      allowBreakingApi: true,
-      command: 'extensions',
-      extensionId: 'example',
-      migrateToId: undefined,
-      sourceArtifact: undefined,
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    action: 'update',
+    allowBreakingApi: true,
+    command: 'extensions',
+    extensionId: 'example',
+    migrateToId: undefined,
+    sourceArtifact: undefined,
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(
     parseCliArguments([
       'extensions',
       'update',
@@ -320,18 +311,17 @@ test('parses build and check CLI options', () => {
       'dist/newid.manifest.json',
       '--yes',
     ]),
-    {
-      action: 'update',
-      apiManifestArtifact: 'dist/newid.manifest.json',
-      command: 'extensions',
-      extensionId: 'oldId',
-      migrateToId: 'newid',
-      sourceArtifact: 'dist/newid.js',
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    action: 'update',
+    apiManifestArtifact: 'dist/newid.manifest.json',
+    command: 'extensions',
+    extensionId: 'oldId',
+    migrateToId: 'newid',
+    sourceArtifact: 'dist/newid.js',
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(
     parseCliArguments([
       'extensions',
       'migrate-id',
@@ -342,38 +332,32 @@ test('parses build and check CLI options', () => {
       'newid',
       '--yes',
     ]),
-    {
-      action: 'migrate-id',
-      command: 'extensions',
-      fromId: 'oldId',
-      sourceDirectory: path.resolve('custom-source'),
-      toId: 'newid',
-      yes: true,
-    },
-  );
-  assert.throws(
-    () => parseCliArguments(['build', 'custom-source', '--output']),
+  ).toStrictEqual({
+    action: 'migrate-id',
+    command: 'extensions',
+    fromId: 'oldId',
+    sourceDirectory: path.resolve('custom-source'),
+    toId: 'newid',
+    yes: true,
+  });
+  expect(() => parseCliArguments(['build', 'custom-source', '--output'])).toThrow(
     /requires a value/u,
   );
-  assert.throws(
-    () => parseCliArguments(['extensions', 'sync', 'custom-source', 'extra']),
+  expect(() => parseCliArguments(['extensions', 'sync', 'custom-source', 'extra'])).toThrow(
     /accepts only SOURCE_DIR/u,
   );
-  assert.throws(
-    () => parseCliArguments(['extensions', 'update', 'custom-source', '--allow-breaking-api']),
-    /requires --yes/u,
-  );
-  assert.throws(
-    () =>
-      parseCliArguments([
-        'extensions',
-        'update',
-        'custom-source',
-        '--api-manifest-artifact',
-        'dist/newid.manifest.json',
-      ]),
-    /requires --migrate-id/u,
-  );
+  expect(() =>
+    parseCliArguments(['extensions', 'update', 'custom-source', '--allow-breaking-api']),
+  ).toThrow(/requires --yes/u);
+  expect(() =>
+    parseCliArguments([
+      'extensions',
+      'update',
+      'custom-source',
+      '--api-manifest-artifact',
+      'dist/newid.manifest.json',
+    ]),
+  ).toThrow(/requires --migrate-id/u);
 });
 
 test('keeps package metadata and the public CLI/API version aligned', async () => {
@@ -382,6 +366,6 @@ test('keeps package metadata and the public CLI/API version aligned', async () =
 
   await runCli(['--version'], {log: (message) => messages.push(message)});
 
-  assert.equal(packageVersion, packageJson.version);
-  assert.deepEqual(messages, [packageJson.version]);
+  expect(packageVersion).toBe(packageJson.version);
+  expect(messages).toStrictEqual([packageJson.version]);
 });

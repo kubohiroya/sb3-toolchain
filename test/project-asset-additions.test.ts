@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import os from 'node:os';
@@ -8,7 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, unzipSync} from 'fflate';
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 import {stringify} from 'yaml';
 
 import {parseCliArguments, runCli} from '../src/cli';
@@ -136,29 +135,26 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
         projectAssetsPath: yamlManifestPath,
       }),
     ]);
-    assert.deepEqual(Buffer.from(first.archive), Buffer.from(second.archive));
-    assert.deepEqual(Buffer.from(first.archive), Buffer.from(yaml.archive));
-    assert.deepEqual(first.projectAssetAdditions, {
+    expect(Buffer.from(first.archive)).toStrictEqual(Buffer.from(second.archive));
+    expect(Buffer.from(first.archive)).toStrictEqual(Buffer.from(yaml.archive));
+    expect(first.projectAssetAdditions).toStrictEqual({
       assetFileCount: 2,
       backdropCount: 1,
       costumeCount: 1,
       soundCount: 1,
       spriteCount: 1,
     });
-    assert.equal(first.assetCount, 3);
-    assert.equal(first.assetReferenceCount, 4);
-    assert.equal(first.entryCount, 4);
+    expect(first.assetCount).toBe(3);
+    expect(first.assetReferenceCount).toBe(4);
+    expect(first.entryCount).toBe(4);
 
     const archive = unzipSync(first.archive);
     const project = JSON.parse(strFromU8(archive['project.json']));
     const stage = project.targets.find(({isStage}: any) => isStage);
-    assert.deepEqual(
-      stage.costumes.map(({name}: any) => name),
-      ['pixel', 'Sunset'],
-    );
+    expect(stage.costumes.map(({name}: any) => name)).toStrictEqual(['pixel', 'Sunset']);
     const princessTargets = project.targets.filter(({name}: any) => name === 'Princess');
-    assert.equal(princessTargets.length, 1);
-    assert.deepEqual(princessTargets[0], {
+    expect(princessTargets.length).toBe(1);
+    expect(princessTargets[0]).toStrictEqual({
       isStage: false,
       name: 'Princess',
       variables: {},
@@ -199,10 +195,9 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
       draggable: false,
       rotationStyle: 'all around',
     });
-    assert.deepEqual(Buffer.from(archive[`${md5(princess)}.png`]), princess);
-    assert.deepEqual(Buffer.from(archive[`${md5(voice)}.wav`]), voice);
-    assert.equal(
-      await readFile(path.join(fixtureSourceDirectory, 'project.source.json'), 'utf8'),
+    expect(Buffer.from(archive[`${md5(princess)}.png`])).toStrictEqual(princess);
+    expect(Buffer.from(archive[`${md5(voice)}.wav`])).toStrictEqual(voice);
+    expect(await readFile(path.join(fixtureSourceDirectory, 'project.source.json'), 'utf8')).toBe(
       sourceBefore,
     );
 
@@ -212,8 +207,8 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
       projectAssetsPath: yamlManifestPath,
       sourceDirectory: fixtureSourceDirectory,
     });
-    assert.equal(built.changed, true);
-    assert.deepEqual(await readFile(outputPath), Buffer.from(first.archive));
+    expect(built.changed).toBe(true);
+    expect(await readFile(outputPath)).toStrictEqual(Buffer.from(first.archive));
 
     const cliOutputPath = path.join(directory, 'cli-project.sb3');
     const messages: string[] = [];
@@ -230,13 +225,13 @@ test('adds editable JSON or YAML sprite assets and backdrops without modifying s
       ],
       {log: (message) => messages.push(message)},
     );
-    assert.deepEqual(await readFile(cliOutputPath), Buffer.from(first.archive));
-    assert.match(messages[0], /^Built: .* \(4 entries, 3 assets,/u);
+    expect(await readFile(cliOutputPath)).toStrictEqual(Buffer.from(first.archive));
+    expect(messages[0]).toMatch(/^Built: .* \(4 entries, 3 assets,/u);
   });
 });
 
 test('parses project asset options for check and build', () => {
-  assert.deepEqual(
+  expect(
     parseCliArguments([
       'check',
       'source',
@@ -245,14 +240,13 @@ test('parses project asset options for check and build', () => {
       '--allow-asset-root',
       'resources',
     ]),
-    {
-      allowedAssetRoots: [path.resolve('resources')],
-      command: 'check',
-      projectAssetsPath: path.resolve('project-assets.yml'),
-      sourceDirectory: path.resolve('source'),
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    allowedAssetRoots: [path.resolve('resources')],
+    command: 'check',
+    projectAssetsPath: path.resolve('project-assets.yml'),
+    sourceDirectory: path.resolve('source'),
+  });
+  expect(
     parseCliArguments([
       'build',
       'source',
@@ -264,20 +258,17 @@ test('parses project asset options for check and build', () => {
       'resources',
       '--yes',
     ]),
-    {
-      allowedAssetRoots: [path.resolve('resources')],
-      command: 'build',
-      outputPath: path.resolve('output.sb3'),
-      projectAssetsPath: path.resolve('project-assets.json'),
-      sourceDirectory: path.resolve('source'),
-      yes: true,
-    },
-  );
-  assert.throws(
-    () =>
-      parseCliArguments(['build', 'source', '--output', 'output.sb3', '--allow-asset-root', '.']),
-    /requires --project-assets/u,
-  );
+  ).toStrictEqual({
+    allowedAssetRoots: [path.resolve('resources')],
+    command: 'build',
+    outputPath: path.resolve('output.sb3'),
+    projectAssetsPath: path.resolve('project-assets.json'),
+    sourceDirectory: path.resolve('source'),
+    yes: true,
+  });
+  expect(() =>
+    parseCliArguments(['build', 'source', '--output', 'output.sb3', '--allow-asset-root', '.']),
+  ).toThrow(/requires --project-assets/u);
 });
 
 test('applies optional strict locks and rejects unsafe or ambiguous additions', async () => {
@@ -294,37 +285,38 @@ test('applies optional strict locks and rejects unsafe or ambiguous additions', 
 
     const valid = manifest();
     await writeJson(manifestPath, valid);
-    await assert.rejects(
+    await expect(
       createDeterministicSb3(fixtureSourceDirectory, {projectAssetsPath: manifestPath}),
-      /outside the allowed project asset roots/u,
-    );
+    ).rejects.toThrow(/outside the allowed project asset roots/u);
 
     const options = {allowedAssetRoots: [directory], projectAssetsPath: manifestPath};
     const invalidHash = structuredClone(valid);
     invalidHash.assets.Princess.sha256 = '0'.repeat(64);
     await writeJson(manifestPath, invalidHash);
-    await assert.rejects(
-      createDeterministicSb3(fixtureSourceDirectory, options),
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
       /sha256 differs/u,
     );
 
     const invalidSize = structuredClone(valid);
     invalidSize.assets.Princess.size = princess.length + 1;
     await writeJson(manifestPath, invalidSize);
-    await assert.rejects(createDeterministicSb3(fixtureSourceDirectory, options), /size differs/u);
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
+      /size differs/u,
+    );
 
     const invalidRate = structuredClone(valid);
     invalidRate.assets.PrincessSound.rate = 44_100;
     await writeJson(manifestPath, invalidRate);
-    await assert.rejects(createDeterministicSb3(fixtureSourceDirectory, options), /rate differs/u);
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
+      /rate differs/u,
+    );
 
     const duplicateTarget = structuredClone(valid);
     duplicateTarget.sprites.Stage = duplicateTarget.sprites.Princess;
     delete duplicateTarget.sprites.Princess;
     duplicateTarget.assets.Princess.target = 'Stage';
     await writeJson(manifestPath, duplicateTarget);
-    await assert.rejects(
-      createDeterministicSb3(fixtureSourceDirectory, options),
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
       /already exists in the project/u,
     );
 
@@ -334,8 +326,7 @@ test('applies optional strict locks and rejects unsafe or ambiguous additions', 
       name: 'Princess',
     };
     await writeJson(manifestPath, duplicateCostume);
-    await assert.rejects(
-      createDeterministicSb3(fixtureSourceDirectory, options),
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
       /name already exists/u,
     );
 
@@ -344,8 +335,7 @@ test('applies optional strict locks and rejects unsafe or ambiguous additions', 
     const symbolicLink = structuredClone(valid);
     symbolicLink.assets.Princess.file = '../inputs/Linked.png';
     await writeJson(manifestPath, symbolicLink);
-    await assert.rejects(
-      createDeterministicSb3(fixtureSourceDirectory, options),
+    await expect(createDeterministicSb3(fixtureSourceDirectory, options)).rejects.toThrow(
       /must not traverse a symbolic link/u,
     );
   });
@@ -362,10 +352,9 @@ test('rejects YAML composition features and duplicate JSON or YAML keys', async 
       writeFile(duplicateJsonPath, '{"formatVersion":1,"assets":{},"assets":{}}\n'),
     ]);
     for (const manifestPath of [aliasesPath, duplicateYamlPath, duplicateJsonPath]) {
-      await assert.rejects(
+      await expect(
         createDeterministicSb3(fixtureSourceDirectory, {projectAssetsPath: manifestPath}),
-        /aliases and anchors|Map keys must be unique/u,
-      );
+      ).rejects.toThrow(/aliases and anchors|Map keys must be unique/u);
     }
   });
 });
