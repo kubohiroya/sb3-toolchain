@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
-
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {
   compareExtensionApiManifests,
@@ -11,7 +9,15 @@ import {
   validateExtensionApiManifestSourceMetadata,
   validateManagedExtensionApiManifest,
 } from '../src/index';
-import type {EmbeddedExtension} from '../src/index';
+import type {
+  EmbeddedExtension,
+  ExtensionApiManifestSource,
+  GitHubExtensionSource,
+} from '../src/index';
+
+type ManagedExtension = EmbeddedExtension & {
+  source: GitHubExtensionSource & {apiManifest: ExtensionApiManifestSource};
+};
 
 function manifest(overrides: Record<string, unknown> = {}): any {
   return {
@@ -36,7 +42,7 @@ function contents(value: unknown = manifest()): Buffer {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function managedExtension(apiContents: Buffer = contents()): EmbeddedExtension {
+function managedExtension(apiContents: Buffer = contents()): ManagedExtension {
   return {
     id: 'example',
     path: 'extensions/example.js',
@@ -62,7 +68,7 @@ function managedExtension(apiContents: Buffer = contents()): EmbeddedExtension {
 
 test('validates and canonicalizes extension API manifest v1', () => {
   const apiContents = contents();
-  assert.deepEqual(parseExtensionApiManifest(apiContents, {expectedId: 'example'}), {
+  expect(parseExtensionApiManifest(apiContents, {expectedId: 'example'})).toStrictEqual({
     blocks: [
       {
         arguments: [
@@ -78,12 +84,8 @@ test('validates and canonicalizes extension API manifest v1', () => {
     menus: [{acceptReporters: true, id: 'voices'}],
   });
   const extension = managedExtension(apiContents);
-  assert.equal(
-    validateExtensionApiManifestSourceMetadata(extension),
-    extension.source?.apiManifest,
-  );
-  assert.equal(
-    validateManagedExtensionApiManifest(extension, apiContents)?.integrity,
+  expect(validateExtensionApiManifestSourceMetadata(extension)).toBe(extension.source?.apiManifest);
+  expect(validateManagedExtensionApiManifest(extension, apiContents)?.integrity).toBe(
     extension.source?.apiManifest?.integrity,
   );
 });
@@ -128,17 +130,16 @@ test('rejects malformed, ambiguous, and mismatched extension API manifests', () 
     ],
   ];
   for (const [value, message] of invalidManifests) {
-    assert.throws(() => parseExtensionApiManifest(contents(value)), message);
+    expect(() => parseExtensionApiManifest(contents(value))).toThrow(message);
   }
-  assert.throws(
-    () => parseExtensionApiManifest(contents(), {expectedId: 'another'}),
+  expect(() => parseExtensionApiManifest(contents(), {expectedId: 'another'})).toThrow(
     /ID mismatch/u,
   );
 
   const extension = managedExtension();
-  assert.ok(extension.source?.apiManifest);
+  expect(extension.source.apiManifest.path).toBe('extensions/example.manifest.json');
   extension.source.apiManifest.path = 'extensions/other.manifest.json';
-  assert.throws(() => validateExtensionApiManifestSourceMetadata(extension), /path must match/u);
+  expect(() => validateExtensionApiManifestSourceMetadata(extension)).toThrow(/path must match/u);
 });
 
 test('classifies compatible additions and breaking API changes with stable paths', () => {
@@ -163,31 +164,28 @@ test('classifies compatible additions and breaking API changes with stable paths
     ),
   );
   const changes = compareExtensionApiManifests(installed, candidate);
-  assert.deepEqual(
-    changes.map(({breaking, kind, path}) => ({breaking, kind, path})),
-    [
-      {
-        breaking: false,
-        kind: 'block-added',
-        path: '/blocks/clear',
-      },
-      {
-        breaking: true,
-        kind: 'argument-added',
-        path: '/blocks/speak/arguments/RATE',
-      },
-      {
-        breaking: true,
-        kind: 'block-type-changed',
-        path: '/blocks/speak/blockType',
-      },
-      {
-        breaking: true,
-        kind: 'menu-accept-reporters-changed',
-        path: '/menus/voices/acceptReporters',
-      },
-    ],
-  );
+  expect(changes.map(({breaking, kind, path}) => ({breaking, kind, path}))).toStrictEqual([
+    {
+      breaking: false,
+      kind: 'block-added',
+      path: '/blocks/clear',
+    },
+    {
+      breaking: true,
+      kind: 'argument-added',
+      path: '/blocks/speak/arguments/RATE',
+    },
+    {
+      breaking: true,
+      kind: 'block-type-changed',
+      path: '/blocks/speak/blockType',
+    },
+    {
+      breaking: true,
+      kind: 'menu-accept-reporters-changed',
+      path: '/menus/voices/acceptReporters',
+    },
+  ]);
 });
 
 test('classifies removal of an unreferenced menu as compatible', () => {
@@ -202,14 +200,13 @@ test('classifies removal of an unreferenced menu as compatible', () => {
     ),
   );
   const candidate = parseExtensionApiManifest(contents());
-  assert.deepEqual(
+  expect(
     compareExtensionApiManifests(installed, candidate).map(({breaking, kind, path}) => ({
       breaking,
       kind,
       path,
     })),
-    [{breaking: false, kind: 'menu-removed', path: '/menus/unused'}],
-  );
+  ).toStrictEqual([{breaking: false, kind: 'menu-removed', path: '/menus/unused'}]);
 });
 
 test('classifies removal of a referenced menu as breaking', () => {
@@ -231,10 +228,9 @@ test('classifies removal of a referenced menu as breaking', () => {
       }),
     ),
   );
-  assert.equal(
+  expect(
     compareExtensionApiManifests(installed, candidate).find(
       (change) => change.kind === 'menu-removed',
     )?.breaking,
-    true,
-  );
+  ).toBe(true);
 });

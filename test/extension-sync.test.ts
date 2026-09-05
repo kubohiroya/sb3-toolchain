@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {cp, mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {
   extensionApiManifestIntegrity,
@@ -88,7 +87,7 @@ async function addApiManifest(
   const embeddedManifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
   const embeddedManifest = await readJson(embeddedManifestPath);
   const extension = embeddedManifest.extensions.find((entry: any) => entry.id === id);
-  assert(extension);
+  expect(extension).toBeTruthy();
   extension.source.apiManifest = {
     artifact,
     formatVersion: 1,
@@ -160,7 +159,7 @@ function mockGithub({
   const calls: {options: RequestInit | undefined; url: string}[] = [];
   const fetchImplementation = async (url: any, options?: any): Promise<Response> => {
     calls.push({options, url: String(url)});
-    assert.equal(options.redirect, 'error');
+    expect(options.redirect).toBe('error');
     const parsedUrl = new URL(String(url));
     if (parsedUrl.hostname === 'api.github.com') {
       const repository = parsedUrl.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/commits\//u)?.[1];
@@ -203,7 +202,7 @@ test('reports status and syncs only from the pinned commit without touching iden
     });
 
     const statuses = await extensionStatus(sourceDirectory, {fetch: github.fetch});
-    assert.deepEqual(statuses, [
+    expect(statuses).toStrictEqual([
       {
         id: 'example',
         local: 'valid',
@@ -213,8 +212,8 @@ test('reports status and syncs only from the pinned commit without touching iden
         state: 'update-available',
       },
     ]);
-    assert.equal(github.calls.length, 1);
-    assert.match(github.calls[0].url, /^https:\/\/api\.github\.com\//u);
+    expect(github.calls.length).toBe(1);
+    expect(github.calls[0].url).toMatch(/^https:\/\/api\.github\.com\//u);
 
     await writeFile(
       path.join(sourceDirectory, 'extensions/example.js'),
@@ -223,30 +222,27 @@ test('reports status and syncs only from the pinned commit without touching iden
     const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
     const manifestBeforeSync = await readFile(manifestPath, 'utf8');
     const modifiedStatus = await extensionStatus(sourceDirectory, {fetch: github.fetch});
-    assert.equal(modifiedStatus[0].local, 'modified');
+    expect(modifiedStatus[0].local).toBe('modified');
 
     github.calls.length = 0;
-    await assert.rejects(
+    await expect(
       syncExtensions({
         fetch: github.fetch,
         sourceDirectory,
       }),
-      /requires --yes/u,
-    );
+    ).rejects.toThrow(/requires --yes/u);
     const synchronized = await syncExtensions({
       fetch: github.fetch,
       sourceDirectory,
       yes: true,
     });
-    assert.equal(synchronized.changed, true);
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+    expect(synchronized.changed).toBe(true);
+    expect(await readFile(path.join(sourceDirectory, 'extensions/example.js'))).toStrictEqual(
       installedContents,
     );
-    assert.equal(await readFile(manifestPath, 'utf8'), manifestBeforeSync);
-    assert.equal(github.calls.length, 2);
-    assert.equal(
-      new URL(github.calls[1].url).pathname,
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifestBeforeSync);
+    expect(github.calls.length).toBe(2);
+    expect(new URL(github.calls[1].url).pathname).toBe(
       rawPath('example/example-extension', installedCommit, 'dist/example.js'),
     );
 
@@ -258,8 +254,8 @@ test('reports status and syncs only from the pinned commit without touching iden
       yes: true,
     });
     const after = await stat(extensionPath);
-    assert.equal(unchanged.changed, false);
-    assert.equal(after.mtimeMs, before.mtimeMs);
+    expect(unchanged.changed).toBe(false);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
   });
 });
 
@@ -285,7 +281,7 @@ test('reports and synchronizes an exact installed npm extension without network 
       throw new Error('npm synchronization must not use fetch');
     };
 
-    assert.deepEqual(await extensionStatus(sourceDirectory, {fetch: rejectNetwork}), [
+    expect(await extensionStatus(sourceDirectory, {fetch: rejectNetwork})).toStrictEqual([
       {
         id: 'example',
         installedVersion: '1.2.3',
@@ -300,25 +296,24 @@ test('reports and synchronizes an exact installed npm extension without network 
       sourceDirectory,
       yes: true,
     });
-    assert.equal(synchronized.changed, true);
-    assert.deepEqual(synchronized.extensions, [
+    expect(synchronized.changed).toBe(true);
+    expect(synchronized.extensions).toStrictEqual([
       {
         id: 'example',
         package: '@example/example-extension',
         version: '1.2.3',
       },
     ]);
-    assert.deepEqual(await readFile(extensionPath), installedContents);
+    expect(await readFile(extensionPath)).toStrictEqual(installedContents);
 
     await writeJson(path.join(directory, 'node_modules/@example/example-extension/package.json'), {
       name: '@example/example-extension',
       version: '1.2.4',
     });
-    await assert.rejects(
+    await expect(
       syncExtensions({fetch: rejectNetwork, sourceDirectory, yes: true}),
-      /version mismatch.*expected 1\.2\.3.*1\.2\.4/u,
-    );
-    assert.deepEqual(await readFile(extensionPath), installedContents);
+    ).rejects.toThrow(/version mismatch.*expected 1\.2\.3.*1\.2\.4/u);
+    expect(await readFile(extensionPath)).toStrictEqual(installedContents);
 
     const updatedContents = extensionContents('example', 'V2');
     await writeFile(
@@ -326,20 +321,19 @@ test('reports and synchronizes an exact installed npm extension without network 
       updatedContents,
     );
     const status = await extensionStatus(sourceDirectory, {fetch: rejectNetwork});
-    assert.equal(status[0].state, 'update-available');
-    assert.equal(status[0].installedVersion, '1.2.4');
+    expect(status[0].state).toBe('update-available');
+    expect(status[0].installedVersion).toBe('1.2.4');
     const updated = await updateExtensions({
       extensionId: 'example',
       fetch: rejectNetwork,
       sourceDirectory,
       yes: true,
     });
-    assert.equal(updated.changed, true);
-    assert.deepEqual(await readFile(extensionPath), updatedContents);
+    expect(updated.changed).toBe(true);
+    expect(await readFile(extensionPath)).toStrictEqual(updatedContents);
     const updatedManifest = await readJson(manifestPath);
-    assert.equal(updatedManifest.extensions[0].source.version, '1.2.4');
-    assert.equal(
-      updatedManifest.extensions[0].source.integrity,
+    expect(updatedManifest.extensions[0].source.version).toBe('1.2.4');
+    expect(updatedManifest.extensions[0].source.integrity).toBe(
       extensionIntegrity(updatedContents),
     );
   });
@@ -361,12 +355,13 @@ test('rejects missing and integrity-mismatched npm extension artifacts', async (
     };
     await writeJson(manifestPath, manifest);
 
-    await assert.rejects(
-      syncExtensions({sourceDirectory, yes: true}),
+    await expect(syncExtensions({sourceDirectory, yes: true})).rejects.toThrow(
       /Installed npm package was not found/u,
     );
     await installNpmExtensionPackage(directory, installedContents);
-    await assert.rejects(syncExtensions({sourceDirectory, yes: true}), /integrity mismatch/u);
+    await expect(syncExtensions({sourceDirectory, yes: true})).rejects.toThrow(
+      /integrity mismatch/u,
+    );
   });
 });
 
@@ -393,16 +388,15 @@ test('rejects failed, redirected, oversized, corrupted, and wrong-ID downloads',
     ];
     for (const [response, message, maximumArtifactBytes] of artifactCases) {
       const github = mockGithub({artifacts: new Map([[artifactPath, response]])});
-      await assert.rejects(
+      await expect(
         syncExtensions({
           fetch: github.fetch,
           maximumArtifactBytes,
           sourceDirectory,
           yes: true,
         }),
-        message,
-      );
-      assert.deepEqual(await readFile(extensionPath), originalContents);
+      ).rejects.toThrow(message);
+      expect(await readFile(extensionPath)).toStrictEqual(originalContents);
     }
 
     const wrongId = extensionContents('another', 'V2');
@@ -411,11 +405,10 @@ test('rejects failed, redirected, oversized, corrupted, and wrong-ID downloads',
         [rawPath('example/example-extension', updatedCommit, 'dist/example.js'), wrongId],
       ]),
     });
-    await assert.rejects(
+    await expect(
       updateExtensions({fetch: github.fetch, sourceDirectory, yes: true}),
-      /header ID mismatch/u,
-    );
-    assert.deepEqual(await readFile(extensionPath), originalContents);
+    ).rejects.toThrow(/header ID mismatch/u);
+    expect(await readFile(extensionPath)).toStrictEqual(originalContents);
   });
 });
 
@@ -434,16 +427,13 @@ test('updates multiple extensions and metadata as one transaction', async () => 
         [secondPath, new Response('missing', {status: 404})],
       ]),
     });
-    await assert.rejects(
+    await expect(
       updateExtensions({fetch: failedGithub.fetch, sourceDirectory, yes: true}),
-      /HTTP 404/u,
-    );
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+    ).rejects.toThrow(/HTTP 404/u);
+    expect(await readFile(path.join(sourceDirectory, 'extensions/example.js'))).toStrictEqual(
       contentsById.get('example'),
     );
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/second.js')),
+    expect(await readFile(path.join(sourceDirectory, 'extensions/second.js'))).toStrictEqual(
       contentsById.get('second'),
     );
 
@@ -458,21 +448,19 @@ test('updates multiple extensions and metadata as one transaction', async () => 
       sourceDirectory,
       yes: true,
     });
-    assert.equal(result.changed, true);
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+    expect(result.changed).toBe(true);
+    expect(await readFile(path.join(sourceDirectory, 'extensions/example.js'))).toStrictEqual(
       updatedExample,
     );
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/second.js')),
+    expect(await readFile(path.join(sourceDirectory, 'extensions/second.js'))).toStrictEqual(
       updatedSecond,
     );
 
     const manifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
     for (const extension of manifest.extensions) {
       const contents = extension.id === 'example' ? updatedExample : updatedSecond;
-      assert.equal(extension.source.resolvedCommit, updatedCommit);
-      assert.equal(extension.source.integrity, extensionIntegrity(contents));
+      expect(extension.source.resolvedCommit).toBe(updatedCommit);
+      expect(extension.source.integrity).toBe(extensionIntegrity(contents));
     }
   });
 });
@@ -498,8 +486,7 @@ test('syncs and compatibly updates an opt-in extension API manifest', async () =
         ],
       ]),
     });
-    assert.equal(
-      (await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local,
+    expect((await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local).toBe(
       'modified',
     );
     const synchronized = await syncExtensions({
@@ -507,10 +494,9 @@ test('syncs and compatibly updates an opt-in extension API manifest', async () =
       sourceDirectory,
       yes: true,
     });
-    assert.equal(synchronized.changed, true);
-    assert.deepEqual(await readFile(apiManifestPath), installedApiManifest);
-    assert.equal(
-      (await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local,
+    expect(synchronized.changed).toBe(true);
+    expect(await readFile(apiManifestPath)).toStrictEqual(installedApiManifest);
+    expect((await extensionStatus(sourceDirectory, {fetch: syncGithub.fetch}))[0].local).toBe(
       'valid',
     );
 
@@ -535,20 +521,18 @@ test('syncs and compatibly updates an opt-in extension API manifest', async () =
       sourceDirectory,
       yes: true,
     });
-    assert.equal(updated.changed, true);
-    assert.deepEqual(
+    expect(updated.changed).toBe(true);
+    expect(
       updated.apiCompatibility[0].changes.map(({breaking, kind, path: changePath}) => ({
         breaking,
         kind,
         path: changePath,
       })),
-      [{breaking: false, kind: 'block-added', path: '/blocks/clear'}],
-    );
-    assert.deepEqual(await readFile(apiManifestPath), updatedApiManifest);
+    ).toStrictEqual([{breaking: false, kind: 'block-added', path: '/blocks/clear'}]);
+    expect(await readFile(apiManifestPath)).toStrictEqual(updatedApiManifest);
     const embeddedManifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
-    assert.equal(embeddedManifest.extensions[0].source.resolvedCommit, updatedCommit);
-    assert.equal(
-      embeddedManifest.extensions[0].source.apiManifest.integrity,
+    expect(embeddedManifest.extensions[0].source.resolvedCommit).toBe(updatedCommit);
+    expect(embeddedManifest.extensions[0].source.apiManifest.integrity).toBe(
       extensionApiManifestIntegrity(updatedApiManifest),
     );
   });
@@ -582,34 +566,30 @@ test('rejects breaking API updates unless both explicit overrides are present', 
         ],
       ]),
     });
-    await assert.rejects(
+    await expect(
       updateExtensions({fetch: github.fetch, sourceDirectory, yes: true}),
-      /breaking.*block-type-changed.*\/blocks\/value\/blockType/su,
-    );
-    assert.deepEqual(
-      await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+    ).rejects.toThrow(/breaking.*block-type-changed.*\/blocks\/value\/blockType/su);
+    expect(await readFile(path.join(sourceDirectory, 'extensions/example.js'))).toStrictEqual(
       originalExtension,
     );
-    assert.deepEqual(
+    expect(
       await readFile(path.join(sourceDirectory, 'extensions/example.manifest.json')),
-      originalManifest,
-    );
-    await assert.rejects(
+    ).toStrictEqual(originalManifest);
+    await expect(
       updateExtensions({
         allowBreakingApi: true,
         fetch: github.fetch,
         sourceDirectory,
       }),
-      /requires --yes/u,
-    );
+    ).rejects.toThrow(/requires --yes/u);
     const updated = await updateExtensions({
       allowBreakingApi: true,
       fetch: github.fetch,
       sourceDirectory,
       yes: true,
     });
-    assert.equal(updated.changed, true);
-    assert.equal(updated.apiCompatibility[0].changes[0].breaking, true);
+    expect(updated.changed).toBe(true);
+    expect(updated.apiCompatibility[0].changes[0].breaking).toBe(true);
   });
 });
 
@@ -643,23 +623,20 @@ test('rejects unsafe API manifest downloads without changing the source', async 
           [manifestPath, response],
         ]),
       });
-      await assert.rejects(
+      await expect(
         updateExtensions({
           fetch: github.fetch,
           maximumManifestBytes,
           sourceDirectory,
           yes: true,
         }),
-        message,
-      );
-      assert.deepEqual(
-        await readFile(path.join(sourceDirectory, 'extensions/example.js')),
+      ).rejects.toThrow(message);
+      expect(await readFile(path.join(sourceDirectory, 'extensions/example.js'))).toStrictEqual(
         installedExtension,
       );
-      assert.deepEqual(
+      expect(
         await readFile(path.join(sourceDirectory, 'extensions/example.manifest.json')),
-        installedApiManifest,
-      );
+      ).toStrictEqual(installedApiManifest);
     }
 
     const corruptedManifest = apiManifestContents('example', {
@@ -677,10 +654,9 @@ test('rejects unsafe API manifest downloads without changing the source', async 
         ],
       ]),
     });
-    await assert.rejects(
+    await expect(
       syncExtensions({fetch: syncGithub.fetch, sourceDirectory, yes: true}),
-      /API manifest integrity mismatch/u,
-    );
+    ).rejects.toThrow(/API manifest integrity mismatch/u);
   });
 });
 
@@ -714,24 +690,20 @@ test('normalizes the manifest ID during a managed extension ID migration', async
       sourceDirectory,
       yes: true,
     });
-    assert.deepEqual(result.apiCompatibility[0].changes, []);
-    assert.equal(result.migration?.counts.apiManifestArtifacts, 1);
-    await assert.rejects(
+    expect(result.apiCompatibility[0].changes).toStrictEqual([]);
+    expect(result.migration?.counts.apiManifestArtifacts).toBe(1);
+    await expect(
       readFile(path.join(sourceDirectory, 'extensions/oldext.manifest.json')),
-      (error: any) => error?.code === 'ENOENT',
-    );
-    assert.deepEqual(
+    ).rejects.toSatisfy((error: any) => error?.code === 'ENOENT');
+    expect(
       await readFile(path.join(sourceDirectory, 'extensions/newext.manifest.json')),
-      updatedApiManifest,
-    );
+    ).toStrictEqual(updatedApiManifest);
     const embeddedManifest = await readJson(path.join(sourceDirectory, 'embedded-extensions.json'));
-    assert.equal(embeddedManifest.extensions[0].id, 'newext');
-    assert.equal(
-      embeddedManifest.extensions[0].source.apiManifest.path,
+    expect(embeddedManifest.extensions[0].id).toBe('newext');
+    expect(embeddedManifest.extensions[0].source.apiManifest.path).toBe(
       'extensions/newext.manifest.json',
     );
-    assert.equal(
-      embeddedManifest.extensions[0].source.apiManifest.artifact,
+    expect(embeddedManifest.extensions[0].source.apiManifest.artifact).toBe(
       'dist/newext.manifest.json',
     );
   });

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {strFromU8, unzipSync} from 'fflate';
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {parseCliArguments} from '../src/cli';
 import {
@@ -146,49 +145,45 @@ test('lays out every target without deleting project data or changing the input'
   const snapshot: any = structuredClone(input);
   const result = cleanUpTurboWarpBlocks(input);
 
-  assert.deepEqual(input, snapshot);
-  assert.equal(result.targetCount, 2);
-  assert.equal(result.scriptCount, 4);
-  assert.equal(result.movedScriptCount, 4);
-  assert.equal(result.movedCommentCount, 1);
+  expect(input).toStrictEqual(snapshot);
+  expect(result.targetCount).toBe(2);
+  expect(result.scriptCount).toBe(4);
+  expect(result.movedScriptCount).toBe(4);
+  expect(result.movedCommentCount).toBe(1);
 
   const [stage, sprite] = targetsOf(result.project);
-  assert.deepEqual(
-    {x: stage.blocks.upper.x, y: stage.blocks.upper.y},
-    {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
-  );
-  assert.equal(stage.blocks.lower.x, turboWarpCleanUpLayout.startX);
-  assert.equal(
-    stage.blocks.lower.y,
+  expect({x: stage.blocks.upper.x, y: stage.blocks.upper.y}).toStrictEqual({
+    x: turboWarpCleanUpLayout.startX,
+    y: turboWarpCleanUpLayout.startY,
+  });
+  expect(stage.blocks.lower.x).toBe(turboWarpCleanUpLayout.startX);
+  expect(stage.blocks.lower.y).toBe(
     turboWarpCleanUpLayout.startY + 48 + turboWarpCleanUpLayout.rowGap,
   );
-  assert.ok(stage.blocks.right.x > stage.blocks.lower.x);
-  assert.equal(stage.blocks.right.y, turboWarpCleanUpLayout.startY);
-  assert.deepEqual(
-    {x: sprite.blocks.sprite.x, y: sprite.blocks.sprite.y},
-    {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
-  );
-  assert.deepEqual(stage.variables, snapshot.targets[0].variables);
-  assert.deepEqual(stage.lists, snapshot.targets[0].lists);
-  assert.deepEqual(sprite.variables, snapshot.targets[1].variables);
-  assert.deepEqual(sprite.lists, snapshot.targets[1].lists);
-  assert.deepEqual(stage.comments.workspace, snapshot.targets[0].comments.workspace);
-  assert.deepEqual(
-    {x: stage.comments.attached.x, y: stage.comments.attached.y},
-    {
-      x:
-        snapshot.targets[0].comments.attached.x +
-        (stage.blocks.lower.x - snapshot.targets[0].blocks.lower.x),
-      y:
-        snapshot.targets[0].comments.attached.y +
-        (stage.blocks.lower.y - snapshot.targets[0].blocks.lower.y),
-    },
-  );
+  expect(stage.blocks.right.x > stage.blocks.lower.x).toBeTruthy();
+  expect(stage.blocks.right.y).toBe(turboWarpCleanUpLayout.startY);
+  expect({x: sprite.blocks.sprite.x, y: sprite.blocks.sprite.y}).toStrictEqual({
+    x: turboWarpCleanUpLayout.startX,
+    y: turboWarpCleanUpLayout.startY,
+  });
+  expect(stage.variables).toStrictEqual(snapshot.targets[0].variables);
+  expect(stage.lists).toStrictEqual(snapshot.targets[0].lists);
+  expect(sprite.variables).toStrictEqual(snapshot.targets[1].variables);
+  expect(sprite.lists).toStrictEqual(snapshot.targets[1].lists);
+  expect(stage.comments.workspace).toStrictEqual(snapshot.targets[0].comments.workspace);
+  expect({x: stage.comments.attached.x, y: stage.comments.attached.y}).toStrictEqual({
+    x:
+      snapshot.targets[0].comments.attached.x +
+      (stage.blocks.lower.x - snapshot.targets[0].blocks.lower.x),
+    y:
+      snapshot.targets[0].comments.attached.y +
+      (stage.blocks.lower.y - snapshot.targets[0].blocks.lower.y),
+  });
 
   const repeated = cleanUpTurboWarpBlocks(result.project);
-  assert.deepEqual(repeated.project, result.project);
-  assert.equal(repeated.movedScriptCount, 0);
-  assert.equal(repeated.movedCommentCount, 0);
+  expect(repeated.project).toStrictEqual(result.project);
+  expect(repeated.movedScriptCount).toBe(0);
+  expect(repeated.movedCommentCount).toBe(0);
 });
 
 test('handles large linear stacks without depending on the JavaScript call stack', () => {
@@ -209,14 +204,11 @@ test('handles large linear stacks without depending on the JavaScript call stack
   const result = cleanUpTurboWarpBlocks({
     targets: [{blocks, comments: {}, isStage: true, name: 'Stage'}],
   });
-  assert.equal(result.scriptCount, 1);
-  assert.deepEqual(
-    {
-      x: targetsOf(result.project)[0].blocks['block-0'].x,
-      y: targetsOf(result.project)[0].blocks['block-0'].y,
-    },
-    {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
-  );
+  expect(result.scriptCount).toBe(1);
+  expect({
+    x: targetsOf(result.project)[0].blocks['block-0'].x,
+    y: targetsOf(result.project)[0].blocks['block-0'].y,
+  }).toStrictEqual({x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY});
 });
 
 test('reserves column width for attached comments and inline primitive values', () => {
@@ -253,8 +245,8 @@ test('reserves column width for attached comments and inline primitive values', 
 
   const [commentTarget, inlineTarget] = targetsOf(result.project);
   const commentRight = commentTarget.comments.wide.x + commentTarget.comments.wide.width;
-  assert.equal(commentTarget.blocks.right.x - commentRight, turboWarpCleanUpLayout.columnGap);
-  assert.ok(inlineTarget.blocks.right.x - inlineTarget.blocks.left.x > 200 * 8);
+  expect(commentTarget.blocks.right.x - commentRight).toBe(turboWarpCleanUpLayout.columnGap);
+  expect(inlineTarget.blocks.right.x - inlineTarget.blocks.left.x > 200 * 8).toBeTruthy();
 });
 
 test('builds an opt-in cleaned archive without modifying expanded sources', async () => {
@@ -274,39 +266,34 @@ test('builds an opt-in cleaned archive without modifying expanded sources', asyn
       createDeterministicSb3(sourceDirectory, {cleanUpBlocks: true}),
       createDeterministicSb3(sourceDirectory, {cleanUpBlocks: true}),
     ]);
-    assert.deepEqual(Buffer.from(cleaned.archive), Buffer.from(repeated.archive));
-    assert.equal(readProject(regular.archive).targets[0].blocks.upper.x, 520);
-    assert.deepEqual(
-      {
-        x: readProject(cleaned.archive).targets[0].blocks.upper.x,
-        y: readProject(cleaned.archive).targets[0].blocks.upper.y,
-      },
-      {x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY},
-    );
-    assert.equal(cleaned.blockCleanUp?.scriptCount, 3);
+    expect(Buffer.from(cleaned.archive)).toStrictEqual(Buffer.from(repeated.archive));
+    expect(readProject(regular.archive).targets[0].blocks.upper.x).toBe(520);
+    expect({
+      x: readProject(cleaned.archive).targets[0].blocks.upper.x,
+      y: readProject(cleaned.archive).targets[0].blocks.upper.y,
+    }).toStrictEqual({x: turboWarpCleanUpLayout.startX, y: turboWarpCleanUpLayout.startY});
+    expect(cleaned.blockCleanUp?.scriptCount).toBe(3);
 
     const built = await buildSb3({cleanUpBlocks: true, outputPath, sourceDirectory});
-    assert.equal(built.blockCleanUp?.scriptCount, 3);
-    assert.equal(readProject(await readFile(outputPath)).targets[0].blocks.upper.x, 48);
-    assert.equal(await readFile(projectPath, 'utf8'), sourceBeforeBuild);
+    expect(built.blockCleanUp?.scriptCount).toBe(3);
+    expect(readProject(await readFile(outputPath)).targets[0].blocks.upper.x).toBe(48);
+    expect(await readFile(projectPath, 'utf8')).toBe(sourceBeforeBuild);
   });
 });
 
 test('parses the opt-in build flag and rejects non-boolean API values', async () => {
-  assert.deepEqual(
+  expect(
     parseCliArguments(['build', 'custom-source', '--output', 'project.sb3', '--clean-up-blocks']),
-    {
-      cleanUpBlocks: true,
-      command: 'build',
-      outputPath: path.resolve('project.sb3'),
-      sourceDirectory: path.resolve('custom-source'),
-      yes: false,
-    },
-  );
-  await assert.rejects(
+  ).toStrictEqual({
+    cleanUpBlocks: true,
+    command: 'build',
+    outputPath: path.resolve('project.sb3'),
+    sourceDirectory: path.resolve('custom-source'),
+    yes: false,
+  });
+  await expect(
     createDeterministicSb3(fixtureSourceDirectory, {
       cleanUpBlocks: 'yes',
     } as unknown as {cleanUpBlocks?: boolean}),
-    /cleanUpBlocks must be a boolean/u,
-  );
+  ).rejects.toThrow(/cleanUpBlocks must be a boolean/u);
 });

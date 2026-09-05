@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 import {strToU8, zipSync} from 'fflate';
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {parseCliArguments} from '../src/cli';
 import {
@@ -93,7 +92,7 @@ test('imports assets and extracts embedded extensions without changing external 
 
     const result = await importSb3({inputPath, outputDirectory});
 
-    assert.deepEqual(result, {
+    expect(result).toStrictEqual({
       archiveEntryCount: 2,
       assetCount: 1,
       embeddedExtensionCount: 1,
@@ -108,42 +107,38 @@ test('imports assets and extracts embedded extensions without changing external 
       'utf8',
     );
     const importedProject = JSON.parse(importedProjectText);
-    assert.equal(importedProjectText.endsWith('\n'), true);
-    assert.equal(importedProject.extensionURLs.custom, 'embedded-extension:extensions/custom.js');
-    assert.equal(importedProject.extensionURLs.external, project.extensionURLs.external);
-    assert.equal(
-      await readFile(path.join(outputDirectory, 'extensions/custom.js'), 'utf8'),
+    expect(importedProjectText.endsWith('\n')).toBe(true);
+    expect(importedProject.extensionURLs.custom).toBe('embedded-extension:extensions/custom.js');
+    expect(importedProject.extensionURLs.external).toBe(project.extensionURLs.external);
+    expect(await readFile(path.join(outputDirectory, 'extensions/custom.js'), 'utf8')).toBe(
       extensionSource,
     );
-    assert.deepEqual(
-      await readFile(path.join(outputDirectory, 'assets/asset.svg')),
+    expect(await readFile(path.join(outputDirectory, 'assets/asset.svg'))).toStrictEqual(
       Buffer.from(asset),
     );
-    assert.deepEqual(
+    expect(
       JSON.parse(await readFile(path.join(outputDirectory, 'embedded-extensions.json'), 'utf8')),
-      {
-        formatVersion: 1,
-        extensions: [
-          {
-            id: 'custom',
-            path: 'extensions/custom.js',
-            mediaType: 'text/javascript',
-            parameters: ['charset=utf-8'],
-            encoding: 'base64',
-          },
-        ],
-      },
-    );
-    assert.deepEqual(
+    ).toStrictEqual({
+      formatVersion: 1,
+      extensions: [
+        {
+          id: 'custom',
+          path: 'extensions/custom.js',
+          mediaType: 'text/javascript',
+          parameters: ['charset=utf-8'],
+          encoding: 'base64',
+        },
+      ],
+    });
+    expect(
       JSON.parse(await readFile(path.join(outputDirectory, 'sb3-source.json'), 'utf8')),
-      {
-        formatVersion: 1,
-        project: 'project.source.json',
-        embeddedExtensions: 'embedded-extensions.json',
-        assetsDirectory: 'assets',
-        archiveEntries: ['project.json', 'asset.svg'],
-      },
-    );
+    ).toStrictEqual({
+      formatVersion: 1,
+      project: 'project.source.json',
+      embeddedExtensions: 'embedded-extensions.json',
+      assetsDirectory: 'assets',
+      archiveEntries: ['project.json', 'asset.svg'],
+    });
   });
 });
 
@@ -164,9 +159,9 @@ test('leaves an identical existing output unchanged without Git or confirmation'
       },
     });
 
-    assert.equal(result.changed, false);
-    assert.deepEqual(result.differenceCounts, {added: 0, modified: 0, removed: 0});
-    assert.equal(confirmationCalled, false);
+    expect(result.changed).toBe(false);
+    expect(result.differenceCounts).toStrictEqual({added: 0, modified: 0, removed: 0});
+    expect(confirmationCalled).toBe(false);
   });
 });
 
@@ -213,15 +208,13 @@ test('preserves managed extension source metadata during import and rejects cont
     await commitOutput(directory);
 
     const unchanged = await importSb3({inputPath, outputDirectory});
-    assert.equal(unchanged.changed, false);
-    assert.deepEqual(
-      JSON.parse(await readFile(manifestPath, 'utf8')).extensions[0].source,
+    expect(unchanged.changed).toBe(false);
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).extensions[0].source).toStrictEqual(
       manifest.extensions[0].source,
     );
-    assert.deepEqual(
+    expect(
       await readFile(path.join(outputDirectory, 'extensions/managed.manifest.json')),
-      apiManifestContents,
-    );
+    ).toStrictEqual(apiManifestContents);
 
     const changedExtensionSource =
       '// Name: Managed\n// ID: managed\nScratch.extensions.register(new ManagedV2());\n';
@@ -230,9 +223,10 @@ test('preserves managed extension source metadata during import and rejects cont
         managed: `data:text/javascript;base64,${Buffer.from(changedExtensionSource).toString('base64')}`,
       },
     });
-    await assert.rejects(importSb3({inputPath, outputDirectory, yes: true}), /integrity mismatch/u);
-    assert.equal(
-      await readFile(path.join(outputDirectory, 'extensions/managed.js'), 'utf8'),
+    await expect(importSb3({inputPath, outputDirectory, yes: true})).rejects.toThrow(
+      /integrity mismatch/u,
+    );
+    expect(await readFile(path.join(outputDirectory, 'extensions/managed.js'), 'utf8')).toBe(
       extensionSource,
     );
   });
@@ -271,8 +265,7 @@ test('validates a matching API manifest path before reading it', async () => {
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     await commitOutput(directory);
 
-    await assert.rejects(
-      importSb3({inputPath, outputDirectory, yes: true}),
+    await expect(importSb3({inputPath, outputDirectory, yes: true})).rejects.toThrow(
       /API manifest path must match its ID/u,
     );
   });
@@ -313,8 +306,8 @@ test('does not read API manifest metadata for an extension absent from the impor
     await commitOutput(directory);
 
     const result = await importSb3({inputPath, outputDirectory, yes: true});
-    assert.equal(result.changed, true);
-    assert.deepEqual(JSON.parse(await readFile(manifestPath, 'utf8')).extensions, []);
+    expect(result.changed).toBe(true);
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).extensions).toStrictEqual([]);
   });
 });
 
@@ -330,12 +323,11 @@ test('replaces differing Git-clean output with --yes', async () => {
 
     const result = await importSb3({inputPath, outputDirectory, yes: true});
 
-    assert.equal(result.changed, true);
-    assert.deepEqual(result.differenceCounts, {added: 0, modified: 1, removed: 0});
-    assert.deepEqual(
+    expect(result.changed).toBe(true);
+    expect(result.differenceCounts).toStrictEqual({added: 0, modified: 1, removed: 0});
+    expect(
       JSON.parse(await readFile(path.join(outputDirectory, 'project.source.json'), 'utf8')),
-      {targets: [], extensionURLs: {}, updated: true},
-    );
+    ).toStrictEqual({targets: [], extensionURLs: {}, updated: true});
   });
 });
 
@@ -350,7 +342,7 @@ test('shows candidate and Git comparison context and preserves clean output when
     await writeProjectSb3(inputPath, {updated: true});
     let confirmationContext: OutputReplacementContext | undefined;
 
-    await assert.rejects(
+    await expect(
       importSb3({
         inputPath,
         outputDirectory,
@@ -359,20 +351,18 @@ test('shows candidate and Git comparison context and preserves clean output when
           return false;
         },
       }),
-      /cancelled/u,
-    );
+    ).rejects.toThrow(/cancelled/u);
 
-    assert.equal(confirmationContext?.outputDirectory, outputDirectory);
-    assert.equal(confirmationContext?.gitState.clean, true);
-    assert.deepEqual(confirmationContext?.comparison.differences, {
+    expect(confirmationContext?.outputDirectory).toBe(outputDirectory);
+    expect(confirmationContext?.gitState.clean).toBe(true);
+    expect(confirmationContext?.comparison.differences).toStrictEqual({
       added: [],
       modified: ['project.source.json'],
       removed: [],
     });
-    assert.equal(
+    expect(
       JSON.parse(await readFile(path.join(outputDirectory, 'project.source.json'), 'utf8')).updated,
-      undefined,
-    );
+    ).toBe(undefined);
   });
 });
 
@@ -386,8 +376,7 @@ test('refuses non-interactive replacement of differing output without --yes', as
     await commitOutput(directory);
     await writeProjectSb3(inputPath, {updated: true});
 
-    await assert.rejects(
-      importSb3({inputPath, outputDirectory}),
+    await expect(importSb3({inputPath, outputDirectory})).rejects.toThrow(
       /interactive confirmation or --yes/u,
     );
   });
@@ -404,12 +393,10 @@ test('refuses to discard uncommitted output changes with --yes alone', async () 
     await writeFile(path.join(outputDirectory, 'project.source.json'), '{"manual":true}\n');
     await git(['add', 'app/project.source.json'], directory);
 
-    await assert.rejects(
-      importSb3({inputPath, outputDirectory, yes: true}),
+    await expect(importSb3({inputPath, outputDirectory, yes: true})).rejects.toThrow(
       /uncommitted Git changes/u,
     );
-    assert.equal(
-      await readFile(path.join(outputDirectory, 'project.source.json'), 'utf8'),
+    expect(await readFile(path.join(outputDirectory, 'project.source.json'), 'utf8')).toBe(
       '{"manual":true}\n',
     );
   });
@@ -433,12 +420,13 @@ test('requires a separate explicit option to discard uncommitted output changes'
       yes: true,
     });
 
-    assert.equal(result.changed, true);
-    await assert.rejects(readFile(path.join(outputDirectory, 'untracked.txt')), {code: 'ENOENT'});
-    assert.deepEqual(
+    expect(result.changed).toBe(true);
+    await expect(readFile(path.join(outputDirectory, 'untracked.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(
       JSON.parse(await readFile(path.join(outputDirectory, 'project.source.json'), 'utf8')),
-      {targets: [], extensionURLs: {}},
-    );
+    ).toStrictEqual({targets: [], extensionURLs: {}});
   });
 });
 
@@ -450,10 +438,9 @@ test('refuses to replace differing output that is not Git-managed', async () => 
     await importSb3({inputPath, outputDirectory});
     await writeProjectSb3(inputPath, {updated: true});
 
-    await assert.rejects(
+    await expect(
       importSb3({discardLocalChanges: true, inputPath, outputDirectory, yes: true}),
-      /not tracked by Git/u,
-    );
+    ).rejects.toThrow(/not tracked by Git/u);
   });
 });
 
@@ -465,11 +452,10 @@ test('refuses to replace an unrecognized directory with any override', async () 
     await mkdir(outputDirectory);
     await writeFile(path.join(outputDirectory, 'marker.txt'), 'preserved');
 
-    await assert.rejects(
+    await expect(
       importSb3({discardLocalChanges: true, inputPath, outputDirectory, yes: true}),
-      /unrecognized directory/u,
-    );
-    assert.equal(await readFile(path.join(outputDirectory, 'marker.txt'), 'utf8'), 'preserved');
+    ).rejects.toThrow(/unrecognized directory/u);
+    expect(await readFile(path.join(outputDirectory, 'marker.txt'), 'utf8')).toBe('preserved');
   });
 });
 
@@ -485,11 +471,10 @@ test('reports an interrupted rollback before treating identical output as up to 
     await mkdir(rollbackDirectory);
     await writeFile(path.join(rollbackDirectory, 'marker.txt'), 'preserved');
 
-    await assert.rejects(
-      importSb3({inputPath, outputDirectory}),
+    await expect(importSb3({inputPath, outputDirectory})).rejects.toThrow(
       /interrupted SB3 import rollback/u,
     );
-    assert.equal(await readFile(path.join(rollbackDirectory, 'marker.txt'), 'utf8'), 'preserved');
+    expect(await readFile(path.join(rollbackDirectory, 'marker.txt'), 'utf8')).toBe('preserved');
   });
 });
 
@@ -504,32 +489,32 @@ test('rejects unsafe archive paths and preserves the existing output', async () 
       '../escape.txt': strToU8('unsafe'),
     });
 
-    await assert.rejects(importSb3({inputPath, outputDirectory}), /unsafe path segment/u);
-    assert.equal(await readFile(path.join(outputDirectory, 'marker.txt'), 'utf8'), 'preserved');
-    await assert.rejects(readFile(path.join(directory, 'escape.txt')), {code: 'ENOENT'});
+    await expect(importSb3({inputPath, outputDirectory})).rejects.toThrow(/unsafe path segment/u);
+    expect(await readFile(path.join(outputDirectory, 'marker.txt'), 'utf8')).toBe('preserved');
+    await expect(readFile(path.join(directory, 'escape.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });
 
 test('validates archive names, extension data URLs, and CLI arguments', () => {
-  assert.deepEqual(parseCliArguments([]), {command: 'help'});
-  assert.equal(validateArchiveEntryName('nested/asset.svg'), 'nested/asset.svg');
+  expect(parseCliArguments([])).toStrictEqual({command: 'help'});
+  expect(validateArchiveEntryName('nested/asset.svg')).toBe('nested/asset.svg');
   for (const unsafeName of ['', '/absolute', 'C:/absolute', './asset', 'a/../asset', 'a\\asset']) {
-    assert.throws(() => validateArchiveEntryName(unsafeName));
+    expect(() => validateArchiveEntryName(unsafeName)).toThrow();
   }
 
-  assert.equal(decodeExtensionDataUrl('data:text/javascript;base64,YQ').source.toString(), 'a');
-  assert.equal(
+  expect(decodeExtensionDataUrl('data:text/javascript;base64,YQ').source.toString()).toBe('a');
+  expect(
     decodeExtensionDataUrl('data:text/javascript,let%20answer%20%3D%2042%3B').source.toString(),
-    'let answer = 42;',
-  );
-  assert.throws(() => decodeExtensionDataUrl('data:text/javascript;base64,a'), /invalid base64/u);
-  assert.throws(
-    () => decodeExtensionDataUrl('data:text/javascript,%XY'),
+  ).toBe('let answer = 42;');
+  expect(() => decodeExtensionDataUrl('data:text/javascript;base64,a')).toThrow(/invalid base64/u);
+  expect(() => decodeExtensionDataUrl('data:text/javascript,%XY')).toThrow(
     /invalid percent encoding/u,
   );
 
-  assert.deepEqual(parseCliArguments(['--', '--help']), {command: 'help'});
-  assert.deepEqual(
+  expect(parseCliArguments(['--', '--help'])).toStrictEqual({command: 'help'});
+  expect(
     parseCliArguments([
       'import',
       'project.sb3',
@@ -538,32 +523,27 @@ test('validates archive names, extension data URLs, and CLI arguments', () => {
       '--yes',
       '--discard-local-changes',
     ]),
-    {
-      command: 'import',
-      discardLocalChanges: true,
-      inputPath: path.resolve('project.sb3'),
-      outputDirectory: path.resolve('generated'),
-      yes: true,
-    },
-  );
-  assert.throws(
-    () => parseCliArguments(['import', 'project.sb3', '--output']),
+  ).toStrictEqual({
+    command: 'import',
+    discardLocalChanges: true,
+    inputPath: path.resolve('project.sb3'),
+    outputDirectory: path.resolve('generated'),
+    yes: true,
+  });
+  expect(() => parseCliArguments(['import', 'project.sb3', '--output'])).toThrow(
     /requires a value/u,
   );
-  assert.throws(
-    () => parseCliArguments(['import', 'project.sb3', '--output', 'app', '--force']),
+  expect(() => parseCliArguments(['import', 'project.sb3', '--output', 'app', '--force'])).toThrow(
     /intentionally unsupported/u,
   );
-  assert.throws(
-    () => parseCliArguments(['import', 'one.sb3', 'two.sb3', '--output', 'app']),
+  expect(() => parseCliArguments(['import', 'one.sb3', 'two.sb3', '--output', 'app'])).toThrow(
     /Only one input/u,
   );
 });
 
 test('rejects repository roots, ancestors, filesystem roots, and .git paths as output', () => {
   const protectedRoot = path.join(path.parse(process.cwd()).root, 'workspace', 'project');
-  assert.equal(
-    validateOutputDirectoryPath(path.join(protectedRoot, 'app'), protectedRoot),
+  expect(validateOutputDirectoryPath(path.join(protectedRoot, 'app'), protectedRoot)).toBe(
     path.join(protectedRoot, 'app'),
   );
   for (const dangerousPath of [
@@ -573,7 +553,7 @@ test('rejects repository roots, ancestors, filesystem roots, and .git paths as o
     path.join(protectedRoot, '.git'),
     path.join(protectedRoot, '.git', 'objects'),
   ]) {
-    assert.throws(() => validateOutputDirectoryPath(dangerousPath, protectedRoot));
+    expect(() => validateOutputDirectoryPath(dangerousPath, protectedRoot)).toThrow();
   }
 });
 
@@ -589,9 +569,8 @@ test('rejects an embedded extension ID that cannot become a safe filename', asyn
       ),
     });
 
-    await assert.rejects(
+    await expect(
       importSb3({inputPath, outputDirectory: path.join(directory, 'app')}),
-      /cannot be used as a filename/u,
-    );
+    ).rejects.toThrow(/cannot be used as a filename/u);
   });
 });

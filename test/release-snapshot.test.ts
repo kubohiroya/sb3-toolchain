@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {
   computeReleaseSourceIdentity,
@@ -38,8 +37,8 @@ test('derives a stable release source identity from sorted paths and bytes', () 
   const modified = sourceFiles();
   modified.set('project.source.json', Buffer.from('{"targets":[1]}\n'));
 
-  assert.equal(computeReleaseSourceIdentity(ordered), computeReleaseSourceIdentity(reversed));
-  assert.notEqual(computeReleaseSourceIdentity(ordered), computeReleaseSourceIdentity(modified));
+  expect(computeReleaseSourceIdentity(ordered)).toBe(computeReleaseSourceIdentity(reversed));
+  expect(computeReleaseSourceIdentity(ordered)).not.toBe(computeReleaseSourceIdentity(modified));
 });
 
 test('creates and verifies a deterministic release snapshot candidate', async () => {
@@ -56,19 +55,19 @@ test('creates and verifies a deterministic release snapshot candidate', async ()
     sourceFiles: sourceFiles(),
   });
 
-  assert.equal(snapshot.metadata.formatVersion, 1);
-  assert.equal(snapshot.metadata.version, '1.0.0');
-  assert.equal(snapshot.metadata.state, 'candidate');
-  assert.equal(snapshot.metadata.artifact.filename, 'example.sb3');
-  assert.equal(snapshot.metadata.artifact.size, archive.byteLength);
+  expect(snapshot.metadata.formatVersion).toBe(1);
+  expect(snapshot.metadata.version).toBe('1.0.0');
+  expect(snapshot.metadata.state).toBe('candidate');
+  expect(snapshot.metadata.artifact.filename).toBe('example.sb3');
+  expect(snapshot.metadata.artifact.size).toBe(archive.byteLength);
 
-  await assert.doesNotReject(
+  await expect(
     verifySb3ReleaseSnapshot({
       createSb3,
       metadata: snapshot.metadata,
       sourceFiles: sourceFiles(),
     }),
-  );
+  ).resolves.not.toThrow();
 });
 
 test('detects stale sources, stale artifacts, and nondeterministic builds', async () => {
@@ -80,26 +79,24 @@ test('detects stale sources, stale artifacts, and nondeterministic builds', asyn
 
   const changedFiles = sourceFiles();
   changedFiles.set('changed.txt', Buffer.from('changed\n'));
-  await assert.rejects(
+  await expect(
     verifySb3ReleaseSnapshot({
       createSb3: async () => ({archive: Buffer.from('deterministic-sb3')}),
       metadata: snapshot.metadata,
       sourceFiles: changedFiles,
     }),
-    /source changed/u,
-  );
+  ).rejects.toThrow(/source changed/u);
 
-  await assert.rejects(
+  await expect(
     verifySb3ReleaseSnapshot({
       createSb3: async () => ({archive: Buffer.from('other-sb3')}),
       metadata: snapshot.metadata,
       sourceFiles: sourceFiles(),
     }),
-    /SHA-256 is stale/u,
-  );
+  ).rejects.toThrow(/SHA-256 is stale/u);
 
   let buildCount = 0;
-  await assert.rejects(
+  await expect(
     verifySb3ReleaseSnapshot({
       createSb3: async () => {
         buildCount += 1;
@@ -108,8 +105,7 @@ test('detects stale sources, stale artifacts, and nondeterministic builds', asyn
       metadata: snapshot.metadata,
       sourceFiles: sourceFiles(),
     }),
-    /not deterministic/u,
-  );
+  ).rejects.toThrow(/not deterministic/u);
 });
 
 test('writes and reads release candidate metadata and artifact atomically', async () => {
@@ -130,17 +126,16 @@ test('writes and reads release candidate metadata and artifact atomically', asyn
       metadataPath,
     });
 
-    assert.deepEqual(await readSb3ReleaseSnapshotMetadata(metadataPath), snapshot.metadata);
-    assert.deepEqual(await readFile(artifactPath), archive);
-    await assert.rejects(
+    expect(await readSb3ReleaseSnapshotMetadata(metadataPath)).toStrictEqual(snapshot.metadata);
+    expect(await readFile(artifactPath)).toStrictEqual(archive);
+    await expect(
       writeSb3ReleaseCandidate({
         archive: Buffer.from('tampered'),
         artifactPath,
         metadata: snapshot.metadata,
         metadataPath,
       }),
-      /does not match metadata/u,
-    );
+    ).rejects.toThrow(/does not match metadata/u);
   });
 });
 
@@ -155,8 +150,10 @@ test('freezes and records published release snapshots with remote artifact verif
     sourceFiles: sourceFiles(),
   });
   const frozen = freezeSb3ReleaseSnapshot(snapshot.metadata);
-  assert.equal(frozen.state, 'frozen');
-  assert.throws(() => freezeSb3ReleaseSnapshot({...frozen, state: 'published'}), /Only candidate/u);
+  expect(frozen.state).toBe('frozen');
+  expect(() => freezeSb3ReleaseSnapshot({...frozen, state: 'published'})).toThrow(
+    /Only candidate/u,
+  );
 
   const published = await recordPublishedSb3ReleaseSnapshot(
     frozen,
@@ -166,13 +163,12 @@ test('freezes and records published release snapshots with remote artifact verif
     },
     {fetchPublishedArtifact: async () => archive},
   );
-  assert.equal(published.state, 'published');
+  expect(published.state).toBe('published');
 
-  await assert.rejects(
+  await expect(
     verifySb3ReleaseSnapshot({
       fetchPublishedArtifact: async () => Buffer.from('tampered'),
       metadata: published,
     }),
-    /size is invalid|SHA-256 is invalid/u,
-  );
+  ).rejects.toThrow(/size is invalid|SHA-256 is invalid/u);
 });

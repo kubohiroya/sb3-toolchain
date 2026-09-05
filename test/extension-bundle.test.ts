@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import assert from 'node:assert/strict';
 import {cp, mkdtemp, readFile, rm, unlink, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
-import {test} from 'vitest';
+import {expect, test} from 'vitest';
 
 import {parseCliArguments} from '../src/cli';
 import type {ExtensionsBundleCliOptions} from '../src/cli';
@@ -217,7 +216,7 @@ async function writeBundleSource(sourceDirectory: string) {
 
 function decodeDataUrl(dataUrl: string): string {
   const commaIndex = dataUrl.indexOf(',');
-  assert.notEqual(commaIndex, -1);
+  expect(commaIndex).not.toBe(-1);
   return Buffer.from(dataUrl.slice(commaIndex + 1), 'base64').toString('utf8');
 }
 
@@ -282,13 +281,13 @@ test('builds one reversible composite extension without deleting original source
       recoveryCapsule: true,
       sourceDirectory,
     });
-    assert.equal(dryRun.applied, false);
-    assert.deepEqual(dryRun.members, ['alpha', 'beta']);
-    assert.deepEqual(
-      dryRun.components.map((component) => component.name),
-      ['Alpha Tools', 'Beta Tools'],
-    );
-    assert.equal(await readFile(manifestPath, 'utf8'), originalManifest);
+    expect(dryRun.applied).toBe(false);
+    expect(dryRun.members).toStrictEqual(['alpha', 'beta']);
+    expect(dryRun.components.map((component) => component.name)).toStrictEqual([
+      'Alpha Tools',
+      'Beta Tools',
+    ]);
+    expect(await readFile(manifestPath, 'utf8')).toBe(originalManifest);
 
     const configured = await bundleExtensions({
       bundleId: 'projectbundle',
@@ -298,17 +297,15 @@ test('builds one reversible composite extension without deleting original source
       sourceDirectory,
       yes: true,
     });
-    assert.equal(configured.applied, true);
-    assert.equal(
-      await readFile(path.join(sourceDirectory, 'extensions/alpha.js'), 'utf8'),
+    expect(configured.applied).toBe(true);
+    expect(await readFile(path.join(sourceDirectory, 'extensions/alpha.js'), 'utf8')).toBe(
       alphaSource,
     );
-    assert.equal(
-      await readFile(path.join(sourceDirectory, 'extensions/beta.js'), 'utf8'),
+    expect(await readFile(path.join(sourceDirectory, 'extensions/beta.js'), 'utf8')).toBe(
       betaSource,
     );
     const configuredManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-    assert.deepEqual(configuredManifest.extensionBundles, [
+    expect(configuredManifest.extensionBundles).toStrictEqual([
       {
         id: 'projectbundle',
         members: ['alpha', 'beta'],
@@ -321,40 +318,42 @@ test('builds one reversible composite extension without deleting original source
       createDeterministicSb3(sourceDirectory),
       createDeterministicSb3(sourceDirectory),
     ]);
-    assert.deepEqual(Buffer.from(first.archive), Buffer.from(second.archive));
-    assert.equal(first.embeddedExtensionCount, 1);
+    expect(Buffer.from(first.archive)).toStrictEqual(Buffer.from(second.archive));
+    expect(first.embeddedExtensionCount).toBe(1);
     const project = JSON.parse(strFromU8(unzipSync(first.archive)['project.json']));
-    assert.deepEqual(project.extensions, ['projectbundle']);
-    assert.deepEqual(Object.keys(project.extensionURLs), ['projectbundle', 'external']);
-    assert.deepEqual(
+    expect(project.extensions).toStrictEqual(['projectbundle']);
+    expect(Object.keys(project.extensionURLs)).toStrictEqual(['projectbundle', 'external']);
+    expect(
       Object.values(project.targets[0].blocks).map((block: any) => block.opcode),
-      ['projectbundle_alpha__value', 'projectbundle_beta__value', 'projectbundle_alpha__selected'],
-    );
-    assert.equal(
-      project.targets[0].blocks.dynamic.mutation.blockInfo.opcode,
+    ).toStrictEqual([
+      'projectbundle_alpha__value',
+      'projectbundle_beta__value',
+      'projectbundle_alpha__selected',
+    ]);
+    expect(project.targets[0].blocks.dynamic.mutation.blockInfo.opcode).toBe(
       'projectbundle_alpha__selected',
     );
-    assert.equal(project.monitors[0].opcode, 'projectbundle_alpha__value');
-    assert.deepEqual(project.extensionStorage, {
+    expect(project.monitors[0].opcode).toBe('projectbundle_alpha__value');
+    expect(project.extensionStorage).toStrictEqual({
       projectbundle: {formatVersion: 1, components: {alpha: {calls: 0}}},
     });
-    assert.deepEqual(project.targets[0].extensionStorage, {
+    expect(project.targets[0].extensionStorage).toStrictEqual({
       projectbundle: {formatVersion: 1, components: {beta: {targetValue: 2}}},
     });
 
     const bundleSource = decodeDataUrl(project.extensionURLs.projectbundle);
-    assert.match(bundleSource, /^\/\/ Name: Project Extension Bundle$/mu);
-    assert.match(bundleSource, /^\/\/ - Name: Alpha Tools$/mu);
-    assert.match(bundleSource, /^\/\/   By: Alice Example$/mu);
-    assert.match(bundleSource, /^\/\/   Description: Report values/mu);
-    assert.match(bundleSource, /^\/\/ - Name: Beta Tools$/mu);
-    assert.match(bundleSource, /^\/\/ SB3-Toolchain-Reversible-Bundle-v1: [A-Za-z0-9+/]+=*$/mu);
+    expect(bundleSource).toMatch(/^\/\/ Name: Project Extension Bundle$/mu);
+    expect(bundleSource).toMatch(/^\/\/ - Name: Alpha Tools$/mu);
+    expect(bundleSource).toMatch(/^\/\/   By: Alice Example$/mu);
+    expect(bundleSource).toMatch(/^\/\/   Description: Report values/mu);
+    expect(bundleSource).toMatch(/^\/\/ - Name: Beta Tools$/mu);
+    expect(bundleSource).toMatch(/^\/\/ SB3-Toolchain-Reversible-Bundle-v1: [A-Za-z0-9+/]+=*$/mu);
     const runtime = evaluateBundle(bundleSource, project.extensionStorage);
-    assert.equal(runtime.registrations.length, 1);
+    expect(runtime.registrations.length).toBe(1);
     const composite = runtime.registrations[0];
     const info = composite.getInfo();
-    assert.equal(info.id, 'projectbundle');
-    assert.deepEqual(
+    expect(info.id).toBe('projectbundle');
+    expect(
       Array.from(info.blocks as any[], (block: any) =>
         block === '---'
           ? 'separator'
@@ -367,40 +366,37 @@ test('builds one reversible composite extension without deleting original source
               ? `bundle-docs:${block.sb3Toolchain.memberId}:${block.sb3Toolchain.docsURI}`
               : block.opcode,
       ),
-      [
-        'bundle-label:alpha:◆ Alpha Tools [alpha] ◆',
-        'bundle-docs:alpha:https://example.com/alpha?a=1&b="two"',
-        'alpha__value',
-        'original-label:Alpha original heading',
-        'separator',
-        'alpha__selected',
-        'alpha__fire',
-        'alpha__whenReady',
-        'alpha__callOpcode',
-        'separator',
-        'separator',
-        'bundle-label:beta:◆ Beta Tools [beta] ◆',
-        'beta__value',
-        'beta__echo',
-      ],
-    );
+    ).toStrictEqual([
+      'bundle-label:alpha:◆ Alpha Tools [alpha] ◆',
+      'bundle-docs:alpha:https://example.com/alpha?a=1&b="two"',
+      'alpha__value',
+      'original-label:Alpha original heading',
+      'separator',
+      'alpha__selected',
+      'alpha__fire',
+      'alpha__whenReady',
+      'alpha__callOpcode',
+      'separator',
+      'separator',
+      'bundle-label:beta:◆ Beta Tools [beta] ◆',
+      'beta__value',
+      'beta__echo',
+    ]);
     const alphaDocs = info.blocks.find(
       (block: any) =>
         block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
         block.sb3Toolchain.memberId === 'alpha',
     );
-    assert.equal(
-      alphaDocs.xml,
+    expect(alphaDocs.xml).toBe(
       '<button text="Open Documentation" callbackKey="OPEN_EXTENSION_DOCS" callbackData="https://example.com/alpha?a=1&amp;b=&quot;two&quot;"></button>',
     );
-    assert.equal(
+    expect(
       info.blocks.some(
         (block: any) =>
           block?.sb3Toolchain?.kind === 'bundle-member-docs' &&
           block.sb3Toolchain.memberId === 'beta',
       ),
-      false,
-    );
+    ).toBe(false);
     const blockByOpcode = new Map<string, any>(
       info.blocks
         .filter(
@@ -408,32 +404,29 @@ test('builds one reversible composite extension without deleting original source
         )
         .map((block: any) => [block.opcode, block]),
     );
-    assert.equal(
-      blockByOpcode.get('alpha__value').blockIconURI,
+    expect(blockByOpcode.get('alpha__value').blockIconURI).toBe(
       'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
     );
-    assert.equal(
-      blockByOpcode.get('alpha__selected').blockIconURI,
+    expect(blockByOpcode.get('alpha__selected').blockIconURI).toBe(
       'data:image/svg+xml,%3Csvg%20id%3D%22alpha-selected%22%2F%3E',
     );
-    assert.equal(blockByOpcode.get('beta__value').blockIconURI, undefined);
-    assert.equal(
+    expect(blockByOpcode.get('beta__value').blockIconURI).toBe(undefined);
+    expect(
       info.blocks.find((block: any) => block?.sb3Toolchain?.kind === 'bundle-member-heading')
         .blockIconURI,
-      undefined,
-    );
-    assert.equal(composite.alpha__value(), 'alpha:1');
-    assert.equal(project.extensionStorage.projectbundle.components.alpha.calls, 1);
-    assert.deepEqual(Array.from(composite.alpha__menu__ITEMS()), ['one', 'two']);
+    ).toBe(undefined);
+    expect(composite.alpha__value()).toBe('alpha:1');
+    expect(project.extensionStorage.projectbundle.components.alpha.calls).toBe(1);
+    expect(Array.from(composite.alpha__menu__ITEMS())).toStrictEqual(['one', 'two']);
     composite.alpha__fire();
-    assert.deepEqual(runtime.startedHats, ['projectbundle_alpha__whenReady']);
+    expect(runtime.startedHats).toStrictEqual(['projectbundle_alpha__whenReady']);
 
     runtime.opcodeFunctions.set('projectbundle_alpha__selected', (args: any, util: any) =>
       composite.alpha__selected(args, util),
     );
     const selfPayload = {ITEM: 'self member'};
     const selfUtil = {marker: 'self'};
-    assert.equal(
+    expect(
       composite.alpha__callOpcode(
         {
           LOOKUP: 'self lookup',
@@ -442,8 +435,7 @@ test('builds one reversible composite extension without deleting original source
         },
         selfUtil,
       ),
-      'self member',
-    );
+    ).toBe('self member');
 
     let crossMemberArguments: {args: unknown; util: unknown} | undefined;
     let crossMemberReceiver: unknown;
@@ -468,39 +460,38 @@ test('builds one reversible composite extension without deleting original source
       },
       crossMemberUtil,
     );
-    assert.equal(dynamicResult, crossMemberPromise);
-    assert.equal(crossMemberArguments?.args, crossMemberPayload);
-    assert.equal(crossMemberArguments?.util, crossMemberUtil);
-    assert.equal(crossMemberReceiver, expectedReceiver);
-    assert.equal(await dynamicResult, 'beta:Fish1:asset-manager');
+    expect(dynamicResult).toBe(crossMemberPromise);
+    expect(crossMemberArguments?.args).toBe(crossMemberPayload);
+    expect(crossMemberArguments?.util).toBe(crossMemberUtil);
+    expect(crossMemberReceiver).toBe(expectedReceiver);
+    expect(await dynamicResult).toBe('beta:Fish1:asset-manager');
 
     runtime.opcodeFunctions.set('pen_clear', () => 'core opcode');
-    assert.equal(composite.alpha__callOpcode({OPCODE: 'pen_clear'}), 'core opcode');
+    expect(composite.alpha__callOpcode({OPCODE: 'pen_clear'})).toBe('core opcode');
     runtime.opcodeFunctions.set('external_ping', () => 'external opcode');
-    assert.equal(composite.alpha__callOpcode({OPCODE: 'external_ping'}), 'external opcode');
-    assert.equal(composite.alpha__callOpcode({OPCODE: 'unknown_opcode'}), undefined);
-    assert.deepEqual(
+    expect(composite.alpha__callOpcode({OPCODE: 'external_ping'})).toBe('external opcode');
+    expect(composite.alpha__callOpcode({OPCODE: 'unknown_opcode'})).toBe(undefined);
+    expect(
       runtime.opcodeLookups.map(({args, opcode, receiver}) => ({
         args: Array.from(args),
         opcode,
         receiverIsRuntime: receiver === runtime.runtime,
       })),
-      [
-        {
-          args: ['self lookup'],
-          opcode: 'projectbundle_alpha__selected',
-          receiverIsRuntime: true,
-        },
-        {
-          args: ['cross-member lookup'],
-          opcode: 'projectbundle_beta__echo',
-          receiverIsRuntime: true,
-        },
-        {args: [undefined], opcode: 'pen_clear', receiverIsRuntime: true},
-        {args: [undefined], opcode: 'external_ping', receiverIsRuntime: true},
-        {args: [undefined], opcode: 'unknown_opcode', receiverIsRuntime: true},
-      ],
-    );
+    ).toStrictEqual([
+      {
+        args: ['self lookup'],
+        opcode: 'projectbundle_alpha__selected',
+        receiverIsRuntime: true,
+      },
+      {
+        args: ['cross-member lookup'],
+        opcode: 'projectbundle_beta__echo',
+        receiverIsRuntime: true,
+      },
+      {args: [undefined], opcode: 'pen_clear', receiverIsRuntime: true},
+      {args: [undefined], opcode: 'external_ping', receiverIsRuntime: true},
+      {args: [undefined], opcode: 'unknown_opcode', receiverIsRuntime: true},
+    ]);
 
     const bundledSb3Path = path.join(directory, 'bundled.sb3');
     const unbundledSb3Path = path.join(directory, 'unbundled.sb3');
@@ -510,58 +501,59 @@ test('builds one reversible composite extension without deleting original source
       inputPath: bundledSb3Path,
       outputPath: unbundledSb3Path,
     });
-    assert.equal(archiveDryRun.applied, false);
-    await assert.rejects(readFile(unbundledSb3Path), {code: 'ENOENT'});
+    expect(archiveDryRun.applied).toBe(false);
+    await expect(readFile(unbundledSb3Path)).rejects.toMatchObject({code: 'ENOENT'});
     const archiveUnbundle = await unbundleSb3({
       bundleId: 'projectbundle',
       inputPath: bundledSb3Path,
       outputPath: unbundledSb3Path,
       yes: true,
     });
-    assert.equal(archiveUnbundle.applied, true);
+    expect(archiveUnbundle.applied).toBe(true);
     const unbundledArchive = unzipSync(await readFile(unbundledSb3Path));
     const unbundledProject = JSON.parse(strFromU8(unbundledArchive['project.json']));
-    assert.deepEqual(unbundledProject.extensions, ['alpha', 'beta']);
-    assert.deepEqual(Object.keys(unbundledProject.extensionURLs), ['alpha', 'beta', 'external']);
-    assert.equal(decodeDataUrl(unbundledProject.extensionURLs.alpha), alphaSource);
-    assert.equal(decodeDataUrl(unbundledProject.extensionURLs.beta), betaSource);
-    assert.deepEqual(Object.keys(unbundledProject.targets[0].blocks), [
+    expect(unbundledProject.extensions).toStrictEqual(['alpha', 'beta']);
+    expect(Object.keys(unbundledProject.extensionURLs)).toStrictEqual([
+      'alpha',
+      'beta',
+      'external',
+    ]);
+    expect(decodeDataUrl(unbundledProject.extensionURLs.alpha)).toBe(alphaSource);
+    expect(decodeDataUrl(unbundledProject.extensionURLs.beta)).toBe(betaSource);
+    expect(Object.keys(unbundledProject.targets[0].blocks)).toStrictEqual([
       'alphaValue',
       'betaValue',
       'dynamic',
     ]);
-    assert.deepEqual(
+    expect(
       Object.values(unbundledProject.targets[0].blocks).map((block: any) => block.opcode),
-      ['alpha_value', 'beta_value', 'alpha_selected'],
-    );
+    ).toStrictEqual(['alpha_value', 'beta_value', 'alpha_selected']);
 
     const removalPlan = await planExtensionUnbundle({
       bundleId: 'projectbundle',
       sourceDirectory,
     });
-    assert.equal(removalPlan.applied, false);
+    expect(removalPlan.applied).toBe(false);
     const removed = await unbundleExtensions({
       bundleId: 'projectbundle',
       sourceDirectory,
       yes: true,
     });
-    assert.equal(removed.applied, true);
+    expect(removed.applied).toBe(true);
     const restored = await createDeterministicSb3(sourceDirectory);
     const restoredProject = JSON.parse(strFromU8(unzipSync(restored.archive)['project.json']));
-    assert.deepEqual(restoredProject.extensions, ['alpha', 'beta']);
-    assert.deepEqual(Object.keys(restoredProject.extensionURLs), ['alpha', 'beta', 'external']);
-    assert.deepEqual(
+    expect(restoredProject.extensions).toStrictEqual(['alpha', 'beta']);
+    expect(Object.keys(restoredProject.extensionURLs)).toStrictEqual(['alpha', 'beta', 'external']);
+    expect(
       Object.values(restoredProject.targets[0].blocks).map((block: any) => block.opcode),
-      ['alpha_value', 'beta_value', 'alpha_selected'],
-    );
-    assert.equal(
-      restoredProject.targets[0].blocks.dynamic.mutation.blockInfo.opcode,
+    ).toStrictEqual(['alpha_value', 'beta_value', 'alpha_selected']);
+    expect(restoredProject.targets[0].blocks.dynamic.mutation.blockInfo.opcode).toBe(
       'alpha_selected',
     );
-    assert.equal(restoredProject.monitors[0].opcode, 'alpha_value');
-    assert.deepEqual(await readFile(unbundledSb3Path), Buffer.from(restored.archive));
+    expect(restoredProject.monitors[0].opcode).toBe('alpha_value');
+    expect(await readFile(unbundledSb3Path)).toStrictEqual(Buffer.from(restored.archive));
     const comparison = await compareDirectories(pristineDirectory, sourceDirectory);
-    assert.equal(comparison.identical, true);
+    expect(comparison.identical).toBe(true);
   });
 });
 
@@ -595,8 +587,8 @@ test('unbundles supported edits in an SB3 and rejects irreversible archive chang
     const restoredProject = JSON.parse(
       strFromU8(unzipSync(await readFile(editedOutputPath))['project.json']),
     );
-    assert.equal(restoredProject.targets[0].blocks.addedAfterBundle.opcode, 'beta_value');
-    assert.equal(restoredProject.targets[0].blocks.addedAfterBundle.parent, null);
+    expect(restoredProject.targets[0].blocks.addedAfterBundle.opcode).toBe('beta_value');
+    expect(restoredProject.targets[0].blocks.addedAfterBundle.parent).toBe(null);
 
     const missingCapsuleProject = structuredClone(project);
     const bundleSource = decodeDataUrl(missingCapsuleProject.extensionURLs.projectbundle);
@@ -605,27 +597,25 @@ test('unbundles supported edits in an SB3 and rejects irreversible archive chang
     ).toString('base64')}`;
     const missingCapsulePath = path.join(directory, 'missing-capsule.sb3');
     await writeFile(missingCapsulePath, archiveWithProject(built.archive, missingCapsuleProject));
-    await assert.rejects(
+    await expect(
       planBundledSb3Unbundle({
         bundleId: 'projectbundle',
         inputPath: missingCapsulePath,
         outputPath: path.join(directory, 'never.sb3'),
       }),
-      /has no SB3-Toolchain-Reversible-Bundle-v1 recovery capsule/u,
-    );
+    ).rejects.toThrow(/has no SB3-Toolchain-Reversible-Bundle-v1 recovery capsule/u);
 
     const changedOrderProject = structuredClone(project);
     changedOrderProject.extensions.push('laterextension');
     const changedOrderPath = path.join(directory, 'changed-order.sb3');
     await writeFile(changedOrderPath, archiveWithProject(built.archive, changedOrderProject));
-    await assert.rejects(
+    await expect(
       planBundledSb3Unbundle({
         bundleId: 'projectbundle',
         inputPath: changedOrderPath,
         outputPath: path.join(directory, 'never-order.sb3'),
       }),
-      /Cannot safely restore project\.extensions order/u,
-    );
+    ).rejects.toThrow(/Cannot safely restore project\.extensions order/u);
 
     const unknownReferenceProject = structuredClone(project);
     unknownReferenceProject.meta.unclassified = 'projectbundle_alpha__value';
@@ -634,14 +624,13 @@ test('unbundles supported edits in an SB3 and rejects irreversible archive chang
       unknownReferencePath,
       archiveWithProject(built.archive, unknownReferenceProject),
     );
-    await assert.rejects(
+    await expect(
       planBundledSb3Unbundle({
         bundleId: 'projectbundle',
         inputPath: unknownReferencePath,
         outputPath: path.join(directory, 'never-reference.sb3'),
       }),
-      /has unsupported references at/u,
-    );
+    ).rejects.toThrow(/has unsupported references at/u);
   });
 });
 
@@ -657,41 +646,39 @@ test('omits recovery data by default and preserves runtime composition', async (
       sourceDirectory,
       yes: true,
     });
-    assert.equal(configured.recoveryCapsule, false);
+    expect(configured.recoveryCapsule).toBe(false);
     const manifest = JSON.parse(
       await readFile(path.join(sourceDirectory, 'embedded-extensions.json'), 'utf8'),
     );
-    assert.equal('recoveryCapsule' in manifest.extensionBundles[0], false);
+    expect('recoveryCapsule' in manifest.extensionBundles[0]).toBe(false);
 
     const built = await createDeterministicSb3(sourceDirectory);
     const project = JSON.parse(strFromU8(unzipSync(built.archive)['project.json']));
     const bundleSource = decodeDataUrl(project.extensionURLs.projectbundle);
-    assert.doesNotMatch(bundleSource, /SB3-Toolchain-Reversible-Bundle-v1/u);
-    assert.match(bundleSource, /^\/\/   License: MPL-2\.0$/mu);
-    assert.match(bundleSource, /^\/\/   License: MIT$/mu);
+    expect(bundleSource).not.toMatch(/SB3-Toolchain-Reversible-Bundle-v1/u);
+    expect(bundleSource).toMatch(/^\/\/   License: MPL-2\.0$/mu);
+    expect(bundleSource).toMatch(/^\/\/   License: MIT$/mu);
     const runtime = evaluateBundle(bundleSource, project.extensionStorage);
     const info = runtime.registrations[0].getInfo();
     const alphaValue = info.blocks.find((block: any) => block?.opcode === 'alpha__value');
-    assert.equal(
-      alphaValue.blockIconURI,
+    expect(alphaValue.blockIconURI).toBe(
       'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
     );
-    assert.equal(runtime.registrations[0].alpha__value(), 'alpha:1');
+    expect(runtime.registrations[0].alpha__value()).toBe('alpha:1');
 
     const bundledPath = path.join(directory, 'compact.sb3');
     await writeFile(bundledPath, built.archive);
-    await assert.rejects(
+    await expect(
       planBundledSb3Unbundle({
         bundleId: 'projectbundle',
         inputPath: bundledPath,
         outputPath: path.join(directory, 'never.sb3'),
       }),
-      /has no SB3-Toolchain-Reversible-Bundle-v1 recovery capsule/u,
-    );
+    ).rejects.toThrow(/has no SB3-Toolchain-Reversible-Bundle-v1 recovery capsule/u);
 
     await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
     const restored = await createDeterministicSb3(sourceDirectory);
-    assert.deepEqual(Buffer.from(restored.archive), Buffer.from(original.archive));
+    expect(Buffer.from(restored.archive)).toStrictEqual(Buffer.from(original.archive));
   });
 });
 
@@ -771,14 +758,14 @@ test('unbundles multiple reversible bundles in either order', async () => {
     const partlyRestoredProject = JSON.parse(
       strFromU8(unzipSync(await readFile(firstOutputPath))['project.json']),
     );
-    assert.deepEqual(partlyRestoredProject.extensions, ['alpha', 'secondbundle', 'beta']);
+    expect(partlyRestoredProject.extensions).toStrictEqual(['alpha', 'secondbundle', 'beta']);
     await unbundleSb3({
       bundleId: 'secondbundle',
       inputPath: firstOutputPath,
       outputPath: secondOutputPath,
       yes: true,
     });
-    assert.deepEqual(await readFile(secondOutputPath), Buffer.from(original.archive));
+    expect(await readFile(secondOutputPath)).toStrictEqual(Buffer.from(original.archive));
   });
 });
 
@@ -787,43 +774,40 @@ test('rejects bundle inputs that cannot be transformed without behavior risk', a
     const sourceDirectory = path.join(directory, 'source');
     await writeBundleSource(sourceDirectory);
 
-    await assert.rejects(
+    await expect(
       planExtensionBundle({
         bundleId: 'alpha',
         bundleName: 'Collision',
         extensionIds: ['alpha', 'beta'],
         sourceDirectory,
       }),
-      /collides with an extension/u,
-    );
+    ).rejects.toThrow(/collides with an extension/u);
 
     const betaPath = path.join(sourceDirectory, 'extensions/beta.js');
     await writeFile(betaPath, betaSource.replace('// License: MIT\n', ''));
-    await assert.rejects(
+    await expect(
       planExtensionBundle({
         bundleId: 'projectbundle',
         bundleName: 'Project Extension Bundle',
         extensionIds: ['alpha', 'beta'],
         sourceDirectory,
       }),
-      /requires a \/\/ License: header/u,
-    );
+    ).rejects.toThrow(/requires a \/\/ License: header/u);
 
     await writeFile(betaPath, `${betaSource}Scratch.extensions.register(new Extra());\n`);
-    await assert.rejects(
+    await expect(
       planExtensionBundle({
         bundleId: 'projectbundle',
         bundleName: 'Project Extension Bundle',
         extensionIds: ['alpha', 'beta'],
         sourceDirectory,
       }),
-      /exactly one synchronous Scratch\.extensions\.register call/u,
-    );
+    ).rejects.toThrow(/exactly one synchronous Scratch\.extensions\.register call/u);
   });
 });
 
 test('parses reversible bundle and unbundle CLI commands', () => {
-  assert.deepEqual(
+  expect(
     parseCliArguments([
       'extensions',
       'bundle',
@@ -836,18 +820,17 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       'beta',
       '--yes',
     ]),
-    {
-      action: 'bundle',
-      bundleId: 'projectbundle',
-      bundleName: 'Project Extension Bundle',
-      command: 'extensions',
-      extensionIds: ['alpha', 'beta'],
-      recoveryCapsule: false,
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.equal(
+  ).toStrictEqual({
+    action: 'bundle',
+    bundleId: 'projectbundle',
+    bundleName: 'Project Extension Bundle',
+    command: 'extensions',
+    extensionIds: ['alpha', 'beta'],
+    recoveryCapsule: false,
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(
     (
       parseCliArguments([
         'extensions',
@@ -860,19 +843,17 @@ test('parses reversible bundle and unbundle CLI commands', () => {
         '--include-recovery-capsule',
       ]) as ExtensionsBundleCliOptions
     ).recoveryCapsule,
-    true,
-  );
-  assert.deepEqual(
+  ).toBe(true);
+  expect(
     parseCliArguments(['extensions', 'unbundle', 'custom-source', 'projectbundle', '--yes']),
-    {
-      action: 'unbundle',
-      bundleId: 'projectbundle',
-      command: 'extensions',
-      sourceDirectory: path.resolve('custom-source'),
-      yes: true,
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    action: 'unbundle',
+    bundleId: 'projectbundle',
+    command: 'extensions',
+    sourceDirectory: path.resolve('custom-source'),
+    yes: true,
+  });
+  expect(
     parseCliArguments([
       'extensions',
       'unbundle',
@@ -882,13 +863,12 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       'unbundled.sb3',
       '--yes',
     ]),
-    {
-      action: 'unbundle',
-      bundleId: 'projectbundle',
-      command: 'extensions',
-      inputPath: path.resolve('bundled.sb3'),
-      outputPath: path.resolve('unbundled.sb3'),
-      yes: true,
-    },
-  );
+  ).toStrictEqual({
+    action: 'unbundle',
+    bundleId: 'projectbundle',
+    command: 'extensions',
+    inputPath: path.resolve('bundled.sb3'),
+    outputPath: path.resolve('unbundled.sb3'),
+    yes: true,
+  });
 });
