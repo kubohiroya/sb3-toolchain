@@ -5,7 +5,9 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'test/fixtures/**'],
+    // Flat config does not read .gitignore, and .claude/worktrees holds nested
+    // checkouts of this same repository, so `eslint .` would lint them too.
+    ignores: ['dist/**', 'coverage/**', 'test/fixtures/**', '.claude/**'],
   },
   ...tseslint.configs.recommended,
   {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0 - 2026-09-10
+
+- Ignore `.claude/**` in the ESLint config: flat config does not read `.gitignore`, so `eslint .`
+  was linting nested worktree checkouts of this repository and reporting their release snapshot
+  helpers as 47 errors.
+- Re-release the 0.11.0 TypeScript migration. npm 0.11.0 was published from a stale base and shipped
+  a narrower, scripts-only migration instead of this one.
+
+Rollback: pin `@kubohiroya/sb3-toolchain@0.10.0`.
+
 ## 0.11.0 - 2026-09-05
 
 - Migrate the source, tests, and build to TypeScript with `strict` type checking.
