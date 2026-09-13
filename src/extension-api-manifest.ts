@@ -47,6 +47,19 @@ export interface ValidatedExtensionApiManifest {
   metadata: ExtensionApiManifestSource;
 }
 
+export interface ExtensionApiManifestParseSuccess {
+  error: null;
+  manifest: ExtensionApiManifest;
+}
+
+export interface ExtensionApiManifestParseFailure {
+  error: string;
+  manifest: null;
+}
+
+export type ExtensionApiManifestParseResult =
+  ExtensionApiManifestParseSuccess | ExtensionApiManifestParseFailure;
+
 function isObject(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -255,6 +268,24 @@ export function parseExtensionApiManifest(
   blocks.sort((left, right) => compareIds(left.opcode, right.opcode));
   menus.sort((left, right) => compareIds(left.id, right.id));
   return {blocks, formatVersion: extensionApiManifestFormatVersion, id: manifest.id, menus};
+}
+
+/**
+ * Parse an extension API manifest without throwing.
+ *
+ * `parseExtensionApiManifest` aborts on the first problem, which suits callers
+ * that treat an invalid manifest as fatal. Callers that audit several manifests
+ * and report every failure together need the error as a value instead.
+ */
+export function tryParseExtensionApiManifest(
+  contents: Uint8Array | string,
+  options: {expectedId?: string} = {},
+): ExtensionApiManifestParseResult {
+  try {
+    return {error: null, manifest: parseExtensionApiManifest(contents, options)};
+  } catch (error) {
+    return {error: errorMessage(error), manifest: null};
+  }
 }
 
 export function validateManagedExtensionApiManifest(

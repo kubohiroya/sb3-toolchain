@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0 - 2026-09-14
+
+- Add `tryParseExtensionApiManifest`, which returns `{manifest, error}` instead of throwing.
+  `parseExtensionApiManifest` aborts on the first problem, so a caller auditing several published
+  manifests could only report one failure per run; the new entry point lets it collect every
+  failure and report them together.
+- Export `ExtensionApiManifestParseResult` and its `ExtensionApiManifestParseSuccess` /
+  `ExtensionApiManifestParseFailure` members from the package entry point.
+
+Rollback: pin `@kubohiroya/sb3-toolchain@0.12.0`.
+
 ## 0.12.0 - 2026-09-10
 
 - Ignore `.claude/**` in the ESLint config: flat config does not read `.gitignore`, so `eslint .`
