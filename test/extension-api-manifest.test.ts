@@ -6,6 +6,7 @@ import {
   compareExtensionApiManifests,
   extensionApiManifestIntegrity,
   parseExtensionApiManifest,
+  tryParseExtensionApiManifest,
   validateExtensionApiManifestSourceMetadata,
   validateManagedExtensionApiManifest,
 } from '../src/index';
@@ -233,4 +234,26 @@ test('classifies removal of a referenced menu as breaking', () => {
       (change) => change.kind === 'menu-removed',
     )?.breaking,
   ).toBe(true);
+});
+
+test('reports a parse failure as a value instead of throwing', () => {
+  const invalid = tryParseExtensionApiManifest(contents(manifest({formatVersion: 2})));
+  expect(invalid.manifest).toBe(null);
+  expect(invalid.error).toBe('Unsupported extension API manifest formatVersion: 2');
+
+  const mismatched = tryParseExtensionApiManifest(contents(), {expectedId: 'another'});
+  expect(mismatched.manifest).toBe(null);
+  expect(mismatched.error).toBe(
+    'Extension API manifest ID mismatch: expected another, got example',
+  );
+
+  const malformed = tryParseExtensionApiManifest(Buffer.from('{'));
+  expect(malformed.manifest).toBe(null);
+  expect(malformed.error).toMatch(/^Extension API manifest is not valid JSON: /u);
+});
+
+test('returns the canonicalized manifest when parsing succeeds', () => {
+  const result = tryParseExtensionApiManifest(contents(), {expectedId: 'example'});
+  expect(result.error).toBe(null);
+  expect(result.manifest).toStrictEqual(parseExtensionApiManifest(contents()));
 });

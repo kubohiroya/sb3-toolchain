@@ -33,6 +33,7 @@ export {
   extensionApiManifestLocalPath,
   formatExtensionApiCompatibilityChanges,
   parseExtensionApiManifest,
+  tryParseExtensionApiManifest,
   validateExtensionApiManifestSourceMetadata,
   validateManagedExtensionApiManifest,
 } from './extension-api-manifest';
@@ -96,6 +97,9 @@ export type {
   ExtensionApiManifestArgument,
   ExtensionApiManifestBlock,
   ExtensionApiManifestMenu,
+  ExtensionApiManifestParseFailure,
+  ExtensionApiManifestParseResult,
+  ExtensionApiManifestParseSuccess,
 } from './extension-api-manifest';
 export type {
   BuildExtensionBundlesResult,
