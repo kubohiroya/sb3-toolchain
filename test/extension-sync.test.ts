@@ -607,7 +607,7 @@ test('rejects unsafe API manifest downloads without changing the source', async 
     );
     const manifestCases: [unknown, RegExp, number][] = [
       [Buffer.from('{'), /not valid JSON/u, 1024],
-      [apiManifestContents('example', {formatVersion: 2}), /Unsupported.*formatVersion/u, 1024],
+      [apiManifestContents('example', {formatVersion: 3}), /Unsupported.*formatVersion/u, 1024],
       [apiManifestContents('another'), /ID mismatch/u, 1024],
       [new Response(Buffer.alloc(65), {headers: {'content-length': '65'}}), /64-byte limit/u, 64],
       [

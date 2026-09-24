@@ -97,7 +97,7 @@ npmパッケージから管理する機能拡張には、任意の`source`メタ
 - `apiManifest`: 任意で使用するAPI互換性メタデータ
   - `artifact`: 同じGitHubリポジトリを基準にしたAPIマニフェストのパス
   - `path`: 必須のローカルパス`extensions/<extensionId>.manifest.json`
-  - `formatVersion`: 対応するマニフェスト形式。現在は`1`
+  - `formatVersion`: 対応するマニフェスト形式。`1`または`2`
   - `integrity`: インストール済みマニフェストのSRI形式SHA-256
 
 検証とビルドでは、ネットワークへ接続せずに管理対象機能拡張を検証します。

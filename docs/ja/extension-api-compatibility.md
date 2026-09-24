@@ -60,7 +60,20 @@ flowchart LR
 
 - `artifact`はGitHubリポジトリ内のマニフェストのパスです。
 - `path`は展開ソース内の`extensions/<extensionId>.manifest.json`でなければなりません。
-- `formatVersion`は`1`でなければなりません。
+- `formatVersion`は`1`または`2`でなければなりません。
+
+バージョン2は、サーバー側コンパイラがブロックをloweringするために必要なメタデータを各ブロックに追加します。
+`resultType`、`effect`、`immutable`、`errors`、`server`です。引数はさらに`normalizesTo`、`staticLiteral`、
+`minimum`、`maximum`を持てます。ブロックの5つのフィールドは揃って必須で、`effect`は`pure`、`immutable`、
+`control`、`request-read`、`response-write`、`storage-read`、`storage-write`、`binary-read`、
+`binary-write`のいずれかでなければなりません。
+
+比較では、このメタデータの変更はどちら向きでも破壊的として報告します。ブロックがimmutableであることに
+プロジェクトが依存しうるのと同様に、immutableでないことにも依存しうるためです。例外は2つで、ブロックが
+サーバー対応を獲得した場合と、新しいエラーコードを宣言した場合です。どちらもブロックの提供範囲を広げる
+だけです。バージョン1から2への上昇は互換です。既存のプロジェクトが読んでいなかったメタデータを追加する
+だけだからです。2から1への下降は破壊的です。サーバーが既にloweringに使っているメタデータを失うためです。
+
 - `integrity`はインストール済みマニフェストファイルのSHA-256 SRI値です。
 
 JavaScript成果物とマニフェスト成果物は、同じリポジトリと`resolvedCommit`を使用します。別のリポジトリや

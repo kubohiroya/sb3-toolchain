@@ -53,7 +53,7 @@ const legacyPosePattern = new RegExp(
 );
 
 assert(packageJson.name === policy.packageName, 'package name must match repo policy.');
-assert(packageJson.version === '0.13.0', 'package version must be 0.13.0.');
+assert(packageJson.version === '0.14.0', 'package version must be 0.14.0.');
 assert(packageJson.license === policy.license, 'package license must be MPL-2.0.');
 assert(packageJson.author === policy.authorPolicy.name, 'package author must use the shared name.');
 assert(!packageJson.author.includes('@'), 'package author must not include email.');
@@ -98,7 +98,7 @@ includesEvery(
 );
 includesEvery(
   changelog,
-  [`## ${version} - 2026-09-14`, 'release snapshot helpers'],
+  [`## ${version} - 2026-09-24`, 'release snapshot helpers'],
   'CHANGELOG.md',
 );
 includesEvery(license, ['Mozilla Public License Version 2.0', '3. Responsibilities'], 'LICENSE');

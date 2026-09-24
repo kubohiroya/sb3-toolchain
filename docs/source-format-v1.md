@@ -98,7 +98,7 @@ For an exact npm dependency, replace the GitHub-specific fields with the package
 - `apiManifest`: optional, opt-in API compatibility metadata
   - `artifact`: API manifest path relative to the same GitHub repository
   - `path`: required local path `extensions/<extensionId>.manifest.json`
-  - `formatVersion`: supported manifest format, currently `1`
+  - `formatVersion`: supported manifest format, `1` or `2`
   - `integrity`: SRI-form SHA-256 of the installed manifest
 
 Validation and builds verify managed extensions without accessing the network:

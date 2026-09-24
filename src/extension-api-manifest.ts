@@ -6,19 +6,69 @@ import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
 import type {EmbeddedExtension, ExtensionApiManifestSource, UnknownRecord} from './types';
 
+/** The version assumed when none is recorded; version 2 is also supported. */
 export const extensionApiManifestFormatVersion = 1;
+export const extensionApiManifestFormatVersions = [1, 2] as const;
 export const defaultExtensionApiManifestSizeLimit = 1024 * 1024;
+
+/**
+ * Version 2 carries the metadata a server-side compiler needs to lower a block into its own IR.
+ *
+ * These vocabularies match `@kubohiroya/turbowarp-extension-manifest`, which produces the manifests,
+ * and the compiler manifest reader in `turbowarp-http-server`, which consumes them. A value accepted
+ * here but rejected there would let an unusable extension through an update.
+ */
+export const extensionApiManifestResultTypes = [
+  'json',
+  'boolean',
+  'number',
+  'string',
+  'void',
+  // A string whose content is serialized JSON or YAML, which `string` alone would not record.
+  'jsonText',
+  'yamlText',
+] as const;
+export const extensionApiManifestEffects = [
+  'pure',
+  'immutable',
+  'control',
+  'request-read',
+  'response-write',
+  'storage-read',
+  'storage-write',
+  'binary-read',
+  'binary-write',
+  'state',
+] as const;
+
+export type ExtensionApiManifestFormatVersion = (typeof extensionApiManifestFormatVersions)[number];
+export type ExtensionApiManifestResultType = (typeof extensionApiManifestResultTypes)[number];
+export type ExtensionApiManifestEffect = (typeof extensionApiManifestEffects)[number];
+
+export interface ExtensionApiManifestServer {
+  irOperation?: string;
+  supported: boolean;
+}
 
 export interface ExtensionApiManifestArgument {
   id: string;
+  maximum?: number;
   menu?: string;
+  minimum?: number;
+  normalizesTo?: 'pathSegments';
+  staticLiteral?: boolean;
   type: string;
 }
 
 export interface ExtensionApiManifestBlock {
   arguments: ExtensionApiManifestArgument[];
   blockType: string;
+  effect?: ExtensionApiManifestEffect;
+  errors?: string[];
+  immutable?: boolean;
   opcode: string;
+  resultType?: ExtensionApiManifestResultType;
+  server?: ExtensionApiManifestServer;
 }
 
 export interface ExtensionApiManifestMenu {
@@ -26,11 +76,27 @@ export interface ExtensionApiManifestMenu {
   id: string;
 }
 
+export interface ExtensionApiManifestPathSegmentType {
+  kind: 'discriminatedUnion';
+  variants: {kind: string; valueType: string}[];
+}
+
+export interface ExtensionApiManifestDataReferenceType {
+  kind: string;
+  lifetime: string;
+  scope: string;
+  valueType: string;
+}
+
 export interface ExtensionApiManifest {
   blocks: ExtensionApiManifestBlock[];
+  /** Version 2 only: what the values this extension hands out refer to, and for how long. */
+  dataReferenceType?: ExtensionApiManifestDataReferenceType;
   formatVersion: number;
   id: string;
   menus: ExtensionApiManifestMenu[];
+  /** Version 2 only: how a compiler should read the path arguments this extension takes. */
+  pathSegmentType?: ExtensionApiManifestPathSegmentType;
 }
 
 export interface ExtensionApiCompatibilityChange {
@@ -116,8 +182,10 @@ export function validateExtensionApiManifestSourceMetadata(
     `Managed extension API manifest metadata for ${extension.id}`,
   );
   assert(
-    metadata.formatVersion === extensionApiManifestFormatVersion,
-    `Managed extension ${extension.id} requires API manifest formatVersion ${extensionApiManifestFormatVersion}.`,
+    extensionApiManifestFormatVersions.includes(
+      metadata.formatVersion as ExtensionApiManifestFormatVersion,
+    ),
+    `Managed extension ${extension.id} requires API manifest formatVersion ${extensionApiManifestFormatVersions.join(' or ')}.`,
   );
   const artifact = assertNonEmptyString(
     metadata.artifact,
@@ -146,11 +214,14 @@ function normalizeArgument(
   blockOpcode: string,
   index: number,
   menuIds: Set<string>,
+  formatVersion: ExtensionApiManifestFormatVersion,
 ): ExtensionApiManifestArgument {
   assert(isObject(value), `API manifest block ${blockOpcode} argument ${index} must be an object.`);
   assertExactProperties(
     value,
-    ['id', 'menu', 'type'],
+    formatVersion === 1
+      ? ['id', 'menu', 'type']
+      : ['id', 'maximum', 'menu', 'minimum', 'normalizesTo', 'staticLiteral', 'type'],
     `API manifest block ${blockOpcode} argument ${index}`,
   );
   const id = assertNonEmptyString(
@@ -161,8 +232,10 @@ function normalizeArgument(
     value.type,
     `API manifest block ${blockOpcode} argument ${id} type`,
   );
+  const constraints =
+    formatVersion === 1 ? {} : argumentConstraints(value, `${blockOpcode} argument ${id}`);
   if (value.menu === undefined) {
-    return {id, type};
+    return {id, type, ...constraints};
   }
   const menu = assertNonEmptyString(
     value.menu,
@@ -172,16 +245,62 @@ function normalizeArgument(
     menuIds.has(menu),
     `API manifest block ${blockOpcode} argument ${id} references unknown menu: ${menu}`,
   );
-  return {id, menu, type};
+  return {id, menu, type, ...constraints};
+}
+
+function argumentConstraints(
+  value: UnknownRecord,
+  label: string,
+): Partial<ExtensionApiManifestArgument> {
+  const constraints: Partial<ExtensionApiManifestArgument> = {};
+  if (value.normalizesTo !== undefined) {
+    assert(
+      value.normalizesTo === 'pathSegments',
+      `API manifest block ${label} normalizesTo must be pathSegments.`,
+    );
+    constraints.normalizesTo = 'pathSegments';
+  }
+  if (value.staticLiteral !== undefined) {
+    constraints.staticLiteral = assertBoolean(
+      value.staticLiteral,
+      `API manifest block ${label} staticLiteral`,
+    );
+  }
+  for (const key of ['minimum', 'maximum'] as const) {
+    const bound = value[key];
+    if (bound === undefined) continue;
+    assert(
+      typeof bound === 'number' && Number.isFinite(bound),
+      `API manifest block ${label} ${key} must be a finite number.`,
+    );
+    constraints[key] = bound;
+  }
+  return constraints;
 }
 
 function normalizeBlock(
   value: unknown,
   index: number,
   menuIds: Set<string>,
+  formatVersion: ExtensionApiManifestFormatVersion,
 ): ExtensionApiManifestBlock {
   assert(isObject(value), `API manifest block ${index} must be an object.`);
-  assertExactProperties(value, ['arguments', 'blockType', 'opcode'], `API manifest block ${index}`);
+  assertExactProperties(
+    value,
+    formatVersion === 1
+      ? ['arguments', 'blockType', 'opcode']
+      : [
+          'arguments',
+          'blockType',
+          'effect',
+          'errors',
+          'immutable',
+          'opcode',
+          'resultType',
+          'server',
+        ],
+    `API manifest block ${index}`,
+  );
   const opcode = assertNonEmptyString(value.opcode, `API manifest block ${index} opcode`);
   const blockType = assertNonEmptyString(value.blockType, `API manifest block ${opcode} blockType`);
   assert(
@@ -189,7 +308,7 @@ function normalizeBlock(
     `API manifest block ${opcode} arguments must be an array.`,
   );
   const arguments_ = (value.arguments as unknown[]).map((argument, argumentIndex) =>
-    normalizeArgument(argument, opcode, argumentIndex, menuIds),
+    normalizeArgument(argument, opcode, argumentIndex, menuIds, formatVersion),
   );
   const argumentIds = new Set<string>();
   for (const argument of arguments_) {
@@ -200,7 +319,113 @@ function normalizeBlock(
     argumentIds.add(argument.id);
   }
   arguments_.sort((left, right) => compareIds(left.id, right.id));
-  return {arguments: arguments_, blockType, opcode};
+  const block: ExtensionApiManifestBlock = {arguments: arguments_, blockType, opcode};
+  if (formatVersion === 1) return block;
+  return {
+    ...block,
+    effect: assertEnum(
+      value.effect,
+      extensionApiManifestEffects,
+      `API manifest block ${opcode} effect`,
+    ),
+    errors: normalizeErrors(value.errors, opcode),
+    immutable: assertBoolean(value.immutable, `API manifest block ${opcode} immutable`),
+    resultType: assertEnum(
+      value.resultType,
+      extensionApiManifestResultTypes,
+      `API manifest block ${opcode} resultType`,
+    ),
+    server: normalizeServer(value.server, opcode),
+  };
+}
+
+function normalizeExtensionTypes(manifest: UnknownRecord): Partial<ExtensionApiManifest> {
+  const types: Partial<ExtensionApiManifest> = {};
+  if (manifest.pathSegmentType !== undefined) {
+    const pathType = manifest.pathSegmentType;
+    assert(isObject(pathType), 'API manifest pathSegmentType must be an object.');
+    assertExactProperties(pathType, ['kind', 'variants'], 'API manifest pathSegmentType');
+    assert(
+      pathType.kind === 'discriminatedUnion',
+      'API manifest pathSegmentType kind must be discriminatedUnion.',
+    );
+    assert(
+      Array.isArray(pathType.variants) && pathType.variants.length > 0,
+      'API manifest pathSegmentType variants must be a non-empty array.',
+    );
+    types.pathSegmentType = {
+      kind: 'discriminatedUnion',
+      variants: (pathType.variants as unknown[]).map((variant, index) => {
+        const label = `API manifest pathSegmentType variants[${index}]`;
+        assert(isObject(variant), `${label} must be an object.`);
+        assertExactProperties(variant, ['kind', 'valueType'], label);
+        return {
+          kind: assertNonEmptyString(variant.kind, `${label} kind`),
+          valueType: assertNonEmptyString(variant.valueType, `${label} valueType`),
+        };
+      }),
+    };
+  }
+  if (manifest.dataReferenceType !== undefined) {
+    const reference = manifest.dataReferenceType;
+    assert(isObject(reference), 'API manifest dataReferenceType must be an object.');
+    assertExactProperties(
+      reference,
+      ['kind', 'lifetime', 'scope', 'valueType'],
+      'API manifest dataReferenceType',
+    );
+    types.dataReferenceType = {
+      kind: assertNonEmptyString(reference.kind, 'API manifest dataReferenceType kind'),
+      lifetime: assertNonEmptyString(reference.lifetime, 'API manifest dataReferenceType lifetime'),
+      scope: assertNonEmptyString(reference.scope, 'API manifest dataReferenceType scope'),
+      valueType: assertNonEmptyString(
+        reference.valueType,
+        'API manifest dataReferenceType valueType',
+      ),
+    };
+  }
+  return types;
+}
+
+function normalizeErrors(value: unknown, opcode: string): string[] {
+  assert(Array.isArray(value), `API manifest block ${opcode} errors must be an array.`);
+  // Error codes keep their declared order: the manifest documents them as a list, not a set.
+  return (value as unknown[]).map((error, index) =>
+    assertNonEmptyString(error, `API manifest block ${opcode} errors[${index}]`),
+  );
+}
+
+function normalizeServer(value: unknown, opcode: string): ExtensionApiManifestServer {
+  assert(isObject(value), `API manifest block ${opcode} server must be an object.`);
+  assertExactProperties(value, ['irOperation', 'supported'], `API manifest block ${opcode} server`);
+  const supported = assertBoolean(value.supported, `API manifest block ${opcode} server.supported`);
+  if (value.irOperation === undefined) {
+    assert(
+      !supported,
+      `API manifest block ${opcode} server.irOperation is required when supported is true.`,
+    );
+    return {supported};
+  }
+  return {
+    irOperation: assertNonEmptyString(
+      value.irOperation,
+      `API manifest block ${opcode} server.irOperation`,
+    ),
+    supported,
+  };
+}
+
+function assertBoolean(value: unknown, label: string): boolean {
+  assert(typeof value === 'boolean', `${label} must be a boolean.`);
+  return value;
+}
+
+function assertEnum<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
+  assert(
+    typeof value === 'string' && allowed.includes(value as T),
+    `${label} must be one of: ${allowed.join(', ')}.`,
+  );
+  return value as T;
 }
 
 function normalizeMenu(value: unknown, index: number): ExtensionApiManifestMenu {
@@ -229,11 +454,14 @@ export function parseExtensionApiManifest(
   assert(isObject(manifest), 'Extension API manifest must contain an object.');
   assertExactProperties(
     manifest,
-    ['blocks', 'formatVersion', 'id', 'menus'],
+    isObject(manifest) && manifest.formatVersion === 2
+      ? ['blocks', 'dataReferenceType', 'formatVersion', 'id', 'menus', 'pathSegmentType']
+      : ['blocks', 'formatVersion', 'id', 'menus'],
     'Extension API manifest',
   );
+  const formatVersion = manifest.formatVersion as ExtensionApiManifestFormatVersion;
   assert(
-    manifest.formatVersion === extensionApiManifestFormatVersion,
+    extensionApiManifestFormatVersions.includes(formatVersion),
     `Unsupported extension API manifest formatVersion: ${manifest.formatVersion}`,
   );
   assert(
@@ -255,7 +483,7 @@ export function parseExtensionApiManifest(
   }
   assert(Array.isArray(manifest.blocks), 'Extension API manifest blocks must be an array.');
   const blocks = (manifest.blocks as unknown[]).map((block, index) =>
-    normalizeBlock(block, index, menuIds),
+    normalizeBlock(block, index, menuIds, formatVersion),
   );
   const blockOpcodes = new Set<string>();
   for (const block of blocks) {
@@ -267,7 +495,13 @@ export function parseExtensionApiManifest(
   }
   blocks.sort((left, right) => compareIds(left.opcode, right.opcode));
   menus.sort((left, right) => compareIds(left.id, right.id));
-  return {blocks, formatVersion: extensionApiManifestFormatVersion, id: manifest.id, menus};
+  return {
+    blocks,
+    formatVersion,
+    id: manifest.id,
+    menus,
+    ...(formatVersion === 1 ? {} : normalizeExtensionTypes(manifest)),
+  };
 }
 
 /**
@@ -309,6 +543,69 @@ export function validateManagedExtensionApiManifest(
   return {integrity: actualIntegrity, manifest, metadata};
 }
 
+/**
+ * Compares the format version 2 metadata of one block.
+ *
+ * Every change to a declared contract counts as breaking, in both directions: a consumer can rely on
+ * a block being immutable just as readily as on it not being. The two exceptions are a block gaining
+ * server support and a block declaring a new error code, which only widen what the block offers.
+ */
+function compareBlockMetadata(
+  changes: ExtensionApiCompatibilityChange[],
+  installed: ExtensionApiManifestBlock,
+  candidate: ExtensionApiManifestBlock,
+  path: string,
+): void {
+  for (const property of ['resultType', 'effect', 'immutable'] as const) {
+    if (installed[property] !== candidate[property]) {
+      addChange(
+        changes,
+        `block-${property}-changed`,
+        `${path}/${property}`,
+        installed[property] ?? null,
+        candidate[property] ?? null,
+        true,
+      );
+    }
+  }
+
+  const installedErrors = new Set(installed.errors ?? []);
+  const candidateErrors = new Set(candidate.errors ?? []);
+  for (const code of installedErrors) {
+    if (!candidateErrors.has(code)) {
+      addChange(changes, 'block-error-removed', `${path}/errors`, code, null, true);
+    }
+  }
+  for (const code of candidateErrors) {
+    if (!installedErrors.has(code)) {
+      addChange(changes, 'block-error-added', `${path}/errors`, null, code, false);
+    }
+  }
+
+  const installedServer = installed.server;
+  const candidateServer = candidate.server;
+  if (installedServer?.supported !== candidateServer?.supported) {
+    addChange(
+      changes,
+      'block-server-supported-changed',
+      `${path}/server/supported`,
+      installedServer?.supported ?? null,
+      candidateServer?.supported ?? null,
+      installedServer?.supported === true,
+    );
+  }
+  if (installedServer?.irOperation !== candidateServer?.irOperation) {
+    addChange(
+      changes,
+      'block-server-ir-operation-changed',
+      `${path}/server/irOperation`,
+      installedServer?.irOperation ?? null,
+      candidateServer?.irOperation ?? null,
+      true,
+    );
+  }
+}
+
 function addChange(
   changes: ExtensionApiCompatibilityChange[],
   kind: string,
@@ -325,6 +622,18 @@ export function compareExtensionApiManifests(
   candidate: ExtensionApiManifest,
 ): ExtensionApiCompatibilityChange[] {
   const changes: ExtensionApiCompatibilityChange[] = [];
+  if (installed.formatVersion !== candidate.formatVersion) {
+    // Going up adds metadata, which no existing consumer was reading. Going down removes metadata a
+    // server-side compiler may already lower against, so that direction breaks.
+    addChange(
+      changes,
+      'format-version-changed',
+      '/formatVersion',
+      installed.formatVersion,
+      candidate.formatVersion,
+      candidate.formatVersion < installed.formatVersion,
+    );
+  }
   const installedBlocks = new Map(installed.blocks.map((block) => [block.opcode, block]));
   const candidateBlocks = new Map(candidate.blocks.map((block) => [block.opcode, block]));
   for (const [opcode, block] of installedBlocks) {
@@ -344,6 +653,7 @@ export function compareExtensionApiManifests(
         true,
       );
     }
+    compareBlockMetadata(changes, block, replacement, path);
     const installedArguments = new Map(block.arguments.map((argument) => [argument.id, argument]));
     const candidateArguments = new Map(
       replacement.arguments.map((argument) => [argument.id, argument]),
@@ -355,7 +665,14 @@ export function compareExtensionApiManifests(
         addChange(changes, 'argument-removed', argumentPath, argument, null, true);
         continue;
       }
-      for (const property of ['type', 'menu'] as const) {
+      for (const property of [
+        'type',
+        'menu',
+        'normalizesTo',
+        'staticLiteral',
+        'minimum',
+        'maximum',
+      ] as const) {
         if (argument[property] !== replacementArgument[property]) {
           addChange(
             changes,

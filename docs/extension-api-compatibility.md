@@ -61,7 +61,21 @@ Add `apiManifest` below an existing GitHub `source` object:
 
 - `artifact` is the manifest path in the GitHub repository.
 - `path` must be `extensions/<extensionId>.manifest.json` in expanded source.
-- `formatVersion` must be `1`.
+- `formatVersion` must be `1` or `2`.
+
+Version 2 adds, on every block, the metadata a server-side compiler needs to lower it: `resultType`,
+`effect`, `immutable`, `errors` and `server`. Arguments may additionally carry `normalizesTo`,
+`staticLiteral`, `minimum` and `maximum`. All five block fields are required together, and `effect`
+must be one of `pure`, `immutable`, `control`, `request-read`, `response-write`, `storage-read`,
+`storage-write`, `binary-read` or `binary-write`.
+
+A comparison reports every change to that metadata as breaking, in both directions: a project can
+rely on a block being immutable just as readily as on it not being. The two exceptions are a block
+gaining server support and a block declaring a new error code, which only widen what the block
+offers. A rise from version 1 to version 2 is compatible, because it only adds metadata no existing
+project was reading; a fall from 2 to 1 is breaking, because it removes metadata a server may
+already lower against.
+
 - `integrity` is the SHA-256 SRI value of the installed manifest file.
 
 The JavaScript and manifest artifacts use the same repository and `resolvedCommit`. Separate
