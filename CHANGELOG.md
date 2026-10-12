@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 - 2026-10-12
 
 - Read an `// Unsandboxed: required | optional | not-needed` header line, so an extension can
   declare statically whether TurboWarp's "Run without sandbox" must be checked when it is allowed.
@@ -20,6 +20,9 @@
 
 Bundles whose members declare nothing generate byte-identical JavaScript, so existing builds are
 unaffected.
+
+Rollback: pin `@kubohiroya/sb3-toolchain@0.14.0`. A bundle that relies on the sandbox guard then
+loses it, and a `sandboxedNotice` field is ignored rather than rejected.
 
 ## 0.14.0 - 2026-09-24
 
