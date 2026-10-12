@@ -46,6 +46,7 @@ export interface ExtensionBundleConfiguration {
   name: string;
   members: string[];
   recoveryCapsule?: boolean;
+  sandboxedNotice?: Record<string, string>;
 }
 
 export interface EmbeddedExtensionManifest {

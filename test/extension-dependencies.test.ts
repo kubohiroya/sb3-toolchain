@@ -61,6 +61,7 @@ test('computes extension integrity and reads Extension Gallery metadata', () => 
     id: 'example',
     license: 'MPL-2.0',
     name: 'Example',
+    unsandboxed: null,
   });
   expect(extensionHeaderId(Buffer.from('const id = "example";\n'))).toBe(null);
   expect(extensionIntegrity(contents)).toMatch(/^sha256-[A-Za-z0-9+/]{43}=$/u);

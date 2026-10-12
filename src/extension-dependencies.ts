@@ -7,12 +7,26 @@ import {assert} from './assert';
 import {validateExtensionApiManifestSourceMetadata} from './extension-api-manifest';
 import type {EmbeddedExtension, ExtensionSource} from './types';
 
+/**
+ * Whether an extension must be loaded with TurboWarp's "Run without sandbox" checked, declared by
+ * its `// Unsandboxed:` header line.
+ */
+export type UnsandboxedRequirement = 'required' | 'optional' | 'not-needed';
+
+export const unsandboxedRequirements: readonly UnsandboxedRequirement[] = Object.freeze([
+  'required',
+  'optional',
+  'not-needed',
+]);
+
 export interface ExtensionHeaderMetadata {
   author: string | null;
   description: string | null;
   id: string | null;
   license: string | null;
   name: string | null;
+  /** The raw `// Unsandboxed:` value; see {@link unsandboxedRequirement} to validate it. */
+  unsandboxed: string | null;
 }
 
 export interface ManagedExtensionContents {
@@ -40,7 +54,21 @@ export function extensionHeaderMetadata(contents: Uint8Array | string): Extensio
     id: id && /^[A-Za-z0-9._-]+$/u.test(id) ? id : null,
     license: readField('License'),
     name: readField('Name'),
+    unsandboxed: readField('Unsandboxed'),
   };
+}
+
+/** Validates a header's `// Unsandboxed:` value; `null` means the extension declares nothing. */
+export function unsandboxedRequirement(
+  metadata: ExtensionHeaderMetadata,
+): UnsandboxedRequirement | null {
+  if (metadata.unsandboxed === null) return null;
+  assert(
+    (unsandboxedRequirements as readonly string[]).includes(metadata.unsandboxed),
+    `Extension ${metadata.id ?? '(unknown)'} declares an invalid // Unsandboxed: header ` +
+      `${JSON.stringify(metadata.unsandboxed)}; use ${unsandboxedRequirements.join(', ')}.`,
+  );
+  return metadata.unsandboxed as UnsandboxedRequirement;
 }
 
 export function validateExtensionSourceMetadata(

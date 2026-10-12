@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Read an `// Unsandboxed: required | optional | not-needed` header line, so an extension can
+  declare statically whether TurboWarp's "Run without sandbox" must be checked when it is allowed.
+  Any other value fails the build. `extensionHeaderMetadata` returns it as `unsandboxed`, and
+  `unsandboxedRequirement` validates it.
+- Derive a bundle's requirement from its members (`required` wins over `optional`, which wins over
+  `not-needed`) with `bundleUnsandboxedRequirement`, and record it and each member's value in the
+  generated header.
+- When a `required` bundle is loaded sandboxed, register a placeholder under the bundle ID instead
+  of running its members; its palette shows the bundle name and how to reload the project
+  unsandboxed, and the console gets the same text. Before, a member that threw because it was
+  sandboxed left TurboWarp's sandboxed iframe waiting forever, so the project never finished loading
+  and the user saw no reason. An `optional` bundle loaded sandboxed runs its members and starts the
+  palette with a notice that some features are unavailable.
+- Add the bundle field `sandboxedNotice` to override or add per-locale notices, and export the
+  built-in English and Japanese text as `defaultSandboxedNotices`.
+
+Bundles whose members declare nothing generate byte-identical JavaScript, so existing builds are
+unaffected.
+
 ## 0.14.0 - 2026-09-24
 
 - Accept extension API manifest format version 2, which carries the metadata a server-side compiler
