@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import {assert} from './assert';
-import {extensionHeaderMetadata} from './extension-dependencies';
-import type {ExtensionHeaderMetadata} from './extension-dependencies';
+import {extensionHeaderMetadata, unsandboxedRequirement} from './extension-dependencies';
+import type {ExtensionHeaderMetadata, UnsandboxedRequirement} from './extension-dependencies';
 import type {
   EmbeddedExtension,
   ExtensionBundleConfiguration,
@@ -59,6 +59,75 @@ function validateBundleId(id: unknown, description = 'Extension bundle ID'): str
   return id;
 }
 
+/**
+ * Shown in the palette when a bundle runs sandboxed although a member declared
+ * `// Unsandboxed: required` (the members then do not run) or `optional` (they run with less).
+ */
+export const defaultSandboxedNotices: Readonly<
+  Record<'required' | 'optional', Readonly<Record<string, string>>>
+> = Object.freeze({
+  required: Object.freeze({
+    en:
+      'This extension must run without the sandbox.\n' +
+      'Load the project again and, in the extension\n' +
+      'security dialog, check "Run without sandbox"\n' +
+      'before allowing it.',
+    ja:
+      'この拡張機能はサンドボックスなしで実行する必要があります。\n' +
+      'プロジェクトを開き直し、拡張機能セキュリティの画面で\n' +
+      '「サンドボックスなしで実行する」にチェックを付けてから\n' +
+      '許可してください。',
+  }),
+  optional: Object.freeze({
+    en:
+      'Running in the sandbox: some features are unavailable.\n' +
+      'To use them, load the project again and check\n' +
+      '"Run without sandbox" in the extension security dialog.',
+    ja:
+      'サンドボックス内で実行中のため、一部の機能が使えません。\n' +
+      '使うには、プロジェクトを開き直し、拡張機能セキュリティの画面で\n' +
+      '「サンドボックスなしで実行する」にチェックを付けてください。',
+  }),
+});
+
+/**
+ * Derives a bundle's requirement from its members' declarations: any `required` member makes the
+ * bundle required; otherwise any `optional` member makes it optional; it is `not-needed` only when
+ * every member says so. `null` means no member declares anything.
+ */
+export function bundleUnsandboxedRequirement(
+  components: readonly Pick<ExtensionBundleComponent, 'metadata'>[],
+): UnsandboxedRequirement | null {
+  const declared = components.map((component) => unsandboxedRequirement(component.metadata));
+  if (declared.includes('required')) return 'required';
+  if (declared.includes('optional')) return 'optional';
+  if (declared.length > 0 && declared.every((requirement) => requirement === 'not-needed')) {
+    return 'not-needed';
+  }
+  return null;
+}
+
+function validateSandboxedNotice(notice: unknown, bundleId: string): Record<string, string> {
+  assert(
+    isObject(notice) && Object.keys(notice).length > 0,
+    `Extension bundle ${bundleId} sandboxedNotice must be a non-empty object of locale messages.`,
+  );
+  const validated: Record<string, string> = {};
+  for (const [locale, message] of Object.entries(notice)) {
+    assert(
+      /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/u.test(locale),
+      `Extension bundle ${bundleId} sandboxedNotice locale must be a lowercase language tag: ` +
+        JSON.stringify(locale),
+    );
+    assert(
+      typeof message === 'string' && message.trim().length > 0,
+      `Extension bundle ${bundleId} sandboxedNotice.${locale} must be a non-empty string.`,
+    );
+    validated[locale] = message;
+  }
+  return validated;
+}
+
 function validateBundleName(name: unknown): string {
   assert(
     typeof name === 'string' && name.trim() === name && name.length > 0 && !/[\r\n]/u.test(name),
@@ -97,6 +166,10 @@ export function validateExtensionBundleConfigurations(
       `Extension bundle ${id} recoveryCapsule must be a boolean when present.`,
     );
     const capsuleFlag = bundle.recoveryCapsule;
+    const sandboxedNotice =
+      bundle.sandboxedNotice === undefined
+        ? undefined
+        : validateSandboxedNotice(bundle.sandboxedNotice, id);
 
     const localMemberIds = new Set<string>();
     const members: string[] = [];
@@ -120,6 +193,7 @@ export function validateExtensionBundleConfigurations(
       members,
       name,
       ...(capsuleFlag === undefined ? {} : {recoveryCapsule: capsuleFlag}),
+      ...(sandboxedNotice === undefined ? {} : {sandboxedNotice}),
     };
   });
 }
@@ -158,6 +232,7 @@ function readBundleComponents(
         `Extension bundle ${bundle.id} member ${memberId} requires a // ${label}: header.`,
       );
     }
+    unsandboxedRequirement(metadata);
     const source = Buffer.from(contents).toString('utf8');
     assert(
       !source.startsWith('#!'),
@@ -192,9 +267,10 @@ function bundleHeader(
     `// Description: Static bundle of ${components.length} TurboWarp extensions.`,
     `// By: ${commentLine(authors.join(', '))}`,
     '// License: See the bundled extension notices below.',
-    '//',
-    '// Bundled extensions:',
   ];
+  const requirement = bundleUnsandboxedRequirement(components);
+  if (requirement !== null) lines.push(`// Unsandboxed: ${requirement}`);
+  lines.push('//', '// Bundled extensions:');
   for (const component of components) {
     lines.push(
       `// - Name: ${commentLine(component.metadata.name)}`,
@@ -203,6 +279,9 @@ function bundleHeader(
       `//   Description: ${commentLine(component.metadata.description)}`,
       `//   License: ${commentLine(component.metadata.license)}`,
     );
+    if (component.metadata.unsandboxed !== null) {
+      lines.push(`//   Unsandboxed: ${component.metadata.unsandboxed}`);
+    }
   }
   return `${lines.join('\n')}\n`;
 }
@@ -247,6 +326,88 @@ function recoveryCapsule(
   };
 }
 
+function sandboxedNotice(
+  bundle: ExtensionBundleConfiguration,
+  requirement: UnsandboxedRequirement | null,
+): Record<string, string> | null {
+  if (requirement !== 'required' && requirement !== 'optional') {
+    assert(
+      bundle.sandboxedNotice === undefined,
+      `Extension bundle ${bundle.id} sandboxedNotice needs a member that declares ` +
+        '// Unsandboxed: required or optional.',
+    );
+    return null;
+  }
+  return {...defaultSandboxedNotices[requirement], ...bundle.sandboxedNotice};
+}
+
+/**
+ * Detects a sandboxed load for a bundle whose members declared they need (`required`) or benefit
+ * from (`optional`) TurboWarp's unsandboxed API. A required bundle registers a placeholder under
+ * the bundle ID instead of running its members, so none can fail on a missing `Scratch.vm` and the
+ * project still finishes loading: a sandboxed iframe that throws before registering leaves
+ * TurboWarp waiting forever, and a worker reports only a generic failure. An optional bundle runs
+ * its members and prefixes the palette with the notice. Bundles without a declaration get nothing.
+ */
+function sandboxedGuardSource(
+  requirement: UnsandboxedRequirement | null,
+  notice: Record<string, string> | null,
+): string {
+  if (notice === null) return '';
+  const required = requirement === 'required';
+  return `
+  const SANDBOXED = !Scratch.extensions || Scratch.extensions.unsandboxed !== true;
+  const SANDBOXED_NOTICE = ${JSON.stringify(notice)};
+  const currentLocale = () => {
+    try {
+      if (Scratch.translate && typeof Scratch.translate.language === 'string') {
+        return Scratch.translate.language;
+      }
+    } catch (_error) {
+      // Fall through to the browser language.
+    }
+    return typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en';
+  };
+  const sandboxedNoticeText = () => {
+    const locale = String(currentLocale()).toLowerCase();
+    const language = locale.split('-')[0];
+    if (Object.prototype.hasOwnProperty.call(SANDBOXED_NOTICE, locale)) return SANDBOXED_NOTICE[locale];
+    if (Object.prototype.hasOwnProperty.call(SANDBOXED_NOTICE, language)) return SANDBOXED_NOTICE[language];
+    return SANDBOXED_NOTICE.en;
+  };
+  const sandboxedNoticeBlocks = () => ['⚠ ' + BUNDLE_NAME, ...sandboxedNoticeText().split('\\n')]
+    .filter((line) => line.length > 0)
+    .map((line) => ({
+      blockType: (Scratch.BlockType && Scratch.BlockType.LABEL) || 'label',
+      sb3Toolchain: {kind: 'bundle-sandboxed-notice'},
+      text: line,
+    }));
+  if (SANDBOXED && typeof console !== 'undefined') {
+    const report = console.${required ? 'error' : 'warn'} || console.log;
+    report.call(console, '[' + BUNDLE_ID + '] ' + BUNDLE_NAME + ' ${required ? 'requires' : 'works better with'} unsandboxed loading. ' + sandboxedNoticeText().replace(/\\n/gu, ' '));
+  }
+${
+  required
+    ? `  if (SANDBOXED) {
+    class SandboxedExtensionBundleNotice {
+      getInfo() {
+        return {
+          id: BUNDLE_ID,
+          name: BUNDLE_NAME,
+          color1: '#D65C5C',
+          blocks: sandboxedNoticeBlocks(),
+          menus: {},
+        };
+      }
+    }
+    Scratch.extensions.register(new SandboxedExtensionBundleNotice());
+    return;
+  }
+`
+    : ''
+}`;
+}
+
 export function createStaticExtensionBundle(
   bundle: ExtensionBundleConfiguration,
   components: ExtensionBundleComponent[],
@@ -254,6 +415,8 @@ export function createStaticExtensionBundle(
 ): Buffer {
   const componentIds = JSON.stringify(components.map((component) => component.metadata.id));
   const header = bundleHeader(bundle, components);
+  const requirement = bundleUnsandboxedRequirement(components);
+  const notice = sandboxedNotice(bundle, requirement);
   const loaders = components.map(componentLoadSource).join('\n');
   const runtime = `(function (Scratch) {
   'use strict';
@@ -261,7 +424,7 @@ export function createStaticExtensionBundle(
   const BUNDLE_ID = ${JSON.stringify(bundle.id)};
   const BUNDLE_NAME = ${JSON.stringify(bundle.name)};
   const COMPONENT_IDS = ${componentIds};
-  const components = new Map();
+${sandboxedGuardSource(requirement, notice)}  const components = new Map();
 
   const rewriteOpcode = (componentId, opcode) => {
     const prefix = componentId + '_';
@@ -407,7 +570,12 @@ ${loaders}
         blocks: [],
         menus: {},
         customFieldTypes: {},
-      };
+      };${
+        requirement === 'optional'
+          ? `
+      if (SANDBOXED) result.blocks.push(...sandboxedNoticeBlocks(), '---', '---');`
+          : ''
+      }
       this.delegates.clear();
       const transformedOpcodes = new Set();
 

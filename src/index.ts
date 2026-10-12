@@ -22,6 +22,8 @@ export {
   extensionHeaderId,
   extensionHeaderMetadata,
   extensionIntegrity,
+  unsandboxedRequirement,
+  unsandboxedRequirements,
   validateExtensionSourceMetadata,
   validateManagedExtensionContents,
 } from './extension-dependencies';
@@ -50,6 +52,8 @@ export {planBundledSb3Unbundle, unbundleSb3} from './extension-bundle-archive';
 export {
   buildExtensionBundles,
   createStaticExtensionBundle,
+  bundleUnsandboxedRequirement,
+  defaultSandboxedNotices,
   extensionBundleRecoveryMarker,
   validateExtensionBundleConfigurations,
 } from './extension-bundle';
@@ -117,6 +121,7 @@ export type {
   ExtensionBundlePlan,
 } from './extension-bundle';
 export type {BundledSb3UnbundlePlan} from './extension-bundle-archive';
+export type {ExtensionHeaderMetadata, UnsandboxedRequirement} from './extension-dependencies';
 export type {
   ExtensionIdMigrationCounts,
   ExtensionIdReference,

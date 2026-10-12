@@ -360,6 +360,58 @@ Set `"recoveryCapsule": true` on a bundle, or pass `--include-recovery-capsule` 
 to append an `SB3-Toolchain-Reversible-Bundle-v1` capsule. It records each original member data URL,
 member order, and the original `extensions` and `extensionURLs` order, at the cost of a larger output.
 
+### Declare unsandboxed loading
+
+Each extension can declare, in its own header, whether the user must check TurboWarp's "Run
+without sandbox" when allowing it:
+
+```js
+// Name: Extension One
+// ID: extensionone
+// By: Example Author
+// License: MPL-2.0
+// Unsandboxed: required
+```
+
+| Value        | Meaning                                                    |
+| ------------ | ---------------------------------------------------------- |
+| `required`   | The extension cannot work sandboxed                        |
+| `optional`   | It works sandboxed, but some features need unsandboxed use |
+| `not-needed` | It works fully sandboxed                                   |
+
+Any other value fails the build. The declaration travels with the file, so it holds whether the
+extension is bundled or loaded on its own; extensions without the line behave exactly as before.
+
+A bundle derives its requirement from its members: `required` if any member is, otherwise
+`optional` if any member is, and `not-needed` only when every member says so. The generated header
+records the result as `// Unsandboxed:` along with each member's own value. TurboWarp's permission
+dialog itself cannot be changed by an extension, so the bundle acts on what happens after the user
+answers it:
+
+- `required` and loaded sandboxed: no member runs. The bundle registers a placeholder under its
+  ID whose palette shows the bundle name and how to reload the project unsandboxed, and logs the
+  same text as a console error. Without it, a member that throws because it is sandboxed stops the
+  whole bundle: in TurboWarp's sandboxed iframe the project never finishes loading, and in a worker
+  the user sees only a generic load failure. With the placeholder the project loads, its bundle
+  blocks stay in the scripts, and loading the project again unsandboxed restores them.
+- `optional` and loaded sandboxed: the members run, and the palette starts with a notice that some
+  features are unavailable, also logged as a console warning.
+- `not-needed`, no declaration, or loaded unsandboxed: nothing is added.
+
+The notices have built-in English and Japanese text and follow `Scratch.translate.language`,
+falling back to the primary language subtag and then to English. Override or add locales with the
+bundle's `sandboxedNotice`, an object mapping lowercase language tags to messages; `\n` starts a
+new palette label. It is accepted only when the bundle derives `required` or `optional`:
+
+```json
+{
+  "id": "projectbundle",
+  "name": "Project Extension Bundle",
+  "members": ["extensionone", "extensiontwo"],
+  "sandboxedNotice": {"de": "Projekt erneut laden\nund ohne Sandbox ausführen."}
+}
+```
+
 ## Restore from expanded source
 
 Choose the restoration path based on which artifact is available:

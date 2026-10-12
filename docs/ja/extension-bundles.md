@@ -350,6 +350,57 @@ bundleに`"recoveryCapsule": true`を指定するか、設定時に`--include-re
 `SB3-Toolchain-Reversible-Bundle-v1`カプセルを追加します。カプセルは各メンバーの元のdata URL、メンバー順、
 元の`extensions`と`extensionURLs`の順序を記録しますが、出力サイズは増加します。
 
+### unsandboxedでの読み込みを宣言する
+
+各機能拡張は、許可するときにTurboWarpの「サンドボックスなしで実行する」へのチェックが必要かどうかを、
+自身のヘッダーで宣言できます。
+
+```js
+// Name: Extension One
+// ID: extensionone
+// By: Example Author
+// License: MPL-2.0
+// Unsandboxed: required
+```
+
+| 値           | 意味                                                         |
+| ------------ | ------------------------------------------------------------ |
+| `required`   | チェック必須。サンドボックス内では動作しない                 |
+| `optional`   | チェック任意。サンドボックス内でも動くが、一部機能が使えない |
+| `not-needed` | チェック不要。サンドボックス内で完全に動作する               |
+
+それ以外の値はビルドエラーになります。宣言はファイルと一緒に移動するので、bundleしても単体で読み込んでも
+有効です。この行がない機能拡張の動作は従来と変わりません。
+
+bundleの要件はメンバーから導出されます。いずれかが`required`なら`required`、そうでなくいずれかが
+`optional`なら`optional`、全員が`not-needed`のときだけ`not-needed`です。生成ヘッダーには結果が
+`// Unsandboxed:`として、各メンバー自身の値とともに記録されます。TurboWarpの権限ダイアログそのものは
+機能拡張から変更できないため、bundleはユーザーがそれに答えた後の動作を制御します。
+
+- `required`でサンドボックス内に読み込まれた場合: メンバーを一切実行しません。bundle IDでプレースホルダーを
+  登録し、パレットにbundle名とサンドボックスなしで開き直す手順を表示し、同じ内容をコンソールにエラーとして
+  出力します。これがないと、サンドボックスのために例外を投げたメンバーがbundle全体を止めます。TurboWarpの
+  sandboxed iframeではプロジェクトの読み込みが終わらず、workerでは汎用的な読み込み失敗しか表示されません。
+  プレースホルダーがあればプロジェクトは読み込まれ、bundleのブロックはスクリプトに残り、サンドボックスなしで
+  開き直すと元に戻ります。
+- `optional`でサンドボックス内に読み込まれた場合: メンバーは実行され、パレットの先頭に一部機能が使えない旨の
+  通知が表示され、コンソールにも警告が出力されます。
+- `not-needed`、宣言なし、またはサンドボックスなしで読み込まれた場合: 何も追加しません。
+
+通知文は英語と日本語を内蔵し、`Scratch.translate.language`に従います。一致しない場合は主言語サブタグ、
+次に英語を使います。bundleの`sandboxedNotice`で、小文字の言語タグからメッセージへの対応を指定すると、
+ロケールを上書き・追加できます。`\n`でパレットのラベルを改行します。bundleが`required`または
+`optional`になる場合だけ指定できます。
+
+```json
+{
+  "id": "projectbundle",
+  "name": "Project Extension Bundle",
+  "members": ["extensionone", "extensiontwo"],
+  "sandboxedNotice": {"de": "Projekt erneut laden\nund ohne Sandbox ausführen."}
+}
+```
+
 ## 展開ソースからの復元
 
 利用可能な成果物に応じて復元経路を選択します。

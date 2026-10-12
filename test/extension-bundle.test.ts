@@ -19,7 +19,10 @@ import {
   planExtensionUnbundle,
   planBundledSb3Unbundle,
   unbundleSb3,
+  bundleUnsandboxedRequirement,
+  defaultSandboxedNotices,
   unbundleExtensions,
+  validateExtensionBundleConfigurations,
 } from '../src/index';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -680,6 +683,235 @@ test('omits recovery data by default and preserves runtime composition', async (
     const restored = await createDeterministicSb3(sourceDirectory);
     expect(Buffer.from(restored.archive)).toStrictEqual(Buffer.from(original.archive));
   });
+});
+
+function evaluateSandboxedBundle(source: string, language: string) {
+  const registrations: any[] = [];
+  const reports: {level: string; text: string}[] = [];
+  const Scratch: any = {
+    ArgumentType: {STRING: 'string'},
+    BlockType: {
+      BUTTON: 'button',
+      COMMAND: 'command',
+      EVENT: 'event',
+      LABEL: 'label',
+      REPORTER: 'reporter',
+      XML: 'xml',
+    },
+    extensions: {
+      register(extension: unknown) {
+        registrations.push(extension);
+      },
+    },
+    translate: {language},
+  };
+  const report = (level: string) => (text: unknown) => reports.push({level, text: String(text)});
+  vm.runInNewContext(
+    source,
+    {Scratch, console: {error: report('error'), log: report('log'), warn: report('warn')}},
+    {filename: 'static-extension-bundle.js'},
+  );
+  return {registrations, reports};
+}
+
+function withUnsandboxedHeader(source: string, requirement: string): string {
+  return source.replace(/^(\/\/ License: .+)$/mu, `$1\n// Unsandboxed: ${requirement}`);
+}
+
+async function buildDeclaredBundle(
+  sourceDirectory: string,
+  alphaRequirement: string | null,
+  betaRequirement: string | null,
+  betaSourceOverride = betaSource,
+) {
+  await writeBundleSource(sourceDirectory);
+  await writeFile(
+    path.join(sourceDirectory, 'extensions/alpha.js'),
+    alphaRequirement === null ? alphaSource : withUnsandboxedHeader(alphaSource, alphaRequirement),
+  );
+  await writeFile(
+    path.join(sourceDirectory, 'extensions/beta.js'),
+    betaRequirement === null
+      ? betaSourceOverride
+      : withUnsandboxedHeader(betaSourceOverride, betaRequirement),
+  );
+  await bundleExtensions({
+    bundleId: 'projectbundle',
+    bundleName: 'Project Extension Bundle',
+    extensionIds: ['alpha', 'beta'],
+    sourceDirectory,
+    yes: true,
+  });
+  return bundleSourceOf(sourceDirectory);
+}
+
+async function bundleSourceOf(sourceDirectory: string) {
+  const built = await createDeterministicSb3(sourceDirectory);
+  const project = JSON.parse(strFromU8(unzipSync(built.archive)['project.json']));
+  return {project, source: decodeDataUrl(project.extensionURLs.projectbundle)};
+}
+
+function labelTexts(info: any): string[] {
+  return [...info.blocks]
+    .filter((block: any) => block?.sb3Toolchain?.kind === 'bundle-sandboxed-notice')
+    .map((block: any) => block.text);
+}
+
+test('derives the bundle unsandboxed requirement from member headers', () => {
+  const member = (unsandboxed: string | null) => ({
+    metadata: {author: 'A', description: 'D', id: 'x', license: 'MIT', name: 'X', unsandboxed},
+  });
+  expect(bundleUnsandboxedRequirement([member(null), member(null)])).toBe(null);
+  expect(bundleUnsandboxedRequirement([member('not-needed'), member(null)])).toBe(null);
+  expect(bundleUnsandboxedRequirement([member('not-needed'), member('not-needed')])).toBe(
+    'not-needed',
+  );
+  expect(bundleUnsandboxedRequirement([member('not-needed'), member('optional')])).toBe('optional');
+  expect(bundleUnsandboxedRequirement([member(null), member('required')])).toBe('required');
+  expect(bundleUnsandboxedRequirement([member('optional'), member('required')])).toBe('required');
+  expect(() => bundleUnsandboxedRequirement([member('always')])).toThrow(
+    /invalid \/\/ Unsandboxed: header "always"; use required, optional, not-needed/u,
+  );
+});
+
+test('registers a placeholder instead of members when a required bundle loads sandboxed', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const sandboxHostileBeta = betaSource.replace(
+      "(function (Scratch) {\n  'use strict';",
+      "(function (Scratch) {\n  'use strict';\n  if (!Scratch.vm) throw new Error('beta needs Scratch.vm');",
+    );
+    const {project, source} = await buildDeclaredBundle(
+      sourceDirectory,
+      null,
+      'required',
+      sandboxHostileBeta,
+    );
+    expect(source).toMatch(
+      /^\/\/ License: See the bundled extension notices below\.\n\/\/ Unsandboxed: required$/mu,
+    );
+    expect(source).toMatch(/^\/\/ {3}Unsandboxed: required$/mu);
+
+    const japanese = evaluateSandboxedBundle(source, 'ja-JP');
+    expect(japanese.registrations).toHaveLength(1);
+    const info = japanese.registrations[0].getInfo();
+    expect(info.id).toBe('projectbundle');
+    expect(info.name).toBe('Project Extension Bundle');
+    expect(info.blocks.every((block: any) => block.blockType === 'label')).toBe(true);
+    expect(labelTexts(info)).toStrictEqual([
+      '⚠ Project Extension Bundle',
+      ...defaultSandboxedNotices.required.ja.split('\n'),
+    ]);
+    expect(japanese.reports).toHaveLength(1);
+    expect(japanese.reports[0].level).toBe('error');
+    expect(japanese.reports[0].text).toMatch(/^\[projectbundle\] .*requires unsandboxed/u);
+
+    const fallback = evaluateSandboxedBundle(source, 'fr');
+    expect(labelTexts(fallback.registrations[0].getInfo())).toStrictEqual([
+      '⚠ Project Extension Bundle',
+      ...defaultSandboxedNotices.required.en.split('\n'),
+    ]);
+
+    const unsandboxed = evaluateBundle(source, project.extensionStorage);
+    expect(unsandboxed.registrations).toHaveLength(1);
+    expect(labelTexts(unsandboxed.registrations[0].getInfo())).toStrictEqual([]);
+    expect(unsandboxed.registrations[0].alpha__value()).toBe('alpha:1');
+
+    const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.extensionBundles[0].sandboxedNotice = {en: 'Custom line one\nCustom line two'};
+    await writeJson(manifestPath, manifest);
+    const customized = (await bundleSourceOf(sourceDirectory)).source;
+    expect(
+      labelTexts(evaluateSandboxedBundle(customized, 'en-US').registrations[0].getInfo()),
+    ).toStrictEqual(['⚠ Project Extension Bundle', 'Custom line one', 'Custom line two']);
+    expect(
+      labelTexts(evaluateSandboxedBundle(customized, 'ja').registrations[0].getInfo())[1],
+    ).toBe(defaultSandboxedNotices.required.ja.split('\n')[0]);
+  });
+});
+
+test('runs members with a palette notice when an optional bundle loads sandboxed', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    const {project, source} = await buildDeclaredBundle(sourceDirectory, 'optional', 'not-needed');
+    expect(source).toMatch(/^\/\/ Unsandboxed: optional$/mu);
+
+    const sandboxed = evaluateSandboxedBundle(source, 'en');
+    expect(sandboxed.registrations).toHaveLength(1);
+    const info = sandboxed.registrations[0].getInfo();
+    expect([...info.blocks.slice(0, 4).map((block: any) => block.text)]).toStrictEqual([
+      '⚠ Project Extension Bundle',
+      ...defaultSandboxedNotices.optional.en.split('\n'),
+    ]);
+    expect(info.blocks.some((block: any) => block?.opcode === 'beta__echo')).toBe(true);
+    expect(sandboxed.reports).toHaveLength(1);
+    expect(sandboxed.reports[0].level).toBe('warn');
+
+    const unsandboxed = evaluateBundle(source, project.extensionStorage);
+    expect(labelTexts(unsandboxed.registrations[0].getInfo())).toStrictEqual([]);
+  });
+});
+
+test('adds no sandbox guard when members need no unsandboxed loading or declare nothing', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const notNeeded = await buildDeclaredBundle(
+      path.join(directory, 'not-needed'),
+      'not-needed',
+      'not-needed',
+    );
+    expect(notNeeded.source).toMatch(/^\/\/ Unsandboxed: not-needed$/mu);
+    expect(notNeeded.source).not.toMatch(/SANDBOXED/u);
+
+    const undeclared = await buildDeclaredBundle(path.join(directory, 'undeclared'), null, null);
+    expect(undeclared.source).not.toMatch(/Unsandboxed:|SANDBOXED/u);
+  });
+});
+
+test('validates unsandboxed declarations and the sandboxed notice', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    await expect(
+      buildDeclaredBundle(path.join(directory, 'invalid'), 'always', null),
+    ).rejects.toThrow(/Extension alpha declares an invalid \/\/ Unsandboxed: header "always"/u);
+
+    const sourceDirectory = path.join(directory, 'undeclared');
+    await buildDeclaredBundle(sourceDirectory, null, null);
+    const manifestPath = path.join(sourceDirectory, 'embedded-extensions.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.extensionBundles[0].sandboxedNotice = {en: 'Reload.'};
+    await writeJson(manifestPath, manifest);
+    await expect(createDeterministicSb3(sourceDirectory)).rejects.toThrow(
+      /sandboxedNotice needs a member that declares \/\/ Unsandboxed: required or optional/u,
+    );
+  });
+
+  const extensions = ['alpha', 'beta'].map((id) => ({
+    id,
+    path: `extensions/${id}.js`,
+    mediaType: 'text/javascript',
+    parameters: [],
+    encoding: 'base64' as const,
+  }));
+  const bundle = {
+    id: 'projectbundle',
+    name: 'Project Extension Bundle',
+    members: ['alpha', 'beta'],
+  };
+  expect(
+    validateExtensionBundleConfigurations(
+      [{...bundle, sandboxedNotice: {en: 'Reload.', 'pt-br': 'Recarregue.'}}],
+      extensions,
+    ),
+  ).toStrictEqual([{...bundle, sandboxedNotice: {en: 'Reload.', 'pt-br': 'Recarregue.'}}]);
+  expect(() =>
+    validateExtensionBundleConfigurations(
+      [{...bundle, sandboxedNotice: {EN: 'Reload.'}}],
+      extensions,
+    ),
+  ).toThrow(/lowercase language tag/u);
+  expect(() =>
+    validateExtensionBundleConfigurations([{...bundle, sandboxedNotice: {en: ' '}}], extensions),
+  ).toThrow(/sandboxedNotice\.en must be a non-empty string/u);
 });
 
 test('unbundles multiple reversible bundles in either order', async () => {
