@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.1 - 2026-10-19
+
+- Align package metadata, the public API/CLI version, and install examples.
+- Preserve existing build behavior and data formats from the current source.
+
+Rollback: pin `@kubohiroya/sb3-toolchain@0.15.0`.
+
 ## 0.15.0 - 2026-10-12
 
 - Read an `// Unsandboxed: required | optional | not-needed` header line, so an extension can
