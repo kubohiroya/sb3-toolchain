@@ -402,6 +402,8 @@ ${
           id: BUNDLE_ID,
           name: BUNDLE_NAME,
           color1: '#D65C5C',
+          color2: '#B64E4E',
+          color3: '#964040',
           blocks: sandboxedNoticeBlocks(),
           menus: {},
         };
@@ -615,6 +617,8 @@ ${loaders}
         id: BUNDLE_ID,
         name: BUNDLE_NAME,
         color1: '#5B67A5',
+        color2: '#4D588C',
+        color3: '#404874',
         blocks: [],
         menus: {},
         customFieldTypes: {},

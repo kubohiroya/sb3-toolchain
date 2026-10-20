@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 - 2026-10-20
+
+- Supply all three palette colors for normal and sandboxed bundles, replacing the downstream app patch.
+- Add opt-in `blockEditorRegistrations` for static bundles so GUI editor registrations follow the bundled opcode namespace.
+- Preserve Schema, callbacks, saved values and disposers, and support frozen host APIs without adding UI dependencies.
+- Keep the option disabled by default. Rollback: disable the option and rebuild, or pin `@kubohiroya/sb3-toolchain@0.15.1`.
+
 ## 0.15.1 - 2026-10-19
 
 - Align package metadata, the public API/CLI version, and install examples.

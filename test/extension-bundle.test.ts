@@ -663,6 +663,7 @@ test('omits recovery data by default and preserves runtime composition', async (
     expect(bundleSource).toMatch(/^\/\/   License: MIT$/mu);
     const runtime = evaluateBundle(bundleSource, project.extensionStorage);
     const info = runtime.registrations[0].getInfo();
+    expect([info.color1, info.color2, info.color3]).toEqual(['#5B67A5', '#4D588C', '#404874']);
     const alphaValue = info.blocks.find((block: any) => block?.opcode === 'alpha__value');
     expect(alphaValue.blockIconURI).toBe(
       'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
@@ -795,6 +796,7 @@ test('registers a placeholder instead of members when a required bundle loads sa
     const japanese = evaluateSandboxedBundle(source, 'ja-JP');
     expect(japanese.registrations).toHaveLength(1);
     const info = japanese.registrations[0].getInfo();
+    expect([info.color1, info.color2, info.color3]).toEqual(['#D65C5C', '#B64E4E', '#964040']);
     expect(info.id).toBe('projectbundle');
     expect(info.name).toBe('Project Extension Bundle');
     expect(info.blocks.every((block: any) => block.blockType === 'label')).toBe(true);
