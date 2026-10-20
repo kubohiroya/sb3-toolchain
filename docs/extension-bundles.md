@@ -548,3 +548,22 @@ bundling, then open the generated SB3 in a fresh TurboWarp session and verify al
 
 Exclude a member from the bundle and keep it as an individual extension when its compatibility
 cannot be verified.
+
+## Block editor registrations (off by default)
+
+Set `blockEditorRegistrations: true` on a bundle in `embedded-extensions.json` to adapt GUI
+registration identities to the bundled opcode namespace. This is a manifest option, not a new CLI flag.
+The generated runtime uses `Scratch.gui.blockEditors` only when `apiVersion === 1` and preserves
+which registration capabilities the host exposes: `registerSchema`, `registerSchemaBundle`,
+`registerSourceEditor`, and `registerFixedInputEditor`.
+
+`extensionId` becomes the bundle ID, `editorId` gains a `memberId__` prefix, and each full member
+opcode becomes `bundleId_memberId__opcode`. Schema, bindings, callbacks, validation context, saved
+values, and returned disposers retain their identity. Callbacks still receive the GUI's actual block
+snapshot, so callbacks that inspect opcodes must accept the bundled opcode. Registrations for a
+foreign member are rejected. Frozen host API objects are supported without mutating them.
+
+An absent or false option preserves existing behavior. GUI-less projects, absent capabilities, and
+unsupported API versions continue to work. No form implementation, Schema compiler, Ajv, YAML, or
+React is added to the bundle. To roll back, disable the option and rebuild, or disable the GUI's editor
+feature flags and reload. No data migration is needed. See the [Japanese guide](ja/extension-bundles.md).

@@ -526,3 +526,37 @@ bundle前後に同じプロジェクトレベルの自動テストを実行し�
 - TurboWarpで再保存したSB3が機能拡張ストレージを保持し、再読み込み後も動作する
 
 互換性を検証できないメンバーはbundleから除外し、個別機能拡張として保持してください。
+
+## ブロック編集機能の登録（既定 OFF）
+
+`embedded-extensions.json` の対象 `extensionBundles[]` に
+`"blockEditorRegistrations": true` を指定すると、GUI の編集機能登録も
+バンドル後の ID に対応させます。CLI の新しいフラグは追加せず、設定ファイルから有効化します。
+
+```json
+{
+  "id": "projectbundle",
+  "name": "Project Bundle",
+  "members": ["alpha", "beta"],
+  "blockEditorRegistrations": true
+}
+```
+
+起動時に `Scratch.gui.blockEditors.apiVersion === 1` を確認し、GUI が実際に公開する
+`registerSchema` / `registerSchemaBundle` / `registerSourceEditor` /
+`registerFixedInputEditor` に対応します。GUI 側で隠した capability は追加しません。
+GUI がない作品、未対応の API version、未指定または false の場合は従来の経路です。
+
+- `extensionId`: member ID → bundle ID。
+- `editorId`: `profile` → `alpha__profile`。異なる member の同名 editor は衝突しません。
+- `opcodes`: `alpha_edit` → `projectbundle_alpha__edit`。
+- Schema / bindings / callbacks / context / 保存値 / 登録解除関数は変換しません。
+
+所有者の callback に渡すブロック snapshot も GUI が読んだものを維持します。
+callback が opcode を検査する場合、実際の bundle opcode を扱える必要があります。
+登録時の extensionId が member ID と異なる場合や、別 member の opcode を含む場合は拒否します。
+
+この機能は編集機能の登録を対応させるだけです。フォーム、Schema compiler、Ajv、YAML、React は
+GUI と共通 editor の責務であり、bundle に追加しません。
+ロールバックは設定を false にして再ビルドします。GUI の編集フラグを OFF にして再読込しても
+編集 UI を無効化できます。ブロックの実行や保存値の移行は不要です。
