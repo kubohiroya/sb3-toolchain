@@ -165,6 +165,12 @@ export function validateExtensionBundleConfigurations(
       bundle.recoveryCapsule === undefined || typeof bundle.recoveryCapsule === 'boolean',
       `Extension bundle ${id} recoveryCapsule must be a boolean when present.`,
     );
+    assert(
+      bundle.blockEditorRegistrations === undefined ||
+        typeof bundle.blockEditorRegistrations === 'boolean',
+      `Extension bundle ${id} blockEditorRegistrations must be a boolean when present.`,
+    );
+    const blockEditorRegistrations = bundle.blockEditorRegistrations;
     const capsuleFlag = bundle.recoveryCapsule;
     const sandboxedNotice =
       bundle.sandboxedNotice === undefined
@@ -194,6 +200,7 @@ export function validateExtensionBundleConfigurations(
       name,
       ...(capsuleFlag === undefined ? {} : {recoveryCapsule: capsuleFlag}),
       ...(sandboxedNotice === undefined ? {} : {sandboxedNotice}),
+      ...(blockEditorRegistrations === undefined ? {} : {blockEditorRegistrations}),
     };
   });
 }
@@ -408,6 +415,47 @@ ${
 }`;
 }
 
+/** Editor callbacks and disposers stay owned by the GUI; only registration identities change. */
+function blockEditorBridgeSource(): string {
+  return `
+  const createComponentGui = (componentId) => {
+    const baseGui = Scratch.gui;
+    const api = baseGui && baseGui.blockEditors;
+    if (!api || api.apiVersion !== 1) return baseGui;
+    const registrations = new Set(['registerSchema', 'registerSchemaBundle', 'registerSourceEditor', 'registerFixedInputEditor']);
+    const editors = new Proxy({}, {
+      get(_target, property) {
+        const value = Reflect.get(api, property, api);
+        if (typeof value !== 'function') return value;
+        if (!registrations.has(property)) return value.bind(api);
+        return (definition) => {
+          if (!definition || definition.extensionId !== componentId ||
+              typeof definition.editorId !== 'string' || !Array.isArray(definition.opcodes)) {
+            throw new TypeError('Invalid block editor registration for bundle member ' + componentId + '.');
+          }
+          const opcodes = definition.opcodes.map((opcode) => {
+            if (typeof opcode !== 'string' || !opcode.startsWith(componentId + '_')) {
+              throw new TypeError('Invalid block editor opcode for bundle member ' + componentId + '.');
+            }
+            return rewriteOpcode(componentId, opcode);
+          });
+          return value.call(api, {
+            ...definition, extensionId: BUNDLE_ID,
+            editorId: componentId + '__' + definition.editorId, opcodes,
+          });
+        };
+      },
+    });
+    // Empty proxy targets allow the real host to freeze its API properties.
+    return new Proxy({}, {
+      get(_target, property) {
+        return property === 'blockEditors' ? editors : Reflect.get(baseGui, property, baseGui);
+      },
+    });
+  };
+`;
+}
+
 export function createStaticExtensionBundle(
   bundle: ExtensionBundleConfiguration,
   components: ExtensionBundleComponent[],
@@ -490,8 +538,8 @@ ${sandboxedGuardSource(requirement, notice)}  const components = new Map();
 
   installAllStorageAliases();
 
-  const createComponentScratch = (componentId, register) => {
-    const baseRuntime = Scratch.vm && Scratch.vm.runtime;
+${bundle.blockEditorRegistrations === true ? blockEditorBridgeSource() : ''}  const createComponentScratch = (componentId, register) => {
+${bundle.blockEditorRegistrations === true ? '    const gui = createComponentGui(componentId);\n' : ''}    const baseRuntime = Scratch.vm && Scratch.vm.runtime;
     const runtime = baseRuntime && new Proxy(baseRuntime, {
       get(target, property) {
         if (property === 'startHats') {
@@ -517,7 +565,7 @@ ${sandboxedGuardSource(requirement, notice)}  const components = new Map();
     return new Proxy(Scratch, {
       get(target, property) {
         if (property === 'extensions') return extensions;
-        if (property === 'vm') return vm;
+${bundle.blockEditorRegistrations === true ? "        if (property === 'gui') return gui;\n" : ''}        if (property === 'vm') return vm;
         return Reflect.get(target, property, target);
       },
     });
