@@ -9,7 +9,8 @@ import {strToU8, zipSync} from 'fflate';
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
 import {validateManagedExtensionApiManifest} from './extension-api-manifest';
-import {buildExtensionBundles, validateExtensionBundleConfigurations} from './extension-bundle';
+import {validateExtensionBundleConfigurations} from './extension-bundle';
+import {buildExtensionBundlesWithModules} from './extension-module-bundle';
 import type {ExtensionBundlePlan} from './extension-bundle';
 import {
   validateExtensionSourceMetadata,
@@ -427,7 +428,8 @@ export async function inspectSb3SourceForExtensionSync(
 
 export async function validateSb3Source(sourceDirectory: string): Promise<InspectedSb3Source> {
   const source = await inspectSb3Source(sourceDirectory, true);
-  buildExtensionBundles({
+  await buildExtensionBundlesWithModules({
+    sourceDirectory: source.resolvedSourceDirectory,
     extensionBundles: source.extensionBundles,
     extensionContents: source.extensionContents,
     extensions: source.extensions,
@@ -447,7 +449,7 @@ export async function createDeterministicSb3(
     projectAssetsPath === undefined || typeof projectAssetsPath === 'string',
     'projectAssetsPath must be a string when provided.',
   );
-  const source = await validateSb3Source(sourceDirectory);
+  const source = await inspectSb3Source(sourceDirectory, true);
   const projectAssets: {
     archiveEntries: string[];
     assetContents: Map<string, Uint8Array>;
@@ -469,7 +471,8 @@ export async function createDeterministicSb3(
         project: source.project,
         summary: null,
       };
-  const bundled = buildExtensionBundles({
+  const bundled = await buildExtensionBundlesWithModules({
+    sourceDirectory: source.resolvedSourceDirectory,
     extensionBundles: source.extensionBundles,
     extensionContents: source.extensionContents,
     extensions: source.extensions,

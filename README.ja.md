@@ -136,7 +136,7 @@ await unbundleSb3({
 - [`docs/ja/project-asset-additions.md`](docs/ja/project-asset-additions.md): `--project-assets`のJSON／YAML、backdrop、編集／strict lock仕様
 - [`docs/ja/extension-id-migration.md`](docs/ja/extension-id-migration.md): プロジェクトで使用中の機能拡張IDの移行
 - [`docs/ja/extension-api-compatibility.md`](docs/ja/extension-api-compatibility.md): 機能拡張更新時の任意の静的API互換性検査
-- [`docs/ja/extension-bundles.md`](docs/ja/extension-bundles.md): 1つの権限単位への静的bundleと可逆的なunbundle
+- [`docs/ja/extension-bundles.md`](docs/ja/extension-bundles.md): 静的bundle、共有依存を持つ明示選択のmodule統合ビルド、可逆的なunbundle
 
 ## 開発
 

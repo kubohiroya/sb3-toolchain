@@ -6,6 +6,7 @@ export type {
   ExtensionApiManifestSource,
   ExtensionBundleConfiguration,
   ExtensionEncoding,
+  ExtensionModuleSource,
   ExtensionSource,
   GitHubExtensionSource,
   NpmExtensionSource,
@@ -57,6 +58,8 @@ export {
   extensionBundleRecoveryMarker,
   validateExtensionBundleConfigurations,
 } from './extension-bundle';
+export {buildExtensionBundlesWithModules} from './extension-module-bundle';
+export type {ExtensionModuleBuildReport} from './extension-module-bundle';
 export {
   migrateExtensionId,
   planExtensionIdMigration,

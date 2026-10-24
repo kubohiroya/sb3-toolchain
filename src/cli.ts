@@ -87,6 +87,8 @@ export interface ExtensionsBundleCliOptions {
   recoveryCapsule: boolean;
   sourceDirectory: string;
   yes: boolean;
+  buildMode?: 'classic' | 'module';
+  sharedDependencies?: Record<string, string>;
 }
 
 export interface ExtensionsUnbundleSourceCliOptions {
@@ -146,7 +148,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--include-recovery-capsule] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--build-mode classic|module] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -405,6 +407,8 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
   let sourceDirectory: string | undefined;
   const extensionIds: string[] = [];
   let yes = false;
+  let buildMode: 'classic' | 'module' | undefined;
+  const sharedDependencies: Record<string, string> = {};
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -418,6 +422,27 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
       yes = true;
     } else if (argument === '--include-recovery-capsule') {
       recoveryCapsule = true;
+    } else if (argument === '--build-mode') {
+      const value = takeValue(arguments_, index, '--build-mode');
+      assert(value === 'classic' || value === 'module', '--build-mode must be classic or module.');
+      buildMode = value;
+      index += 1;
+    } else if (argument === '--share') {
+      const value = takeValue(arguments_, index, '--share');
+      const separator = value.lastIndexOf('@');
+      assert(separator > 0, '--share requires PACKAGE@EXACT_VERSION.');
+      const name = value.slice(0, separator);
+      assert(
+        /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(name),
+        `Invalid shared dependency name: ${name}`,
+      );
+      assert(
+        /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(value.slice(separator + 1)),
+        '--share requires an exact semantic version.',
+      );
+      assert(!Object.hasOwn(sharedDependencies, name), `Duplicate shared dependency: ${name}`);
+      sharedDependencies[name] = value.slice(separator + 1);
+      index += 1;
     } else {
       assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
       if (!sourceDirectory) {
@@ -434,6 +459,10 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
   assert(sourceDirectory, 'The extensions bundle command requires SOURCE_DIR.');
   assert(bundleId, 'The extensions bundle command requires --id BUNDLE_ID.');
   assert(bundleName, 'The extensions bundle command requires --name NAME.');
+  assert(
+    !Object.keys(sharedDependencies).length || buildMode === 'module',
+    '--share requires --build-mode module.',
+  );
   return {
     action: 'bundle',
     bundleId,
@@ -443,6 +472,8 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
     recoveryCapsule,
     sourceDirectory,
     yes,
+    ...(buildMode === undefined ? {} : {buildMode}),
+    ...(Object.keys(sharedDependencies).length ? {sharedDependencies} : {}),
   };
 }
 
@@ -716,6 +747,8 @@ export async function runCli(
         bundleName: options.bundleName,
         extensionIds: options.extensionIds,
         recoveryCapsule: options.recoveryCapsule,
+        buildMode: options.buildMode,
+        sharedDependencies: options.sharedDependencies,
         sourceDirectory: options.sourceDirectory,
         yes: options.yes,
       });

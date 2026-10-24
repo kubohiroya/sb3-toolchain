@@ -3,6 +3,7 @@
 import {assert} from './assert';
 import {extensionHeaderMetadata, unsandboxedRequirement} from './extension-dependencies';
 import type {ExtensionHeaderMetadata, UnsandboxedRequirement} from './extension-dependencies';
+import type {ExtensionModuleBuild, ExtensionModuleBuildReport} from './extension-module-bundle';
 import type {
   EmbeddedExtension,
   ExtensionBundleConfiguration,
@@ -31,6 +32,7 @@ export interface ExtensionBundlePlan {
   components: ExtensionBundleComponent[];
   contents: Buffer;
   counts: ExtensionBundleCounts;
+  moduleBuild?: ExtensionModuleBuildReport;
 }
 
 export interface BuildExtensionBundlesInput {
@@ -38,6 +40,7 @@ export interface BuildExtensionBundlesInput {
   extensionContents: Map<string, Uint8Array>;
   extensions: EmbeddedExtension[];
   project: ProjectJson;
+  moduleBuilds?: ReadonlyMap<string, ExtensionModuleBuild>;
 }
 
 export interface BuildExtensionBundlesResult {
@@ -154,6 +157,26 @@ export function validateExtensionBundleConfigurations(
     assert(isObject(bundle), `Extension bundle ${bundleIndex} must be an object.`);
     const id = validateBundleId(bundle.id, `Extension bundle ${bundleIndex} ID`);
     const name = validateBundleName(bundle.name);
+    assert(
+      bundle.buildMode === undefined ||
+        bundle.buildMode === 'classic' ||
+        bundle.buildMode === 'module',
+      `Invalid buildMode for extension bundle ${id}.`,
+    );
+    if (bundle.sharedDependencies !== undefined) {
+      assert(bundle.buildMode === 'module', `sharedDependencies requires buildMode module: ${id}`);
+      assert(isObject(bundle.sharedDependencies), `sharedDependencies must be an object: ${id}`);
+      for (const [name, version] of Object.entries(bundle.sharedDependencies)) {
+        assert(
+          /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(name),
+          `Invalid shared dependency name: ${name}`,
+        );
+        assert(
+          typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version),
+          `Shared dependency ${name} requires an exact version.`,
+        );
+      }
+    }
     assert(!extensionsById.has(id), `Extension bundle ID collides with an extension: ${id}`);
     assert(!bundleIds.has(id), `Duplicate extension bundle ID: ${id}`);
     bundleIds.add(id);
@@ -198,6 +221,10 @@ export function validateExtensionBundleConfigurations(
       id,
       members,
       name,
+      ...(bundle.buildMode === undefined ? {} : {buildMode: bundle.buildMode}),
+      ...(bundle.sharedDependencies === undefined
+        ? {}
+        : {sharedDependencies: {...bundle.sharedDependencies} as Record<string, string>}),
       ...(capsuleFlag === undefined ? {} : {recoveryCapsule: capsuleFlag}),
       ...(sandboxedNotice === undefined ? {} : {sandboxedNotice}),
       ...(blockEditorRegistrations === undefined ? {} : {blockEditorRegistrations}),
@@ -205,7 +232,7 @@ export function validateExtensionBundleConfigurations(
   });
 }
 
-function readBundleComponents(
+export function readBundleComponents(
   bundle: ExtensionBundleConfiguration,
   extensionsById: Map<string, EmbeddedExtension>,
   extensionContents: Map<string, Uint8Array>,
@@ -462,19 +489,45 @@ export function createStaticExtensionBundle(
   bundle: ExtensionBundleConfiguration,
   components: ExtensionBundleComponent[],
   originalProject: ProjectJson | undefined = undefined,
+  moduleBindings: readonly string[] | undefined = undefined,
 ): Buffer {
+  assert(
+    bundle.buildMode !== 'module' || moduleBindings?.length === components.length,
+    `Module bundle ${bundle.id} requires the asynchronous module builder.`,
+  );
   const componentIds = JSON.stringify(components.map((component) => component.metadata.id));
   const header = bundleHeader(bundle, components);
   const requirement = bundleUnsandboxedRequirement(components);
   const notice = sandboxedNotice(bundle, requirement);
-  const loaders = components.map(componentLoadSource).join('\n');
+  const loaders = moduleBindings
+    ? components
+        .map(
+          (component, index) =>
+            `loadModuleComponent(${JSON.stringify(component.extension.id)}, ${moduleBindings[index]});`,
+        )
+        .join('\n')
+    : components.map(componentLoadSource).join('\n');
+  const moduleValidation = moduleBindings
+    ? components
+        .map(
+          (component, index) => `
+  if (!${moduleBindings[index]}.bundleModuleMetadata ||
+      ${moduleBindings[index]}.bundleModuleMetadata.formatVersion !== 1 ||
+      ${moduleBindings[index]}.bundleModuleMetadata.id !== ${JSON.stringify(component.extension.id)} ||
+      ${moduleBindings[index]}.bundleModuleMetadata.unsandboxed !== ${JSON.stringify(component.metadata.unsandboxed)} ||
+      typeof ${moduleBindings[index]}.createExtension !== 'function') {
+    throw new Error('Module entry contract mismatch: ' + ${JSON.stringify(component.extension.id)});
+  }`,
+        )
+        .join('\n')
+    : '';
   const runtime = `(function (Scratch) {
   'use strict';
 
   const BUNDLE_ID = ${JSON.stringify(bundle.id)};
   const BUNDLE_NAME = ${JSON.stringify(bundle.name)};
   const COMPONENT_IDS = ${componentIds};
-${sandboxedGuardSource(requirement, notice)}  const components = new Map();
+${moduleBindings ? moduleValidation : sandboxedGuardSource(requirement, notice)}  const components = new Map();
 
   const rewriteOpcode = (componentId, opcode) => {
     const prefix = componentId + '_';
@@ -573,7 +626,18 @@ ${bundle.blockEditorRegistrations === true ? "        if (property === 'gui') re
     });
   };
 
-  const loadComponent = (componentId, execute) => {
+${
+  moduleBindings
+    ? `  const loadModuleComponent = (componentId, module) => {
+    const host = createComponentScratch(componentId, () => {throw new Error('Module factory must not register: ' + componentId);});
+    const instance = module.createExtension(host);
+    if (!instance || typeof instance.getInfo !== 'function' || typeof instance.then === 'function') {
+      throw new Error('Module factory must synchronously return an extension: ' + componentId);
+    }
+    components.set(componentId, instance);
+  };
+`
+    : `  const loadComponent = (componentId, execute) => {
     let registration = null;
     let registrationCount = 0;
     let acceptingRegistration = true;
@@ -593,12 +657,36 @@ ${bundle.blockEditorRegistrations === true ? "        if (property === 'gui') re
     }
     components.set(componentId, registration);
   };
-
-${loaders}
+`
+}
+${
+  moduleBindings
+    ? `  try {\n${loaders}\n  } catch (error) {
+    for (const component of [...components.values()].reverse()) {
+      try {Promise.resolve(component.dispose?.()).catch(() => {});} catch (_cleanupError) { /* Preserve the activation error. */ }
+    }
+    throw error;
+  }`
+    : loaders
+}
   class StaticExtensionBundle {
     constructor() {
       this.delegates = new Map();
     }
+${
+  moduleBindings
+    ? `
+    dispose() {
+      if (!this.disposal) this.disposal = (async () => {
+        const results = await Promise.allSettled([...components.values()].reverse().map(component => Promise.resolve().then(() => component.dispose?.())));
+        const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+        if (failures.length) throw new AggregateError(failures, 'Bundle component cleanup failed.');
+      })();
+      return this.disposal;
+    }
+`
+    : ''
+}
 
     addDelegate(name, component, originalName) {
       if (this.delegates.has(name)) throw new Error('Duplicate static bundle delegate: ' + name);
@@ -949,6 +1037,7 @@ export function buildExtensionBundles({
   extensionContents,
   extensions,
   project,
+  moduleBuilds,
 }: BuildExtensionBundlesInput): BuildExtensionBundlesResult {
   if (extensionBundles.length === 0) {
     return {bundlePlans: [], extensionContents, extensions, project};
@@ -962,14 +1051,26 @@ export function buildExtensionBundles({
   for (const bundle of extensionBundles) {
     const components = readBundleComponents(bundle, extensionsById, extensionContents);
     const rewrite = rewriteProjectForBundle(bundledProject, bundle);
-    const contents = createStaticExtensionBundle(bundle, components, project);
+    const moduleBuild = moduleBuilds?.get(bundle.id);
+    assert(
+      bundle.buildMode !== 'module' || moduleBuild,
+      `Module bundle ${bundle.id} requires buildExtensionBundlesWithModules.`,
+    );
+    const contents =
+      moduleBuild?.contents ?? createStaticExtensionBundle(bundle, components, project);
     bundledProject = rewrite.project;
     bundledContents.set(bundle.id, contents);
     for (const memberId of bundle.members) {
       bundlesByMemberId.set(memberId, bundle);
       bundledContents.delete(memberId);
     }
-    bundlePlans.push({bundle, components, contents, counts: rewrite.counts});
+    bundlePlans.push({
+      bundle,
+      components,
+      contents,
+      counts: rewrite.counts,
+      ...(moduleBuild ? {moduleBuild: moduleBuild.report} : {}),
+    });
   }
 
   const bundledExtensions: EmbeddedExtension[] = [];
@@ -997,4 +1098,4 @@ export function buildExtensionBundles({
   };
 }
 
-export {validateBundleId, validateBundleName};
+export {validateBundleId, validateBundleName, bundleHeader, sandboxedGuardSource, sandboxedNotice};

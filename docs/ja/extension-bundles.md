@@ -8,6 +8,105 @@
 
 ## 概要
 
+既定の`classic`方式は完成済みJSを束ねます。依存ライブラリも共有する場合は、以下のmodule方式を明示的に選びます。
+
+## module統合ビルド（既定OFF）
+
+全メンバーが`./bundle-module`の契約に対応する場合、単一のbrowser向け依存graphから複合JSを生成できます。
+入口は`createExtension(scratch)`と`bundleModuleMetadata`（`formatVersion: 1` / `id` / `unsandboxed`）をexportします。
+import時に拡張の生成・登録・listener接続を行わず、factoryは注入されたScratchを使用して同期的に新規instanceを返します。
+toolchainはメンバーごとのScratch proxyを渡して各factoryを1回呼び、外部への登録を複合拡張の1回にまとめます。
+
+`embedded-extensions.json`の各メンバーの既存npm `source`へ、package内のJS入口を追加します。
+次の例のintegrityは実際のファイルのSHA-256に置き換えてください。
+
+```json
+{
+  "provider": "npm",
+  "package": "@example/extension-one",
+  "version": "1.0.0",
+  "artifact": "dist/extension-one.js",
+  "integrity": "sha256-<classic JSのbase64 digest>",
+  "module": {
+    "artifact": "lib-module/src/bundle-module.js",
+    "formatVersion": 1,
+    "integrity": "sha256-<module JSのbase64 digest>",
+    "unsandboxed": "required"
+  }
+}
+```
+
+bundle側には次を指定します。
+
+```json
+{
+  "id": "projectbundle",
+  "name": "Project Extension Bundle",
+  "members": ["extensionone", "extensiontwo"],
+  "buildMode": "module",
+  "sharedDependencies": {"yaml": "2.9.1"},
+  "blockEditorRegistrations": true
+}
+```
+
+対応する固定版packageと共有yamlをプロジェクトの`node_modules`へ事前installし、`pnpm-lock.yaml`または
+`package-lock.json`を保持します。`app`のような展開ソースの親directoryも探索対象です。
+toolchain自身のyamlは共有入力として使用しません。ビルド時にinstall、repository clone、拡張コードや
+project側のビルド設定・pluginの実行は行いません。初期対応はinstall済みnpm artifactで、GitHub sourceはclassicを使います。
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo --build-mode module --share yaml@2.9.1
+# 表示された計画を確認後、同じ指定に --yes を付けて保存する。
+sb3-toolchain build app --output dist/project.sb3
+```
+
+APIは`bundleExtensions` / `planExtensionBundle`の`buildMode`と`sharedDependencies`でも指定できます。
+`--share`は複数指定でき、完全な版番号を要求します。GUIの編集登録変換は従来どおりmanifestで明示選択します。
+
+共有packageの要求範囲と選択版を照合し、browser条件で同じ実体へ解決します。yamlはbrowser入口に限定し、
+別コピーやNode向け実装が混ざるgraphを拒否します。版・classicとの一致・module integrity・対応入口不足も診断します。
+必要なunsandboxed権限を得られなければ、ライブラリ評価やfactory生成より前に従来の案内拡張だけを登録します。
+実行時には全メンバーのmetadataを確認してから初期化し、途中でfactoryが失敗した場合は先行instanceをdisposeします。
+複合拡張の`dispose()`は各メンバーを一度だけ解除します。
+
+`createDeterministicSb3(...).bundlePlans[].moduleBuild`とbundle計画の`moduleBuild`には、bundlerの版、browser / ES2020設定、
+lockのdigest、各入口と読み込んだ依存ファイル・package manifestのdigest、共有実体数を返します。
+生成JSの`Module build inputs`コメントはこの入力記録のdigestです。絶対pathは記録へ含めません。
+依存lockは入力としてhash化し、実際のinstall内容も記録するため、再現時にはlockに従ってinstallしてください。
+ownerの更新時はclassicとmodule両方のintegrityを更新します。module pinが古い場合、更新候補の検証は失敗して既存ソースを保持します。
+
+共有するのはbundle読込単位のライブラリ実装とmodule評価です。Parser / Composer / Document等の解析状態は
+従来どおり入力ごとに生成し、別bundleやGUIの別graphをまたぐsingletonにはしません。
+既存feature flag、保存ID、opcode、解析オプションは変更しません。
+
+### 検証と切戻し
+
+通常のテストには、同版yamlを各メンバーの下に重複配置したfixtureを含めます。
+未公開の実owner入口を検証する場合は、3つのcleanなcheckoutを次の順番で渡します。
+事前に各ownerをbuildしておきます。この準備scriptはローカルでpackし、lifecycle scriptを無効にしてproduction installします。
+
+```bash
+node scripts/prepare-module-owner-fixture.mjs /tmp/new-module-owners \
+  /path/to/turbowarp-structured-data /path/to/turbowarp-yaml-json /path/to/turbowarp-3d-scene-runtime
+SB3_MODULE_OWNER_FIXTURE=/tmp/new-module-owners/app pnpm exec vitest run test/extension-module-owners.test.ts
+```
+
+実owner検証は環境変数の指定時に実行し、通常CIではskipします。結果・全入力digest・owner commitはfixture親の
+`module-owner-results.json`、生成物は`shared-yaml.js` / `shared-yaml.sb3`へ保存します。
+module評価とfactoryのcounterはテスト用transformだけに挿入し、サイズと再現性はcounterを含まない生成物で測定します。
+解析・Schema検証・編集登録 / 解除・権限分岐・復元カプセルも検証します。
+
+切戻しは`buildMode`を未指定または`classic`にし、`sharedDependencies`を削除して再生成します。
+元classic JSを保持しているためmodule依存やlockなしでも生成できます。設定を削除するsourceのunbundleも従来どおりです。
+SB3単体からの解除には`recoveryCapsule: true`を別途選択してください。カプセルは元classic JSをデータとして含むため、
+実行される共有実装が1組でも成果物サイズは増えます。計測時はカプセルをOFFにします。
+ブラウザ上の実際の権限dialogやGUI操作は、後述の手動検証項目で確認してください。
+
+## classic方式の概要
+
+以下は既定classic方式の説明です。module方式でも同じopcode / storage / 編集binding変換と復元処理を使用します。
+
 ```mermaid
 flowchart LR
   subgraph Source["展開ソース（信頼できる情報源）"]

@@ -173,6 +173,8 @@ only in the generated SB3.
 - `name`: single-line name displayed in the permission prompt and extension category
 - `members`: two or more individual extension IDs; their order defines block and menu composition order. The palette receives a decorated, metadata-bearing bundle LABEL heading and a double separator between groups, while LABEL entries and separators from the original extensions remain unchanged
 - `recoveryCapsule`: optional boolean, default `false`. Set it to `true` only when the extra size is acceptable and direct unbundling from the generated SB3 is required
+- `buildMode`: optional `classic` (default) or `module`. Module mode requires each member's npm `source.module` JavaScript artifact, format 1, SHA-256 integrity, and explicit `unsandboxed` requirement. It builds one browser dependency graph without executing owner code
+- `sharedDependencies`: optional package-to-exact-version map, allowed only in module mode. The selected packages must be installed in the project with a dependency lock; compatible member imports share one real package. See the [module build guide](extension-bundles.md#module-builds-off-by-default)
 - `sandboxedNotice`: optional object mapping lowercase language tags to the message shown when the bundle is loaded sandboxed. Allowed only when a member's `// Unsandboxed:` header makes the bundle `required` or `optional`; built-in `en` and `ja` messages apply otherwise. See [`extension-bundles.md`](extension-bundles.md#declare-unsandboxed-loading)
 
 A member cannot belong to more than one bundle. Individual entries, individual JavaScript, `source`,

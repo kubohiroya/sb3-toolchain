@@ -129,6 +129,32 @@ export function validateExtensionSourceMetadata(
     `Managed extension ${extension.id} requires SHA-256 integrity.`,
   );
   validateExtensionApiManifestSourceMetadata(extension);
+  if (source.module !== undefined) {
+    assert(
+      source.provider === 'npm',
+      `Module entry requires an installed npm source: ${extension.id}`,
+    );
+    const module = source.module as Record<string, unknown>;
+    assert(
+      module && typeof module === 'object' && !Array.isArray(module),
+      `Invalid module source: ${extension.id}`,
+    );
+    assert(module.formatVersion === 1, `Unsupported module formatVersion for ${extension.id}.`);
+    assert(
+      typeof module.artifact === 'string' && module.artifact.length > 0,
+      `Missing module artifact: ${extension.id}`,
+    );
+    validateArchiveEntryName(module.artifact);
+    assert(!module.artifact.endsWith('/'), `Module artifact must be a file: ${extension.id}`);
+    assert(
+      typeof module.integrity === 'string' && /^sha256-[A-Za-z0-9+/]{43}=$/u.test(module.integrity),
+      `Module requires SHA-256 integrity: ${extension.id}`,
+    );
+    assert(
+      (unsandboxedRequirements as readonly unknown[]).includes(module.unsandboxed),
+      `Invalid module sandbox requirement: ${extension.id}`,
+    );
+  }
   return source as unknown as ExtensionSource;
 }
 
