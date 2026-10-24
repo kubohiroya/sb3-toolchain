@@ -2,7 +2,7 @@
 
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {cp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {promisify} from 'node:util';
 
@@ -46,12 +46,19 @@ for (const [index, owner] of owners.entries()) {
   if (status.trim()) throw new Error('Owner checkout must be clean: ' + cwd);
   const {stdout: revision} = await run('git', ['rev-parse', 'HEAD'], {cwd});
   await readFile(path.join(cwd, 'lib-module/src/bundle-module.js'));
-  const {stdout} = await run(
+  const previous = new Set(await readdir(path.join(root, 'packages')));
+  await run(
     'npm',
     ['pack', '--ignore-scripts', '--json', '--pack-destination', path.join(root, 'packages')],
     {cwd},
   );
-  const [packed] = JSON.parse(stdout);
+  // Inspect the new file rather than parsing npm output that may contain prepare logs.
+  const tarballs = (await readdir(path.join(root, 'packages'))).filter(
+    (file) => file.endsWith('.tgz') && !previous.has(file),
+  );
+  if (tarballs.length !== 1)
+    throw new Error('Expected one new packed owner artifact: ' + owner.package);
+  const packed = {filename: tarballs[0]};
   dependencies[owner.package] = './packages/' + packed.filename;
   provenance.push({
     package: owner.package,
