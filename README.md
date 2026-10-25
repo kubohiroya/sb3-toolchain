@@ -1,6 +1,6 @@
 # sb3-toolchain
 
-[日本語](README.ja.md)
+English | [日本語](README.ja.md)
 
 A Node.js toolchain for managing Scratch 3 and TurboWarp `.sb3` projects as Git-diffable
 expanded sources and rebuilding bit-for-bit identical SB3 files from the same input.
