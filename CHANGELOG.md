@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 - 2026-10-25
+
+- Add opt-in module builds that combine installed extension factories into one browser dependency graph.
+- Share explicitly pinned dependencies such as yaml, validate module integrity and compatible ranges, and report input digests.
+- Preserve member opcode, storage, editor, sandbox and recovery behavior; initialize each member once and register the composite once.
+- Keep classic mode as the default. Rollback: select classic mode, or pin `@kubohiroya/sb3-toolchain@0.16.0`.
+
 ## 0.16.0 - 2026-10-20
 
 - Supply all three palette colors for normal and sandboxed bundles, replacing the downstream app patch.
