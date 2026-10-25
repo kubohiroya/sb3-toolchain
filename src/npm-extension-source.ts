@@ -25,7 +25,10 @@ function packageSegments(packageName: string): string[] {
   return packageName.startsWith('@') ? packageName.split('/') : [packageName];
 }
 
-async function findPackageDirectory(sourceDirectory: string, packageName: string): Promise<string> {
+export async function findPackageDirectory(
+  sourceDirectory: string,
+  packageName: string,
+): Promise<string> {
   let current = path.resolve(sourceDirectory);
   while (true) {
     const candidate = path.join(current, 'node_modules', ...packageSegments(packageName));
@@ -45,7 +48,7 @@ async function findPackageDirectory(sourceDirectory: string, packageName: string
   );
 }
 
-async function readPackageArtifact(
+export async function readPackageArtifact(
   packageDirectory: string,
   artifact: string,
   maximumBytes: number,

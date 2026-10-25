@@ -9,6 +9,111 @@ one extension.
 
 ## Overview
 
+The default `classic` mode wraps completed scripts. To share their dependencies too, opt in to the
+module build described below. The remaining classic runtime and recovery documentation also applies
+to module bundles unless noted.
+
+## Module builds (off by default)
+
+Every member must provide an installed npm JavaScript entry exporting `createExtension(scratch)` and
+`bundleModuleMetadata` (`formatVersion: 1`, `id`, `unsandboxed`). Importing it must not activate an
+extension, register one, or connect listeners. The factory synchronously returns a fresh instance
+using the supplied member Scratch proxy. The composite calls each factory once and registers once.
+
+Add a `module` declaration to each member's existing npm `source`. Replace the digest placeholders
+with the SHA-256 of the respective files:
+
+```json
+{
+  "provider": "npm",
+  "package": "@example/extension-one",
+  "version": "1.0.0",
+  "artifact": "dist/extension-one.js",
+  "integrity": "sha256-<base64 classic digest>",
+  "module": {
+    "artifact": "lib-module/src/bundle-module.js",
+    "formatVersion": 1,
+    "integrity": "sha256-<base64 module digest>",
+    "unsandboxed": "required"
+  }
+}
+```
+
+Select the build and exact shared versions on the bundle:
+
+```json
+{
+  "id": "projectbundle",
+  "name": "Project Extension Bundle",
+  "members": ["extensionone", "extensiontwo"],
+  "buildMode": "module",
+  "sharedDependencies": {"yaml": "2.9.1"},
+  "blockEditorRegistrations": true
+}
+```
+
+Install the pinned owner packages and shared dependencies in the project's `node_modules` first,
+retaining either `pnpm-lock.yaml` or `package-lock.json`. Parent directories of the expanded source
+are searched. The toolchain's own yaml is not a shared input. Builds do not install packages, clone
+repositories, execute owner code, or load project build configurations or plugins. The initial module
+scope is installed npm artifacts; GitHub sources continue to use classic mode.
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo --build-mode module --share yaml@2.9.1
+# Review the plan, then repeat with --yes to save it.
+sb3-toolchain build app --output dist/project.sb3
+```
+
+`bundleExtensions` and `planExtensionBundle` also accept `buildMode` and `sharedDependencies`.
+Repeat `--share` for additional packages. GUI editor adaptation remains an explicit manifest option.
+
+The resolver checks the selected version against each importer's declared range and uses one real
+package under browser conditions. yaml must use its browser entry; duplicate copies or mixed Node
+and browser graphs fail. Missing entries, mismatched package versions, classic artifacts, module
+digests, and unsupported contracts also fail. A required sandbox guard runs before any library
+evaluation or factory activation; without permission only the existing notice extension registers.
+All member metadata is checked before any factory activates. If a later factory fails, prior
+instances are disposed. The composite's `dispose()` cleans up each member once.
+
+The `moduleBuild` report on bundle plans and `createDeterministicSb3(...).bundlePlans[]` records the
+bundler version, browser / ES2020 settings, lock digest, member entries, loaded files and package
+manifest digests, and shared package copy counts. `Module build inputs` in the generated JS hashes
+this record; absolute paths are omitted. The lock is hashed as an input alongside the actual installed
+files, so install from the lock when reproducing a build. When updating an owner, update both classic
+and module integrity pins. A stale module pin rejects the candidate while retaining the source.
+
+Library code and module evaluation are shared per bundle load. Parser, Composer, Document, and other
+parse state remain independent for each input. Other bundles and separate GUI graphs are outside
+this scope. Existing owner feature flags, IDs, opcodes, and parse options stay intact.
+
+### Verification and rollback
+
+Regular tests deliberately install private copies of the same yaml version under multiple members.
+To verify the actual unpublished owner entries, build their clean checkouts first, then run:
+
+```bash
+node scripts/prepare-module-owner-fixture.mjs /tmp/new-module-owners \
+  /path/to/turbowarp-structured-data /path/to/turbowarp-yaml-json /path/to/turbowarp-3d-scene-runtime
+SB3_MODULE_OWNER_FIXTURE=/tmp/new-module-owners/app pnpm exec vitest run test/extension-module-owners.test.ts
+```
+
+The preparation script packs local artifacts and installs production dependencies with lifecycle
+scripts disabled. The owner test runs only with the environment variable; ordinary CI skips it.
+It writes `module-owner-results.json` (including owner commits and input digests), `shared-yaml.js`,
+and `shared-yaml.sb3` beside `app`. Evaluation and factory counters are injected only into the test
+build; size and reproducibility measurements use uninstrumented output. Tests also cover parsing,
+runtime Schema validation, editor registration and cleanup, sandbox handling, and recovery.
+
+To roll back, omit `buildMode` or set it to `classic`, remove `sharedDependencies`, and rebuild from
+the retained classic scripts. That path needs neither installed module dependencies nor a lock.
+Source-based unbundling is unchanged. Direct unbundling from an SB3 still requires the separate
+`recoveryCapsule: true` option. The capsule contains original classic scripts as data, increasing
+artifact size even though the executing shared library has one copy. Measure sizes with it disabled.
+Actual browser permission dialogs and GUI interaction still need the manual checks below.
+
+## Classic overview
+
 ```mermaid
 flowchart LR
   subgraph Source["Expanded source (authoritative)"]

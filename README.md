@@ -117,6 +117,8 @@ await bundleExtensions({
   extensionIds: ['extensionone', 'extensiontwo'],
   yes: true,
 });
+// Opt in to one dependency graph when every member provides a pinned source.module entry:
+// await bundleExtensions({...options, buildMode: 'module', sharedDependencies: {yaml: '2.9.1'}});
 await unbundleExtensions({
   sourceDirectory: 'app',
   bundleId: 'projectbundle',
@@ -137,7 +139,7 @@ await unbundleSb3({
 - [`docs/project-asset-additions.md`](docs/project-asset-additions.md): JSON/YAML `--project-assets`, backdrops, and editable or strict locks
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
 - [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates
-- [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling into one permission unit and reversible unbundling
+- [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling, opt-in module builds with shared dependencies, and reversible unbundling
 
 ## Development
 

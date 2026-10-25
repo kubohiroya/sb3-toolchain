@@ -169,6 +169,8 @@ APIマニフェストファイルは展開ソースの検証入力であり、SB
   LABELエントリとseparatorは変更されない
 - `recoveryCapsule`: 任意の真偽値で、既定値は`false`。追加サイズを許容でき、生成SB3単体からの直接unbundleが
   必要な場合に限り`true`を指定する
+- `buildMode`: 任意の`classic`（既定）または`module`。module方式では各メンバーのnpm `source.module`にJS artifact、formatVersion 1、SHA-256 integrity、明示的な`unsandboxed`要件を指定し、ownerコードを実行せず単一のbrowser依存graphをビルドする
+- `sharedDependencies`: module方式だけで指定できるpackage名と完全な版番号の対応表。projectへlock付きで事前installし、互換な依存を同じ実体へ解決する。[module統合ビルドの説明](extension-bundles.md#module統合ビルド既定off)を参照
 - `sandboxedNotice`: 任意のオブジェクトで、bundleがサンドボックス内で読み込まれたときの通知文を小文字の言語タグ
   ごとに指定する。メンバーの`// Unsandboxed:`ヘッダーによってbundleが`required`または`optional`になる場合だけ
   指定でき、省略時は内蔵の`en`と`ja`の通知文を使う。[`extension-bundles.md`](extension-bundles.md)を参照

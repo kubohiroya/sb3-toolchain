@@ -26,6 +26,14 @@ export interface NpmExtensionSource {
   artifact: string;
   integrity: string;
   apiManifest?: ExtensionApiManifestSource;
+  module?: ExtensionModuleSource;
+}
+
+export interface ExtensionModuleSource {
+  artifact: string;
+  formatVersion: 1;
+  integrity: string;
+  unsandboxed: 'required' | 'optional' | 'not-needed';
 }
 
 export type ExtensionSource = GitHubExtensionSource | NpmExtensionSource;
@@ -48,6 +56,8 @@ export interface ExtensionBundleConfiguration {
   recoveryCapsule?: boolean;
   sandboxedNotice?: Record<string, string>;
   blockEditorRegistrations?: boolean;
+  buildMode?: 'classic' | 'module';
+  sharedDependencies?: Record<string, string>;
 }
 
 export interface EmbeddedExtensionManifest {

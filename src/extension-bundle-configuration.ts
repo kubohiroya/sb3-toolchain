@@ -5,11 +5,12 @@ import path from 'node:path';
 
 import {assert} from './assert';
 import {
-  buildExtensionBundles,
   validateBundleId,
   validateBundleName,
   validateExtensionBundleConfigurations,
 } from './extension-bundle';
+import {buildExtensionBundlesWithModules} from './extension-module-bundle';
+import type {ExtensionModuleBuildReport} from './extension-module-bundle';
 import type {ExtensionBundlePlan} from './extension-bundle';
 import {
   assertNoInterruptedRollback,
@@ -31,7 +32,7 @@ interface ExtensionBundleComponentMetadata {
 }
 
 interface ConfigurationContext {
-  buildPlan: ReturnType<typeof buildExtensionBundles>;
+  buildPlan: Awaited<ReturnType<typeof buildExtensionBundlesWithModules>>;
   candidateManifest: EmbeddedExtensionManifest;
   configuredBundle: ExtensionBundlePlan;
   extensionManifest: EmbeddedExtensionManifest;
@@ -52,6 +53,8 @@ export interface ExtensionBundleConfigurationInput {
   recoveryCapsule?: boolean;
   sourceDirectory: string;
   yes?: boolean;
+  buildMode?: ExtensionBundleConfiguration['buildMode'];
+  sharedDependencies?: Record<string, string>;
 }
 
 export interface ExtensionBundlePlanResult {
@@ -64,6 +67,7 @@ export interface ExtensionBundlePlanResult {
   members: string[];
   recoveryCapsule: boolean;
   sourceDirectory: string;
+  moduleBuild?: ExtensionModuleBuildReport;
 }
 
 export interface ExtensionBundleApplyResult extends ExtensionBundlePlanResult {
@@ -123,6 +127,8 @@ async function configurationContext({
   bundleName,
   extensionIds,
   recoveryCapsule,
+  buildMode,
+  sharedDependencies,
   sourceDirectory,
   willReplace,
 }: Required<
@@ -133,6 +139,8 @@ async function configurationContext({
 > & {
   extensionIds?: string[];
   willReplace: boolean;
+  buildMode?: ExtensionBundleConfiguration['buildMode'];
+  sharedDependencies?: Record<string, string>;
 }): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
   validateBundleName(bundleName);
@@ -161,6 +169,8 @@ async function configurationContext({
       id: bundleId,
       members,
       name: bundleName,
+      ...(buildMode === undefined ? {} : {buildMode}),
+      ...(sharedDependencies === undefined ? {} : {sharedDependencies}),
       ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
     },
   ];
@@ -168,7 +178,8 @@ async function configurationContext({
     candidateManifest.extensionBundles,
     candidateManifest.extensions,
   );
-  const buildPlan = buildExtensionBundles({
+  const buildPlan = await buildExtensionBundlesWithModules({
+    sourceDirectory: source.resolvedSourceDirectory,
     extensionBundles,
     extensionContents: source.extensionContents,
     extensions: source.extensions,
@@ -185,6 +196,8 @@ export async function planExtensionBundle({
   extensionIds,
   recoveryCapsule = false,
   sourceDirectory,
+  buildMode,
+  sharedDependencies,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
     bundleId,
@@ -192,6 +205,8 @@ export async function planExtensionBundle({
     extensionIds,
     recoveryCapsule,
     sourceDirectory,
+    buildMode,
+    sharedDependencies,
     willReplace: false,
   });
   return {
@@ -204,6 +219,9 @@ export async function planExtensionBundle({
     members: [...context.configuredBundle.bundle.members],
     recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule === true,
     sourceDirectory: context.source.resolvedSourceDirectory,
+    ...(context.configuredBundle.moduleBuild
+      ? {moduleBuild: context.configuredBundle.moduleBuild}
+      : {}),
   };
 }
 
@@ -272,6 +290,8 @@ export async function bundleExtensions({
   recoveryCapsule = false,
   sourceDirectory,
   yes = false,
+  buildMode,
+  sharedDependencies,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
     bundleId,
@@ -279,6 +299,8 @@ export async function bundleExtensions({
     extensionIds,
     recoveryCapsule,
     sourceDirectory,
+    buildMode,
+    sharedDependencies,
     willReplace: yes,
   });
   const plan = {
@@ -289,6 +311,9 @@ export async function bundleExtensions({
     members: [...context.configuredBundle.bundle.members],
     recoveryCapsule: context.configuredBundle.bundle.recoveryCapsule === true,
     sourceDirectory: context.source.resolvedSourceDirectory,
+    ...(context.configuredBundle.moduleBuild
+      ? {moduleBuild: context.configuredBundle.moduleBuild}
+      : {}),
   };
   if (!yes) {
     return {applied: false, changed: true, ...plan, rollbackCleanupWarning: null};
