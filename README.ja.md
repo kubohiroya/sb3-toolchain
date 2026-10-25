@@ -1,6 +1,6 @@
 # sb3-toolchain
 
-[English](README.md)
+[English](README.md) | 日本語
 
 Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確認できる展開ソースとして管理し、
 同じ入力からバイト単位で同一のSB3ファイルを再ビルドするためのNode.jsツールチェーンです。
