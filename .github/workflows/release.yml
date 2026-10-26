@@ -1,0 +1,131 @@
+name: Release
+
+# The family's standard release: a pushed v<version> tag is checked, packed, attached to the
+# GitHub Release and published to npm through trusted publishing (OIDC). No npm token is stored.
+#
+# npmjs.com side (package Settings -> Trusted publisher) must name:
+#   Organization or user  kubohiroya
+#   Repository            sb3-toolchain
+#   Workflow filename     release.yml   <- the filename alone
+#   Environment           (empty)
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+        # No registry-url: it writes an .npmrc with a placeholder token, and npm sends a configured
+        # token instead of exchanging the workflow identity, so publishing fails with
+        # "OIDC permission denied".
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - name: Check the tag names the package version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not name package.json version $version."
+            exit 1
+          fi
+      - name: Pack the npm archive
+        id: pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/npm"
+          npm pack --ignore-scripts --json --pack-destination "$RUNNER_TEMP/npm" > "$RUNNER_TEMP/pack.json"
+          file="$(node -p "const r = require(process.env.RUNNER_TEMP + '/pack.json'); (Array.isArray(r) ? r[0] : Object.values(r)[0]).filename")"
+          echo "file=$RUNNER_TEMP/npm/$file" >> "$GITHUB_OUTPUT"
+      - name: Attach to the GitHub Release
+        # An attachment that already exists must be byte-identical: a release driver may have
+        # uploaded its locally verified archive first, and a differing CI build stops here,
+        # before anything reaches npm.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NPM_ARCHIVE: ${{ steps.pack.outputs.file }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if ! gh release view "$tag" > /dev/null 2>&1; then
+            prerelease=()
+            case "$version" in *-*) prerelease=(--prerelease) ;; esac
+            gh release create "$tag" --verify-tag --title "$name $version" --generate-notes "${prerelease[@]}" ||
+              gh release view "$tag" > /dev/null
+          fi
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[] | "\(.name)\t\(.digest)"')"
+          shopt -s nullglob
+          for file in "$NPM_ARCHIVE"; do
+            want="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+            have="$(printf '%s\n' "$existing" | awk -F'\t' -v n="$(basename "$file")" '$1 == n { print $2 }')"
+            if [ -z "$have" ]; then
+              gh release upload "$tag" "$file"
+            elif [ "$have" != "$want" ]; then
+              echo "::error::$(basename "$file") is already attached with different content."
+              exit 1
+            fi
+          done
+      - name: Use an npm that supports trusted publishing
+        run: npm install --global npm@11.21.0
+      - name: Publish to npm
+        # Last step: a failed check or mismatched tag stops the release before the registry,
+        # where a version cannot be replaced.
+        env:
+          NPM_ARCHIVE: ${{ steps.pack.outputs.file }}
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          want="$(sha1sum "$NPM_ARCHIVE" | cut -d' ' -f1)"
+          have="$(npm view "$name@$version" dist.shasum --prefer-online 2> /dev/null || true)"
+          if [ -n "$have" ]; then
+            if [ "$have" != "$want" ]; then
+              echo "::error::$name@$version is already published with different content."
+              exit 1
+            fi
+            echo "$name@$version is already published with this archive."
+          else
+            dist_tag="$(node -p "require('./package.json').publishConfig?.tag ?? ''")"
+            if [ -z "$dist_tag" ]; then
+              case "$version" in *-*) dist_tag=next ;; *) dist_tag=latest ;; esac
+            fi
+            npm publish "$NPM_ARCHIVE" --access public --provenance --tag "$dist_tag"
+          fi
+          # Accepting a publish and serving it differ; wait for the registry itself.
+          for attempt in $(seq 1 60); do
+            have="$(npm view "$name@$version" dist.shasum --prefer-online 2> /dev/null || true)"
+            [ -n "$have" ] && break
+            sleep 10
+          done
+          if [ "$have" != "$want" ]; then
+            echo "::error::The registry does not serve $name@$version with the packed archive."
+            exit 1
+          fi
+      - name: Point latest and next at this release
+        # The family keeps both dist-tags on the newest verified release
+        # (kubohiroya/turbowarp-plus-packages#16).
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          for tag in latest next; do
+            if [ "$(npm view "$name" "dist-tags.$tag" --prefer-online 2> /dev/null || true)" != "$version" ]; then
+              npm dist-tag add "$name@$version" "$tag"
+            fi
+          done
