@@ -24,7 +24,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 
 ## Requirements
 
-- Node.js 22.12.0 or later
+- Node.js 24 or later
 - pnpm 11
 
 ## Installation
@@ -147,6 +147,7 @@ The source is TypeScript, built with Vite in library mode and tested with Vitest
 runs lint, format, typecheck, tests, build, repository policy, and pack checks in that order.
 
 ```bash
+npm install --global corepack@latest
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check

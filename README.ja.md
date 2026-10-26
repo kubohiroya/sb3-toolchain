@@ -23,7 +23,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 
 ## 必要環境
 
-- Node.js 22.12.0以降
+- Node.js 24以降
 - pnpm 11
 
 ## インストール
@@ -144,6 +144,7 @@ await unbundleSb3({
 `pnpm run check`は、lint・format・typecheck・test・build・リポジトリポリシー・pack検査をこの順で実行します。
 
 ```bash
+npm install --global corepack@latest
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check

@@ -58,7 +58,7 @@ assert(packageJson.license === policy.license, 'package license must be MPL-2.0.
 assert(packageJson.author === policy.authorPolicy.name, 'package author must use the shared name.');
 assert(!packageJson.author.includes('@'), 'package author must not include email.');
 assert(packageJson.homepage === policy.homepage, 'package homepage must use GitHub Pages.');
-assert(packageJson.packageManager === 'pnpm@11.11.0', 'package manager must stay pinned.');
+assert(packageJson.packageManager === 'pnpm@11.28.8', 'package manager must stay pinned.');
 assert(
   packageJson.scripts['repo:check'] === 'node --experimental-strip-types scripts/check-repo.ts',
   'repo:check script missing.',
