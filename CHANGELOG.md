@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.0 - 2026-10-27
+
+- Reconcile the family release registration without changing runtime behavior.
+
 ## 0.17.0 - 2026-10-25
 
 - Add opt-in module builds that combine installed extension factories into one browser dependency graph.
