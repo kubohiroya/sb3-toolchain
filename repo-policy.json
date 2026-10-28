@@ -8,7 +8,8 @@
   "repository": "kubohiroya/sb3-toolchain",
   "authorPolicy": {
     "name": "Hiroya Kubo",
-    "email": false
+    "email": "hiroya@cuc.ac.jp",
+    "url": "https://github.com/kubohiroya"
   },
   "publicSurface": {
     "cli": "sb3-toolchain",

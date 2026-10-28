@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.0 - 2026-10-28
+
+- Refresh family dependencies and release registration.
+
 ## 0.18.0 - 2026-10-27
 
 - Reconcile the family release registration without changing runtime behavior.

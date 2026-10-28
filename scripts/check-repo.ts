@@ -3,7 +3,7 @@
 import {readFile} from 'node:fs/promises';
 
 interface PackageJson {
-  author: string;
+  author: {name: string; email: string; url: string};
   files: string[];
   homepage: string;
   license: string;
@@ -14,7 +14,7 @@ interface PackageJson {
 }
 
 interface RepoPolicy {
-  authorPolicy: {email: boolean; name: string};
+  authorPolicy: {email: string; name: string; url: string};
   homepage: string;
   license: string;
   packageName: string;
@@ -53,10 +53,21 @@ const legacyPosePattern = new RegExp(
 );
 
 assert(packageJson.name === policy.packageName, 'package name must match repo policy.');
-assert(packageJson.version === '0.18.0', 'package version must be 0.18.0.');
+assert(packageJson.version === '0.19.0', 'package version must be 0.19.0.');
 assert(packageJson.license === policy.license, 'package license must be MPL-2.0.');
-assert(packageJson.author === policy.authorPolicy.name, 'package author must use the shared name.');
-assert(!packageJson.author.includes('@'), 'package author must not include email.');
+assert(
+  typeof packageJson.author === 'object' && packageJson.author !== null,
+  'package author must be a metadata object.',
+);
+assert(
+  packageJson.author.name === policy.authorPolicy.name,
+  'package author must use the shared name.',
+);
+assert(
+  packageJson.author.email === policy.authorPolicy.email,
+  'package author email must match policy.',
+);
+assert(packageJson.author.url === policy.authorPolicy.url, 'package author URL must match policy.');
 assert(packageJson.homepage === policy.homepage, 'package homepage must use GitHub Pages.');
 assert(packageJson.packageManager === 'pnpm@11.28.8', 'package manager must stay pinned.');
 assert(
@@ -98,7 +109,7 @@ includesEvery(
 );
 includesEvery(
   changelog,
-  [`## ${version} - 2026-10-27`, '// Unsandboxed: required | optional | not-needed'],
+  [`## ${version} - 2026-10-28`, '// Unsandboxed: required | optional | not-needed'],
   'CHANGELOG.md',
 );
 includesEvery(license, ['Mozilla Public License Version 2.0', '3. Responsibilities'], 'LICENSE');
