@@ -1,10 +1,14 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
-  "author": "Hiroya Kubo",
+  "author": {
+    "name": "Hiroya Kubo",
+    "email": "hiroya@cuc.ac.jp",
+    "url": "https://github.com/kubohiroya"
+  },
   "homepage": "https://kubohiroya.github.io/sb3-toolchain/",
   "repository": {
     "type": "git",
