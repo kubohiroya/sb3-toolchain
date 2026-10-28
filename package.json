@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
@@ -85,9 +85,9 @@
     "source-control",
     "reproducible-builds"
   ],
-  "gitHead": "b69f3f7e088d8b055aacc5aea3af3f44f0f09d1f",
+  "gitHead": "642f5c81d99c1892fdfc90b5a9bd52fe90e65184",
   "x-turbowarp-source": {
-    "revision": "b69f3f7e088d8b055aacc5aea3af3f44f0f09d1f",
+    "revision": "642f5c81d99c1892fdfc90b5a9bd52fe90e65184",
     "revisionRole": "base-commit",
     "sourceState": "local-release-overlay"
   }

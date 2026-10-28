@@ -9,6 +9,8 @@ import {buildSb3} from './build';
 import {packageVersion} from './constants';
 import {unbundleSb3} from './extension-bundle-archive';
 import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration';
+import {validateExtensionBundleMetadata} from './extension-bundle-metadata';
+import type {ExtensionBundleMetadata} from './types';
 import {migrateExtensionId} from './extension-id-migration';
 import type {ExtensionIdMigrationCounts, ExtensionIdReference} from './extension-id-migration';
 import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync';
@@ -82,6 +84,7 @@ export interface ExtensionsBundleCliOptions {
   action: 'bundle';
   bundleId: string;
   bundleName: string;
+  metadata?: ExtensionBundleMetadata;
   command: 'extensions';
   extensionIds: string[];
   recoveryCapsule: boolean;
@@ -148,7 +151,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--build-mode classic|module] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -403,6 +406,7 @@ function parseExtensionIdMigrationArguments(arguments_: string[]): ExtensionsMig
 function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCliOptions {
   let bundleId: string | undefined;
   let bundleName: string | undefined;
+  let metadata: ExtensionBundleMetadata | undefined;
   let recoveryCapsule = false;
   let sourceDirectory: string | undefined;
   const extensionIds: string[] = [];
@@ -417,6 +421,17 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
       index += 1;
     } else if (argument === '--name') {
       bundleName = takeValue(arguments_, index, '--name');
+      index += 1;
+    } else if (argument === '--metadata-json') {
+      assert(metadata === undefined, '--metadata-json may only be specified once.');
+      const value = takeValue(arguments_, index, '--metadata-json');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        throw new Error('--metadata-json must contain a JSON object.');
+      }
+      metadata = validateExtensionBundleMetadata(parsed);
       index += 1;
     } else if (argument === '--yes') {
       yes = true;
@@ -467,6 +482,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
     action: 'bundle',
     bundleId,
     bundleName,
+    ...(metadata === undefined ? {} : {metadata}),
     command: 'extensions',
     extensionIds,
     recoveryCapsule,
@@ -745,6 +761,7 @@ export async function runCli(
       const result = await bundleExtensions({
         bundleId: options.bundleId,
         bundleName: options.bundleName,
+        metadata: options.metadata,
         extensionIds: options.extensionIds,
         recoveryCapsule: options.recoveryCapsule,
         buildMode: options.buildMode,
