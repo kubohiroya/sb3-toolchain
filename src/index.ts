@@ -5,6 +5,7 @@ export type {
   EmbeddedExtensionManifest,
   ExtensionApiManifestSource,
   ExtensionBundleConfiguration,
+  ExtensionBundleMetadata,
   ExtensionEncoding,
   ExtensionModuleSource,
   ExtensionSource,

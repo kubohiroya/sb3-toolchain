@@ -64,6 +64,36 @@ sb3-toolchain build app --output dist/project.sb3
 APIは`bundleExtensions` / `planExtensionBundle`の`buildMode`と`sharedDependencies`でも指定できます。
 `--share`は複数指定でき、完全な版番号を要求します。GUIの編集登録変換は従来どおりmanifestで明示選択します。
 
+任意の`metadata`は、先頭メンバーではなくbundle全体の表示情報を明示します。
+
+```json
+{
+  "description": "The complete application extension.",
+  "descriptions": {"ja": "アプリ全体の機能拡張。"},
+  "author": "Application Author",
+  "authorURL": "https://example.com/author",
+  "version": "1.2.3",
+  "repository": "https://github.com/example/application",
+  "docsURL": "https://example.com/docs/",
+  "banner": "https://example.com/banner.png",
+  "package": "@example/application"
+}
+```
+
+このobjectを`extensionBundles[].metadata`へ保存するか、APIの`bundleExtensions`／
+`planExtensionBundle`へ`metadata`として渡します。CLIではbundleコマンドに
+`--metadata-json '{"version":"1.2.3"}'`を指定します。公開型`ExtensionBundleMetadata`は
+`updatedAt`も受け付けます。各値は1000文字以内の単行で、localeは小文字の言語タグです。
+repository／docsURLはHTTPS、authorURLはHTTPまたはHTTPSとし、同じobjectにauthorも明示します。
+bannerはHTTPSまたはPNG／JPEG／GIF／WebP／SVGの画像data URIを受け付け、data URIのprefixを
+小文字に正規化します。不正な値・認証情報付きURL・未定義fieldは拒否します。
+
+classic／moduleの両方でコメントheaderへ出力し、表示情報を得るためにメンバーを実行しません。
+名前とIDは従来のbundle設定、ライセンスと実行要件は従来のメンバー集約を維持します。
+メンバーのpackageやauthorURLをbundle全体へ推測適用しません。metadataを省略した場合の
+生成bytesは従来どおりです。metadataを外すと以後のbuildは従来出力に戻せますが、凍結済みの
+リリース成果物は元のbytesを保持してください。
+
 共有packageの要求範囲と選択版を照合し、browser条件で同じ実体へ解決します。yamlはbrowser入口に限定し、
 別コピーやNode向け実装が混ざるgraphを拒否します。版・classicとの一致・module integrity・対応入口不足も診断します。
 必要なunsandboxed権限を得られなければ、ライブラリ評価やfactory生成より前に従来の案内拡張だけを登録します。

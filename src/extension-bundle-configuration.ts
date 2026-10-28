@@ -10,6 +10,7 @@ import {
   validateExtensionBundleConfigurations,
 } from './extension-bundle';
 import {buildExtensionBundlesWithModules} from './extension-module-bundle';
+import {validateExtensionBundleMetadata} from './extension-bundle-metadata';
 import type {ExtensionModuleBuildReport} from './extension-module-bundle';
 import type {ExtensionBundlePlan} from './extension-bundle';
 import {
@@ -49,6 +50,7 @@ interface UnbundleContext {
 export interface ExtensionBundleConfigurationInput {
   bundleId: string;
   bundleName: string;
+  metadata?: ExtensionBundleConfiguration['metadata'];
   extensionIds?: string[];
   recoveryCapsule?: boolean;
   sourceDirectory: string;
@@ -61,6 +63,7 @@ export interface ExtensionBundlePlanResult {
   applied: boolean;
   bundleId: string;
   bundleName: string;
+  metadata?: ExtensionBundleConfiguration['metadata'];
   changed: boolean;
   components: ExtensionBundleComponentMetadata[];
   counts: ExtensionBundlePlan['counts'];
@@ -129,6 +132,7 @@ async function configurationContext({
   recoveryCapsule,
   buildMode,
   sharedDependencies,
+  metadata,
   sourceDirectory,
   willReplace,
 }: Required<
@@ -141,6 +145,7 @@ async function configurationContext({
   willReplace: boolean;
   buildMode?: ExtensionBundleConfiguration['buildMode'];
   sharedDependencies?: Record<string, string>;
+  metadata?: ExtensionBundleConfiguration['metadata'];
 }): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
   validateBundleName(bundleName);
@@ -169,6 +174,7 @@ async function configurationContext({
       id: bundleId,
       members,
       name: bundleName,
+      ...(metadata === undefined ? {} : {metadata: validateExtensionBundleMetadata(metadata)}),
       ...(buildMode === undefined ? {} : {buildMode}),
       ...(sharedDependencies === undefined ? {} : {sharedDependencies}),
       ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
@@ -198,6 +204,7 @@ export async function planExtensionBundle({
   sourceDirectory,
   buildMode,
   sharedDependencies,
+  metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
     bundleId,
@@ -207,12 +214,16 @@ export async function planExtensionBundle({
     sourceDirectory,
     buildMode,
     sharedDependencies,
+    metadata,
     willReplace: false,
   });
   return {
     applied: false,
     bundleId,
     bundleName,
+    ...(context.configuredBundle.bundle.metadata === undefined
+      ? {}
+      : {metadata: structuredClone(context.configuredBundle.bundle.metadata)}),
     changed: true,
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
@@ -292,6 +303,7 @@ export async function bundleExtensions({
   yes = false,
   buildMode,
   sharedDependencies,
+  metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
     bundleId,
@@ -301,11 +313,15 @@ export async function bundleExtensions({
     sourceDirectory,
     buildMode,
     sharedDependencies,
+    metadata,
     willReplace: yes,
   });
   const plan = {
     bundleId,
     bundleName,
+    ...(context.configuredBundle.bundle.metadata === undefined
+      ? {}
+      : {metadata: structuredClone(context.configuredBundle.bundle.metadata)}),
     components: context.configuredBundle.components.map((component) => component.metadata),
     counts: context.configuredBundle.counts,
     members: [...context.configuredBundle.bundle.members],

@@ -49,10 +49,25 @@ export interface EmbeddedExtension {
   source?: ExtensionSource;
 }
 
+/** Explicit presentation of the bundle itself, independent of its member packages. */
+export interface ExtensionBundleMetadata {
+  description?: string;
+  descriptions?: Record<string, string>;
+  author?: string;
+  authorURL?: string;
+  version?: string;
+  updatedAt?: string;
+  repository?: string;
+  docsURL?: string;
+  banner?: string;
+  package?: string;
+}
+
 export interface ExtensionBundleConfiguration {
   id: string;
   name: string;
   members: string[];
+  metadata?: ExtensionBundleMetadata;
   recoveryCapsule?: boolean;
   sandboxedNotice?: Record<string, string>;
   blockEditorRegistrations?: boolean;

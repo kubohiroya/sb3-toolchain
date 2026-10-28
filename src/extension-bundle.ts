@@ -2,6 +2,7 @@
 
 import {assert} from './assert';
 import {extensionHeaderMetadata, unsandboxedRequirement} from './extension-dependencies';
+import {validateExtensionBundleMetadata} from './extension-bundle-metadata';
 import type {ExtensionHeaderMetadata, UnsandboxedRequirement} from './extension-dependencies';
 import type {ExtensionModuleBuild, ExtensionModuleBuildReport} from './extension-module-bundle';
 import type {
@@ -221,6 +222,9 @@ export function validateExtensionBundleConfigurations(
       id,
       members,
       name,
+      ...(bundle.metadata === undefined
+        ? {}
+        : {metadata: validateExtensionBundleMetadata(bundle.metadata)}),
       ...(bundle.buildMode === undefined ? {} : {buildMode: bundle.buildMode}),
       ...(bundle.sharedDependencies === undefined
         ? {}
@@ -295,15 +299,33 @@ function bundleHeader(
   components: ExtensionBundleComponent[],
 ): string {
   const authors = [...new Set(components.map((component) => component.metadata.author))];
+  const metadata =
+    bundle.metadata === undefined ? undefined : validateExtensionBundleMetadata(bundle.metadata);
   const lines = [
     `// Name: ${commentLine(bundle.name)}`,
     `// ID: ${bundle.id}`,
-    `// Description: Static bundle of ${components.length} TurboWarp extensions.`,
-    `// By: ${commentLine(authors.join(', '))}`,
-    '// License: See the bundled extension notices below.',
+    `// Description: ${metadata?.description ?? `Static bundle of ${components.length} TurboWarp extensions.`}`,
   ];
+  for (const [locale, description] of Object.entries(metadata?.descriptions ?? {})) {
+    lines.push(`// Description[${locale}]: ${description}`);
+  }
+  lines.push(`// By: ${metadata?.author ?? commentLine(authors.join(', '))}`);
+  for (const [field, label] of [
+    ['authorURL', 'Author URL'],
+    ['version', 'Version'],
+    ['updatedAt', 'Updated'],
+    ['repository', 'Repository'],
+    ['docsURL', 'Docs URL'],
+    ['banner', 'Banner'],
+    ['package', 'Package'],
+  ] as const) {
+    if (metadata?.[field] !== undefined) lines.push(`// ${label}: ${metadata[field]}`);
+  }
+  lines.push('// License: See the bundled extension notices below.');
   const requirement = bundleUnsandboxedRequirement(components);
   if (requirement !== null) lines.push(`// Unsandboxed: ${requirement}`);
+  if (metadata)
+    assert(lines.join('\n').length < 16384, 'Bundle metadata exceeds the security header limit.');
   lines.push('//', '// Bundled extensions:');
   for (const component of components) {
     lines.push(
