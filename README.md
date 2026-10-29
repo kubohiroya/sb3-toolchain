@@ -32,7 +32,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.19.1
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.20.0
 ```
 
 ## Quick start
@@ -44,6 +44,16 @@ sb3-toolchain import tmp/project.sb3 --output app
 sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3
 ```
+
+Update a Kamishibai SB3's runtime bundle and Block Script together. Omitting `--from`
+downloads and verifies the published block SB3 from the official samples site.
+
+```bash
+sb3-toolchain extensions replace-sb3 input.sb3 --output updated.sb3
+```
+
+See the [replacement guide (Japanese)](docs/ja/sb3-extension-replacement.md) for local donors,
+preserved story data, validation, and limits.
 
 See [`docs/workflows.md`](docs/workflows.md) for the recommended source-of-truth, re-import,
 replacement protection, extension update, and CI workflows for a project repository.

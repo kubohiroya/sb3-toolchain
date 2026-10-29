@@ -31,7 +31,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 再現可能なインストールのため、検証済みのnpmバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.19.1
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.20.0
 ```
 
 ## クイックスタート
@@ -43,6 +43,15 @@ sb3-toolchain import tmp/project.sb3 --output app
 sb3-toolchain check app
 sb3-toolchain build app --output dist/project.sb3
 ```
+
+Kamishibai作品SB3のRuntimeバンドルとBlock Scriptは、一発コマンドで更新できます。
+`--from`省略時は公式サイトの公開済みブロック台本を自動取得します。
+
+```bash
+sb3-toolchain extensions replace-sb3 input.sb3 --output updated.sb3
+```
+
+提供元の指定方法、保持するデータ、検証と制限は[SB3の機能拡張更新](docs/ja/sb3-extension-replacement.md)を参照してください。
 
 プロジェクトリポジトリに推奨する信頼できる唯一の情報源、再import、置換保護、機能拡張更新、CIの
 ワークフローについては、[`docs/ja/workflows.md`](docs/ja/workflows.md)を参照してください。

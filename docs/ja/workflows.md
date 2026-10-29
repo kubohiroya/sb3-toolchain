@@ -1,5 +1,7 @@
 # SB3ソース管理ワークフロー
 
+Kamishibai作品SB3に埋め込まれた実装を一括更新する場合は、[SB3の機能拡張更新](sb3-extension-replacement.md)を参照してください。
+
 [English](../workflows.md)
 
 この文書では、Scratch 3またはTurboWarpのSB3をGit内の展開ソースとして管理し、検証済みSB3を再ビルドする
