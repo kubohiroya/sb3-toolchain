@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0 - 2026-10-29
+
+- Kamishibai作品SB3のRuntimeバンドルとBlock Scriptを一括更新する `extensions replace-sb3` とJavaScript APIを追加。
+- `--from`省略時は公式サイトの公開済みブロック台本SB3を自動取得し、公開状態・バージョン・サイズ・SHA-256を検証。指定時はローカルSB3を使用。
+- 作品の台本・素材・保存データ・無関係な機能拡張を保持し、入力や提供元の上書き、自動ダウングレード、検証失敗時の部分更新を防止。
+
+Rollback: `@kubohiroya/sb3-toolchain@0.19.1`へ固定し、元の作品SB3を開く。
+
 ## 0.19.1 - 2026-10-29
 
 - Preserve explicitly configured bundle presentation metadata in classic and module headers, source configuration, and the CLI.

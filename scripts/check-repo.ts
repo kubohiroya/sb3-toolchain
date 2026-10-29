@@ -53,7 +53,7 @@ const legacyPosePattern = new RegExp(
 );
 
 assert(packageJson.name === policy.packageName, 'package name must match repo policy.');
-assert(packageJson.version === '0.19.1', 'package version must be 0.19.1.');
+assert(packageJson.version === '0.20.0', 'package version must be 0.20.0.');
 assert(packageJson.license === policy.license, 'package license must be MPL-2.0.');
 assert(
   typeof packageJson.author === 'object' && packageJson.author !== null,

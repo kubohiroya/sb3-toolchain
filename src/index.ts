@@ -147,3 +147,13 @@ export type {ProjectAssetAdditionsSummary} from './project-asset-additions';
 export type {Sb3ReleaseSnapshotMetadata} from './release-snapshot';
 export type {DeterministicSb3, InspectedSb3Source} from './source';
 export type {TurboWarpCleanUpResult} from './turbowarp-clean-up';
+
+export {
+  defaultKamishibaiManifestUrl,
+  kamishibaiReplacementIds,
+  replaceSb3Extensions,
+} from './extension-sb3-replacement';
+export type {
+  ReplaceSb3ExtensionsOptions,
+  ReplaceSb3ExtensionsResult,
+} from './extension-sb3-replacement';
