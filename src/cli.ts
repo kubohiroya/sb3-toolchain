@@ -10,6 +10,10 @@ import {packageVersion} from './constants';
 import {unbundleSb3} from './extension-bundle-archive';
 import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration';
 import {validateExtensionBundleMetadata} from './extension-bundle-metadata';
+import {
+  formatExtensionDigestInventory,
+  inventoryExtensionDigests,
+} from './extension-digest-inventory';
 import type {ExtensionBundleMetadata} from './types';
 import {migrateExtensionId} from './extension-id-migration';
 import {replaceSb3Extensions} from './extension-sb3-replacement';
@@ -112,6 +116,13 @@ export interface ExtensionsUnbundleArchiveCliOptions {
   yes: boolean;
 }
 
+export interface ExtensionsDigestsCliOptions {
+  action: 'digests';
+  command: 'extensions';
+  inputPaths: string[];
+  json: boolean;
+}
+
 export interface ExtensionsReplaceSb3CliOptions {
   action: 'replace-sb3';
   command: 'extensions';
@@ -122,6 +133,7 @@ export interface ExtensionsReplaceSb3CliOptions {
 }
 
 export type ExtensionsCliOptions =
+  | ExtensionsDigestsCliOptions
   | ExtensionsReplaceSb3CliOptions
   | ExtensionsStatusCliOptions
   | ExtensionsMutationCliOptions
@@ -158,6 +170,7 @@ export function usage() {
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
   sb3-toolchain check SOURCE_DIR [--project-assets MANIFEST.json] [--allow-asset-root DIR ...]
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--yes]
+  sb3-toolchain extensions digests INPUT.sb3 [INPUT.sb3 ...] [--json]
   sb3-toolchain extensions replace-sb3 INPUT.sb3 [--from DONOR.sb3] --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
@@ -183,6 +196,15 @@ Project asset additions:
   --project-assets validates a JSON or YAML manifest and adds its sprites,
   backdrops, costumes, and sounds only to the generated SB3. Input files are confined to the
   manifest directory unless --allow-asset-root explicitly permits another root.
+
+Extension digests:
+  extensions digests reads each SB3's own manifest and reports every extension's ID,
+  pinned SHA-256, source form (remote-non-cacheable, remote-cacheable, embedded-file,
+  embedded-data), held byte size, and the project URI that names the cache bucket. Given
+  several SB3s it also reports which digests more than one project names. Nothing is
+  fetched and no browser storage is read: an extension cache belongs to an origin and a
+  browser profile, so only the browser can list it, and an unresolved project URI never
+  means an absent project.
 
 Kamishibai SB3 replacement:
   extensions replace-sb3 replaces the runtime bundle and Block Script in INPUT.sb3.
@@ -558,6 +580,22 @@ function parseExtensionUnbundleArguments(
   };
 }
 
+function parseExtensionDigestsArguments(arguments_: string[]): ExtensionsDigestsCliOptions {
+  const inputPaths: string[] = [];
+  let json = false;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--json') {
+      json = true;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      inputPaths.push(path.resolve(argument));
+    }
+  }
+  assert(inputPaths.length > 0, 'The extensions digests command requires at least one INPUT.sb3.');
+  return {action: 'digests', command: 'extensions', inputPaths, json};
+}
+
 function parseExtensionReplaceSb3Arguments(arguments_: string[]): ExtensionsReplaceSb3CliOptions {
   let fromPath: string | undefined;
   let inputPath: string | undefined;
@@ -589,15 +627,17 @@ function parseExtensionReplaceSb3Arguments(arguments_: string[]): ExtensionsRepl
 function parseExtensionsArguments(arguments_: string[]): ExtensionsCliOptions {
   const [action, ...actionArguments] = arguments_;
   assert(
-    action === 'replace-sb3' ||
+    action === 'digests' ||
+      action === 'replace-sb3' ||
       action === 'bundle' ||
       action === 'migrate-id' ||
       action === 'status' ||
       action === 'sync' ||
       action === 'unbundle' ||
       action === 'update',
-    'The extensions command requires status, sync, update, migrate-id, bundle, unbundle, or replace-sb3.',
+    'The extensions command requires status, digests, sync, update, migrate-id, bundle, unbundle, or replace-sb3.',
   );
+  if (action === 'digests') return parseExtensionDigestsArguments(actionArguments);
   if (action === 'replace-sb3') return parseExtensionReplaceSb3Arguments(actionArguments);
   if (action === 'status') {
     assert(
@@ -805,6 +845,15 @@ export async function runCli(
     return;
   }
   if (options.command === 'extensions') {
+    if (options.action === 'digests') {
+      const inventory = await inventoryExtensionDigests(options.inputPaths);
+      if (options.json) {
+        log(`${JSON.stringify(inventory, null, 2)}`);
+        return;
+      }
+      for (const line of formatExtensionDigestInventory(inventory)) log(line);
+      return;
+    }
     if (options.action === 'replace-sb3') {
       const result = await replaceSb3Extensions({
         confirmReplace: confirmBuildReplacement,
