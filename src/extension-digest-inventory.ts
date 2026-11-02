@@ -136,11 +136,11 @@ function manifestAddress(value: unknown, what: string): string {
   return url.href;
 }
 
-interface ManifestSource {
-  type: ExtensionSourceType;
-  path: string | null;
-  url: string | null;
-}
+/** Split by carrier, so only `embedded-file` carries an archive path to look up. */
+type ManifestSource =
+  | {type: 'remote-non-cacheable' | 'remote-cacheable'; path: null; url: string}
+  | {type: 'embedded-file'; path: string; url: string | null}
+  | {type: 'embedded-data'; path: null; url: string | null};
 
 function readManifestSource(value: unknown, id: string): ManifestSource {
   assert(isObject(value), `Extension ${id} is missing its source.`);
@@ -264,7 +264,7 @@ export function readProjectManifest(project: unknown): ProjectManifest | null {
 
 interface ReadArchiveResult {
   entries: Record<string, Uint8Array>;
-  project: unknown;
+  project: UnknownRecord;
 }
 
 function parseArchive(contents: Uint8Array): ReadArchiveResult {
@@ -290,6 +290,7 @@ function parseArchive(contents: Uint8Array): ReadArchiveResult {
   } catch (error) {
     throw new Error('SB3 project.json is not valid JSON.', {cause: error});
   }
+  assert(isObject(project), 'SB3 project.json must contain a JSON object.');
   return {entries, project};
 }
 
@@ -303,7 +304,7 @@ async function readArchive(filePath: string): Promise<Buffer> {
 
 function heldBytes(extension: ManifestExtension, archive: ReadArchiveResult): Uint8Array | null {
   if (extension.source.type === 'embedded-file') {
-    const entryPath = extension.source.path as string;
+    const entryPath = extension.source.path;
     const entry = archive.entries[entryPath];
     assert(
       entry !== undefined,
@@ -312,8 +313,7 @@ function heldBytes(extension: ManifestExtension, archive: ReadArchiveResult): Ui
     return entry;
   }
   if (extension.source.type === 'embedded-data') {
-    const project = archive.project as UnknownRecord;
-    const urls: unknown = project.extensionURLs;
+    const urls: unknown = archive.project.extensionURLs;
     assert(
       isObject(urls) && typeof urls[extension.id] === 'string',
       `Extension ${extension.id} is missing its embedded data carrier in extensionURLs.`,
