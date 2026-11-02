@@ -13,6 +13,13 @@
  * Nothing here is fetched either. A project URI says nothing until its author publishes there, and
  * a work saved but never published looks exactly like a published work whose address rotted. So no
  * URL in an SB3 is contacted, and no absence is ever concluded from a response.
+ *
+ * The manifest rules below are read, not imported. `@kubohiroya/turbowarp-extension-loader` owns
+ * them, but it is a browser runtime this command never needs, and taking a dependency on it would
+ * add nothing an inventory uses: no bytes are resolved, no dependency graph is ordered, nothing is
+ * executed. What is reproduced here is only what the report prints — the four source names, the
+ * digest form, the embedded path rule, the HTTPS address rule, and the refusal of the retired
+ * spellings. A change to any of those on the loader's side is a change to make here too.
  */
 
 import {createHash} from 'node:crypto';
