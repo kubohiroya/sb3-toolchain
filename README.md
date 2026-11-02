@@ -14,6 +14,8 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Optionally compare versioned extension API manifests before replacing embedded JavaScript
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
+- Report every extension's pinned SHA-256, retention form, held size, and the project URI, and
+  which digests several projects share, without reading browser storage or fetching anything
 - Produce deterministic builds with fixed ZIP entry order, timestamps, and compression settings
 - Add sprites, backdrops, costumes, and sounds from an optional JSON or YAML build manifest without
   modifying the expanded base source
@@ -55,6 +57,13 @@ sb3-toolchain extensions replace-sb3 input.sb3 --output updated.sb3
 See the [replacement guide (Japanese)](docs/ja/sb3-extension-replacement.md) for local donors,
 preserved story data, validation, and limits.
 
+List what the SB3s on hand say about their extensions, to compare a browser's extension cache
+against. Nothing is fetched, and no browser storage is read.
+
+```bash
+sb3-toolchain extensions digests one.sb3 two.sb3
+```
+
 See [`docs/workflows.md`](docs/workflows.md) for the recommended source-of-truth, re-import,
 replacement protection, extension update, and CI workflows for a project repository.
 
@@ -70,6 +79,7 @@ import {
   extensionIntegrity,
   extensionStatus,
   importSb3,
+  inventoryExtensionDigests,
   migrateExtensionId,
   planExtensionIdMigration,
   syncExtensions,
@@ -98,6 +108,8 @@ const {archive} = await createDeterministicSb3('app', {cleanUpBlocks: true});
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 
 const statuses = await extensionStatus('app');
+// Read-only: no URL in an SB3 is contacted and no browser storage is read.
+const inventory = await inventoryExtensionDigests(['dist/project.sb3']);
 const migration = await planExtensionIdMigration({
   sourceDirectory: 'app',
   fromId: 'oldId',
@@ -150,6 +162,7 @@ await unbundleSb3({
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
 - [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates
 - [`docs/extension-bundles.md`](docs/extension-bundles.md): static bundling, opt-in module builds with shared dependencies, and reversible unbundling
+- [`docs/extension-digests.md`](docs/extension-digests.md) ([日本語](docs/ja/extension-digests.md)): extension digests, the four retention forms, project URIs, and shared digests
 
 ## Development
 

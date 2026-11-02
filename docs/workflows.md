@@ -1,5 +1,8 @@
 # SB3 source-management workflows
 
+To build the list to compare a browser's extension cache against, see
+[extension digests and retention forms](extension-digests.md).
+
 [日本語版](ja/workflows.md)
 
 This document describes the common workflow for managing a Scratch 3 or TurboWarp SB3 as expanded

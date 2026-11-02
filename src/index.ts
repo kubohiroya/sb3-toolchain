@@ -52,6 +52,22 @@ export {
 } from './extension-bundle-configuration';
 export {planBundledSb3Unbundle, unbundleSb3} from './extension-bundle-archive';
 export {
+  extensionSourceTypes,
+  formatExtensionDigestInventory,
+  inspectSb3ExtensionDigests,
+  inventoryExtensionDigests,
+  projectManifestKey,
+  readProjectManifest,
+} from './extension-digest-inventory';
+export type {
+  ExtensionDigestEntry,
+  ExtensionDigestInventory,
+  ExtensionDigestUsage,
+  ExtensionExecutionMode,
+  ExtensionSourceType,
+  Sb3ExtensionDigests,
+} from './extension-digest-inventory';
+export {
   buildExtensionBundles,
   createStaticExtensionBundle,
   bundleUnsandboxedRequirement,

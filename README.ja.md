@@ -14,6 +14,8 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 - 埋め込みJavaScriptを置き換える前に、バージョン付き機能拡張APIマニフェストを任意で比較
 - 元のJavaScriptを削除せず、複数の機能拡張を1つの権限単位へ静的にbundleし、展開ソースまたは
   bundle済みSB3から復元
+- 各機能拡張の固定SHA-256、保持形式、保持バイト数、作品のURI、および複数の作品が共有するdigestを、
+  ブラウザーの保存状態を読まず、何も取得せずに出力
 - ZIPエントリ順、タイムスタンプ、圧縮設定を固定した決定的ビルド
 - 展開済みbase sourceを変更せず、JSON／YAML build manifestからsprite、backdrop、costume、soundを追加
 - 全ターゲットのスクリプトをTurboWarp風の決定的な「きれいにする」配置へ任意で整理
@@ -53,6 +55,13 @@ sb3-toolchain extensions replace-sb3 input.sb3 --output updated.sb3
 
 提供元の指定方法、保持するデータ、検証と制限は[SB3の機能拡張更新](docs/ja/sb3-extension-replacement.md)を参照してください。
 
+ブラウザーの機能拡張キャッシュと照合するため、手元のSB3が機能拡張について述べていることを一覧します。
+何も取得せず、ブラウザーの保存状態も読みません。
+
+```bash
+sb3-toolchain extensions digests one.sb3 two.sb3
+```
+
 プロジェクトリポジトリに推奨する信頼できる唯一の情報源、再import、置換保護、機能拡張更新、CIの
 ワークフローについては、[`docs/ja/workflows.md`](docs/ja/workflows.md)を参照してください。
 
@@ -68,6 +77,7 @@ import {
   extensionIntegrity,
   extensionStatus,
   importSb3,
+  inventoryExtensionDigests,
   migrateExtensionId,
   planExtensionIdMigration,
   syncExtensions,
@@ -96,6 +106,8 @@ const {archive} = await createDeterministicSb3('app', {cleanUpBlocks: true});
 const integrity = extensionIntegrity(await readFile('app/extensions/example.js'));
 
 const statuses = await extensionStatus('app');
+// 読み取り専用です。SB3中のURLにはアクセスせず、ブラウザーの保存状態も読みません。
+const inventory = await inventoryExtensionDigests(['dist/project.sb3']);
 const migration = await planExtensionIdMigration({
   sourceDirectory: 'app',
   fromId: 'oldId',
@@ -146,6 +158,7 @@ await unbundleSb3({
 - [`docs/ja/extension-id-migration.md`](docs/ja/extension-id-migration.md): プロジェクトで使用中の機能拡張IDの移行
 - [`docs/ja/extension-api-compatibility.md`](docs/ja/extension-api-compatibility.md): 機能拡張更新時の任意の静的API互換性検査
 - [`docs/ja/extension-bundles.md`](docs/ja/extension-bundles.md): 静的bundle、共有依存を持つ明示選択のmodule統合ビルド、可逆的なunbundle
+- [`docs/ja/extension-digests.md`](docs/ja/extension-digests.md): 機能拡張のdigest、4つの保持形式、作品のURI、共有されるdigest
 
 ## 開発
 
