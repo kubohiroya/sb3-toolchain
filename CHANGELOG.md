@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.0 - 2026-11-07
+
+- SB3 の検査で、機能拡張のダイジェストと保持形式を確認できるようにした（#79）。
+
 ## 0.20.0 - 2026-10-29
 
 - Kamishibai作品SB3のRuntimeバンドルとBlock Scriptを一括更新する `extensions replace-sb3` とJavaScript APIを追加。
