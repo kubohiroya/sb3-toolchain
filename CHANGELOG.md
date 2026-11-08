@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.22.0 - 2026-11-08
+
+- feat(release): sync version references in a release:prepare script (#85)
+- feat(sb3): 既存の SB3 のブロック配置を整理する (#82)
+
 ## 0.21.0 - 2026-11-07
 
 - SB3 の検査で、機能拡張のダイジェストと保持形式を確認できるようにした（#79）。
