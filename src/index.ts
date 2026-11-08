@@ -19,6 +19,8 @@ export type {
 export {assert} from './assert';
 export {validateArchiveEntryName} from './archive';
 export {buildSb3} from './build';
+export {cleanUpSb3, cleanUpSb3Archive} from './clean-up-sb3';
+export type {CleanUpSb3ArchiveResult, CleanUpSb3Options, CleanUpSb3Result} from './clean-up-sb3';
 export {packageName, packageVersion} from './constants';
 export {
   extensionHeaderId,

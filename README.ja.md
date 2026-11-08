@@ -19,6 +19,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 - ZIPエントリ順、タイムスタンプ、圧縮設定を固定した決定的ビルド
 - 展開済みbase sourceを変更せず、JSON／YAML build manifestからsprite、backdrop、costume、soundを追加
 - 全ターゲットのスクリプトをTurboWarp風の決定的な「きれいにする」配置へ任意で整理
+- `clean-up` で既存の SB3 内のスクリプトを整理し、別ファイルに保存
 - import時に未コミットのGit変更を保護
 - トランザクションによる置換とロールバックで既存出力を保護
 - CLIとJavaScript APIの両方を提供

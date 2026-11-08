@@ -6,6 +6,7 @@ import {createInterface} from 'node:readline/promises';
 
 import {assert} from './assert';
 import {buildSb3} from './build';
+import {cleanUpSb3} from './clean-up-sb3';
 import {packageVersion} from './constants';
 import {unbundleSb3} from './extension-bundle-archive';
 import {bundleExtensions, unbundleExtensions} from './extension-bundle-configuration';
@@ -55,6 +56,13 @@ export interface BuildCliOptions {
   outputPath: string;
   projectAssetsPath?: string;
   sourceDirectory: string;
+  yes: boolean;
+}
+
+export interface CleanUpCliOptions {
+  command: 'clean-up';
+  inputPath: string;
+  outputPath: string;
   yes: boolean;
 }
 
@@ -148,6 +156,7 @@ export type CliOptions =
   | ImportCliOptions
   | CheckCliOptions
   | BuildCliOptions
+  | CleanUpCliOptions
   | ExtensionsCliOptions;
 
 export interface RunCliOptions {
@@ -170,6 +179,7 @@ export function usage() {
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
   sb3-toolchain check SOURCE_DIR [--project-assets MANIFEST.json] [--allow-asset-root DIR ...]
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--yes]
+  sb3-toolchain clean-up INPUT.sb3 --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions digests INPUT.sb3 [INPUT.sb3 ...] [--json]
   sb3-toolchain extensions replace-sb3 INPUT.sb3 [--from DONOR.sb3] --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
@@ -184,6 +194,7 @@ Commands:
   import      Expand an SB3 into Git-friendly source files.
   check       Validate an expanded SB3 source directory.
   build       Build a deterministic SB3 from expanded sources.
+  clean-up    Arrange scripts in a more compact layout and write a separate SB3.
   extensions  Inspect, restore, or update managed embedded extensions.
 
 Build layout cleanup:
@@ -254,6 +265,29 @@ function parseImportArguments(arguments_: string[]): ImportCliOptions {
   assert(inputPath, 'The import command requires INPUT.sb3.');
   assert(outputDirectory, 'The import command requires --output SOURCE_DIR.');
   return {command: 'import', discardLocalChanges, inputPath, outputDirectory, yes};
+}
+
+function parseCleanUpArguments(arguments_: string[]): CleanUpCliOptions {
+  let inputPath: string | undefined;
+  let outputPath: string | undefined;
+  let yes = false;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === '--output') {
+      assert(!outputPath, '--output may only be specified once.');
+      outputPath = path.resolve(takeValue(arguments_, index, '--output'));
+      index += 1;
+    } else if (argument === '--yes') {
+      yes = true;
+    } else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      assert(!inputPath, 'Only one input SB3 may be specified.');
+      inputPath = path.resolve(argument);
+    }
+  }
+  assert(inputPath, 'The clean-up command requires INPUT.sb3.');
+  assert(outputPath, 'The clean-up command requires --output OUTPUT.sb3.');
+  return {command: 'clean-up', inputPath, outputPath, yes};
 }
 
 function parseCheckArguments(arguments_: string[]): CheckCliOptions {
@@ -678,6 +712,7 @@ export function parseCliArguments(arguments_: string[]): CliOptions {
   if (command === 'import') return parseImportArguments(commandArguments);
   if (command === 'check') return parseCheckArguments(commandArguments);
   if (command === 'build') return parseBuildArguments(commandArguments);
+  if (command === 'clean-up') return parseCleanUpArguments(commandArguments);
   if (command === 'extensions') return parseExtensionsArguments(commandArguments);
   throw new Error(`Unknown command: ${command}`);
 }
@@ -840,6 +875,18 @@ export async function runCli(
       `${action}: ${result.outputPath} (${result.entryCount} entries, ` +
         `${result.assetCount} assets, ${result.embeddedExtensionCount} embedded extensions` +
         `${cleanUpMessage}).`,
+    );
+    if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+    return;
+  }
+  if (options.command === 'clean-up') {
+    const result = await cleanUpSb3({
+      ...options,
+      confirmReplace: confirmBuildReplacement,
+    });
+    log(
+      `${result.changed ? 'Wrote' : 'Already up to date'}: ${result.outputPath} ` +
+        `(${result.movedScriptCount}/${result.scriptCount} scripts moved across ${result.targetCount} targets).`,
     );
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;

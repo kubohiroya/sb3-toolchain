@@ -101,6 +101,23 @@ the option and rebuild to roll back to the source coordinates.
 In addition to project-specific tests, open the generated SB3 in TurboWarp and verify startup, primary
 operations, images, sounds, and embedded extension behavior.
 
+## Clean up an existing SB3
+
+```bash
+sb3-toolchain clean-up project.sb3 --output project-cleaned.sb3
+```
+
+`clean-up` reads an SB3 directly and writes a separate copy. It estimates the sizes of stacks
+and attached comments and arranges them in columns, aiming for a 3:2 layout. A single unusually
+wide or tall stack can determine the overall dimensions. Spacing is estimated from the SB3, so
+check the result in the editor when a project uses custom blocks.
+
+The command moves each stack with its attached comments, preserves the remaining project data and
+ZIP entry contents, and leaves the input file available for rollback. If a different output already
+exists, confirm replacement or specify `--yes`. The equivalent Node API is
+`cleanUpSb3({inputPath, outputPath})`. For build pipelines that already have SB3 bytes,
+`cleanUpSb3Archive(bytes).archive` returns the arranged archive in memory.
+
 ## Managed embedded extensions
 
 The `source` object in `embedded-extensions.json` can record either GitHub commit provenance or an

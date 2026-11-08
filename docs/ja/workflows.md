@@ -102,6 +102,21 @@ sb3-toolchain build app --output dist/project.sb3 --clean-up-blocks
 プロジェクト固有のテストに加えて、生成SB3をTurboWarpで開き、起動、主要な操作、画像、音声、埋め込み
 機能拡張の動作を確認してください。
 
+## 既存の SB3 のブロック配置を整理する
+
+```bash
+sb3-toolchain clean-up project.sb3 --output project-cleaned.sb3
+```
+
+`clean-up` は SB3 を直接読み込み、整理したコピーを別ファイルへ保存します。スクリプトと添付コメントの寸法を
+推定し、配置全体が横 3: 縦 2 に近づくように列を組み直します。幅や高さが突出したスクリプトがあると、
+その寸法が全体の縦横比を左右します。カスタムブロックを含む場合は、エディターで余白を確認してください。
+
+スクリプトと添付コメントの座標を移動し、他のプロジェクトデータや ZIP 内のアセットを保持します。
+元の配置に戻すには入力ファイルを使います。異なる出力が既にある場合は置換確認または `--yes` が必要です。
+Node API からは `cleanUpSb3({inputPath, outputPath})` を使用できます。生成処理で既に SB3 のバイト列がある場合は
+`cleanUpSb3Archive(bytes).archive` で整理後のバイト列を取得できます。
+
 ## 管理対象の埋め込み機能拡張
 
 `embedded-extensions.json`の`source`オブジェクトには、GitHubコミットの来歴またはインストール済みnpm
