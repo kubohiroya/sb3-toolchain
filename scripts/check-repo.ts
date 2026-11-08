@@ -53,7 +53,10 @@ const legacyPosePattern = new RegExp(
 );
 
 assert(packageJson.name === policy.packageName, 'package name must match repo policy.');
-assert(packageJson.version === '0.21.0', 'package version must be 0.21.0.');
+assert(
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version),
+  'package version must be a semantic version.',
+);
 assert(packageJson.license === policy.license, 'package license must be MPL-2.0.');
 assert(
   typeof packageJson.author === 'object' && packageJson.author !== null,
@@ -107,10 +110,10 @@ includesEvery(
   ],
   'README.ja.md',
 );
-includesEvery(
-  changelog,
-  [`## ${version} - 2026-11-07`, '// Unsandboxed: required | optional | not-needed'],
-  'CHANGELOG.md',
+includesEvery(changelog, ['// Unsandboxed: required | optional | not-needed'], 'CHANGELOG.md');
+assert(
+  new RegExp(`^## ${version.replaceAll('.', '\\.')} - \\d{4}-\\d{2}-\\d{2}$`, 'mu').test(changelog),
+  `CHANGELOG.md must have a dated section for ${version}.`,
 );
 includesEvery(license, ['Mozilla Public License Version 2.0', '3. Responsibilities'], 'LICENSE');
 includesEvery(migrationDocs, ['kubohiroyatm', 'TurboWarp TM'], 'docs/extension-id-migration.md');
