@@ -34,7 +34,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 再現可能なインストールのため、検証済みのnpmバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.21.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.22.0
 ```
 
 ## クイックスタート
