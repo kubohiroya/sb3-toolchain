@@ -12,6 +12,7 @@ export const turboWarpCleanUpLayout = Object.freeze({
 });
 
 const minimumBlockHeight = 48;
+const compactBlockHeight = 64;
 const minimumBlockWidth = 160;
 const nestedStackIndent = 64;
 const nestedStackPadding = 24;
@@ -23,7 +24,7 @@ interface BlockSize {
 }
 
 interface Script {
-  block: UnknownRecord;
+  block: UnknownRecord | unknown[];
   blockId: string;
   inputOrder: number;
   originalX: number;
@@ -35,6 +36,11 @@ interface ScriptColumn {
   count: number;
   scripts: Script[];
   x: number;
+}
+
+interface Bounds extends BlockSize {
+  x: number;
+  y: number;
 }
 
 interface ScriptMovement {
@@ -109,12 +115,12 @@ function inputDisplayTextLength(input: unknown, blocks: UnknownRecord): number {
   return 0;
 }
 
-function verticalChildIds(block: UnknownRecord, blocks: UnknownRecord): string[] {
+function measuredChildIds(block: UnknownRecord, blocks: UnknownRecord, compact: boolean): string[] {
   const childIds: string[] = [];
   if (isObject(block.inputs)) {
     for (const [inputName, input] of Object.entries(block.inputs)) {
       const childId = inputBlockId(input, blocks);
-      if (childId && /^SUBSTACK/u.test(inputName)) childIds.push(childId);
+      if (childId && (compact || /^SUBSTACK/u.test(inputName))) childIds.push(childId);
     }
   }
   if (typeof block.next === 'string' && Object.hasOwn(blocks, block.next)) {
@@ -123,7 +129,7 @@ function verticalChildIds(block: UnknownRecord, blocks: UnknownRecord): string[]
   return childIds;
 }
 
-function measureStack(blockId: string, blocks: UnknownRecord): BlockSize {
+function measureStack(blockId: string, blocks: UnknownRecord, compact: boolean): BlockSize {
   const measured = new Map<string, BlockSize>();
   const active = new Set<string>();
   const work: {blockId: string; finalize: boolean}[] = [{blockId, finalize: false}];
@@ -137,7 +143,7 @@ function measureStack(blockId: string, blocks: UnknownRecord): BlockSize {
       if (active.has(frame.blockId)) continue;
       active.add(frame.blockId);
       work.push({blockId: frame.blockId, finalize: true});
-      const childIds = verticalChildIds(block, blocks);
+      const childIds = measuredChildIds(block, blocks, compact);
       for (let index = childIds.length - 1; index >= 0; index -= 1) {
         const childId = childIds[index];
         if (!active.has(childId) && !measured.has(childId)) {
@@ -147,7 +153,8 @@ function measureStack(blockId: string, blocks: UnknownRecord): BlockSize {
       continue;
     }
 
-    let height = minimumBlockHeight;
+    // Rendered statement blocks can be taller than the legacy cleanup estimate.
+    let height = compact ? compactBlockHeight : minimumBlockHeight;
     let width = Math.max(minimumBlockWidth, 80 + displayTextLength(block) * 8);
     if (isObject(block.inputs)) {
       for (const [inputName, input] of Object.entries(block.inputs)) {
@@ -157,7 +164,9 @@ function measureStack(blockId: string, blocks: UnknownRecord): BlockSize {
           height += nested.height + nestedStackPadding;
           width = Math.max(width, nested.width + nestedStackIndent);
         } else {
-          width += 24 + inputDisplayTextLength(input, blocks) * 8;
+          const reporter = compact && childId ? measured.get(childId) : undefined;
+          width += 24 + (reporter?.width ?? inputDisplayTextLength(input, blocks) * 8);
+          if (reporter) height = Math.max(height, reporter.height + 16);
         }
       }
     }
@@ -210,6 +219,7 @@ function findTopBlockId(blockId: unknown, blocks: UnknownRecord): string | null 
   while (typeof currentId === 'string' && !visited.has(currentId)) {
     visited.add(currentId);
     const block = blocks[currentId];
+    if (isReporterPrimitive(block)) return currentId;
     if (!isObject(block)) return null;
     if (block.topLevel === true || block.parent === null) return currentId;
     currentId = block.parent;
@@ -258,63 +268,205 @@ function attachedCommentWidths(target: UnknownRecord, blocks: UnknownRecord): Ma
   return widths;
 }
 
-function cleanUpTarget(target: UnknownRecord, targetIndex: number): TargetCleanUpResult {
+function isReporterPrimitive(value: unknown): value is unknown[] {
+  return Array.isArray(value) && (value[0] === 12 || value[0] === 13) && value.length >= 5;
+}
+
+function commentBounds(comment: unknown): Bounds | undefined {
+  if (
+    !isObject(comment) ||
+    !isFiniteNumber(comment.x) ||
+    !isFiniteNumber(comment.y) ||
+    !isFiniteNumber(comment.width) ||
+    !isFiniteNumber(comment.height) ||
+    comment.width < 0 ||
+    comment.height < 0
+  )
+    return undefined;
+  return {x: comment.x, y: comment.y, width: comment.width, height: comment.height};
+}
+
+function compactPlacements(
+  scripts: Script[],
+  target: UnknownRecord,
+  blocks: UnknownRecord,
+): {script: Script; x: number; y: number}[] {
+  const {columnGap, rowGap, startX, startY} = turboWarpCleanUpLayout;
+  const items = scripts.map((script) => ({
+    script,
+    left: 0,
+    right: script.size.width,
+    top: 0,
+    bottom: script.size.height,
+  }));
+  const byId = new Map(items.map((item) => [item.script.blockId, item]));
+  const obstacles: Bounds[] = [];
+  if (isObject(target.comments)) {
+    for (const comment of Object.values(target.comments)) {
+      const bounds = commentBounds(comment);
+      if (!bounds || !isObject(comment)) continue;
+      const topBlockId = findTopBlockId(comment.blockId, blocks);
+      const item = topBlockId === null ? undefined : byId.get(topBlockId);
+      if (!item) {
+        obstacles.push(bounds);
+        continue;
+      }
+      const x = bounds.x - item.script.originalX;
+      const y = bounds.y - item.script.originalY;
+      item.left = Math.min(item.left, x);
+      item.right = Math.max(item.right, x + bounds.width);
+      item.top = Math.min(item.top, y);
+      item.bottom = Math.max(item.bottom, y + bounds.height);
+    }
+  }
+  obstacles.sort((a, b) => compareNumbers(a.y, b.y));
+
+  const placements: {script: Script; x: number; y: number}[] = [];
+  let bestScore = Infinity;
+  let bestRowCount = 1;
+
+  // Try progressively larger column lengths while preserving the original reading order.
+  for (let rows = 1; ; rows = Math.min(items.length, rows + Math.ceil(rows / 16))) {
+    let width = 0;
+    let height = 0;
+    for (let first = 0; first < items.length; first += rows) {
+      let left = 0;
+      let right = 0;
+      let columnHeight = 0;
+      for (const item of items.slice(first, first + rows)) {
+        left = Math.min(left, item.left);
+        right = Math.max(right, item.right);
+        columnHeight += item.bottom - item.top + rowGap;
+      }
+      width += right - left + columnGap;
+      height = Math.max(height, columnHeight - rowGap);
+    }
+    // Score the size of the smallest 3:2 rectangle that could contain the layout.
+    const score = Math.max((width - columnGap) / 1.5, height);
+    if (score < bestScore) {
+      bestScore = score;
+      bestRowCount = rows;
+    }
+    if (rows >= items.length) break;
+  }
+
+  let cursorX: number = startX;
+  for (let first = 0; first < items.length; first += bestRowCount) {
+    const column = items.slice(first, first + bestRowCount);
+    let left = 0;
+    let right = 0;
+    for (const item of column) {
+      left = Math.min(left, item.left);
+      right = Math.max(right, item.right);
+    }
+    const x = cursorX - Math.floor(left);
+    let cursorY: number = startY;
+    for (const item of column) {
+      for (const obstacle of obstacles) {
+        if (
+          x + item.left < obstacle.x + obstacle.width + columnGap &&
+          x + item.right + columnGap > obstacle.x &&
+          cursorY < obstacle.y + obstacle.height + rowGap &&
+          cursorY + item.bottom - item.top + rowGap > obstacle.y
+        )
+          cursorY = obstacle.y + obstacle.height + rowGap;
+      }
+      placements.push({script: item.script, x, y: cursorY - item.top});
+      cursorY += item.bottom - item.top + rowGap;
+    }
+    cursorX = x + Math.ceil(right) + columnGap;
+  }
+  return placements;
+}
+
+function cleanUpTarget(
+  target: UnknownRecord,
+  targetIndex: number,
+  compact: boolean,
+): TargetCleanUpResult {
   if (target.blocks === undefined) {
     return {movedCommentCount: 0, movedScriptCount: 0, scriptCount: 0};
   }
   assert(isObject(target.blocks), `Project target ${targetIndex} blocks must be an object.`);
   const blocks = target.blocks;
   const scripts: Script[] = [];
-  let inputOrder = 0;
   for (const [blockId, block] of Object.entries(blocks)) {
-    if (!isObject(block) || block.topLevel !== true) continue;
+    const primitive = compact && isReporterPrimitive(block);
+    if (!primitive && (!isObject(block) || block.topLevel !== true)) continue;
+    const x = Array.isArray(block) ? block[3] : block.x;
+    const y = Array.isArray(block) ? block[4] : block.y;
     assert(
-      isFiniteNumber(block.x) && isFiniteNumber(block.y),
+      isFiniteNumber(x) && isFiniteNumber(y),
       `Top-level block ${JSON.stringify(blockId)} in project target ${targetIndex} requires numeric x and y coordinates.`,
     );
     scripts.push({
       block,
       blockId,
-      inputOrder,
-      originalX: block.x,
-      originalY: block.y,
-      size: measureStack(blockId, blocks),
+      inputOrder: scripts.length,
+      originalX: x,
+      originalY: y,
+      size: primitive
+        ? {
+            height: minimumBlockHeight,
+            width: Math.max(minimumBlockWidth, 80 + String(block[1]).length * 8),
+          }
+        : measureStack(blockId, blocks, compact),
     });
-    inputOrder += 1;
   }
 
+  const columns = groupIntoColumns(scripts);
   const movements = new Map<string, ScriptMovement>();
-  const commentWidths = attachedCommentWidths(target, blocks);
-  let cursorX: number = turboWarpCleanUpLayout.startX;
-  let movedScriptCount = 0;
-  for (const column of groupIntoColumns(scripts)) {
-    let cursorY: number = turboWarpCleanUpLayout.startY;
-    let columnWidth = 0;
-    for (const script of column.scripts) {
-      const deltaX = cursorX - script.originalX;
-      const deltaY = cursorY - script.originalY;
-      script.block.x = cursorX;
-      script.block.y = cursorY;
-      movements.set(script.blockId, {deltaX, deltaY});
-      if (deltaX || deltaY) movedScriptCount += 1;
-      cursorY += script.size.height + turboWarpCleanUpLayout.rowGap;
-      columnWidth = Math.max(
-        columnWidth,
-        script.size.width,
-        commentWidths.get(script.blockId) ?? 0,
-      );
+  const moveScript = (script: Script, x: number, y: number) => {
+    assert(
+      isFiniteNumber(x) && isFiniteNumber(y),
+      'Calculated SB3 layout coordinates must be finite.',
+    );
+    if (Array.isArray(script.block)) {
+      script.block[3] = x;
+      script.block[4] = y;
+    } else {
+      script.block.x = x;
+      script.block.y = y;
     }
-    cursorX += columnWidth + turboWarpCleanUpLayout.columnGap;
+    const deltaX = x - script.originalX;
+    const deltaY = y - script.originalY;
+    if (deltaX || deltaY) movements.set(script.blockId, {deltaX, deltaY});
+  };
+
+  if (compact) {
+    const ordered = columns.flatMap((column) => column.scripts);
+    const placements = compactPlacements(ordered, target, blocks);
+    for (const {script, x, y} of placements) moveScript(script, x, y);
+  } else {
+    const commentWidths = attachedCommentWidths(target, blocks);
+    let cursorX: number = turboWarpCleanUpLayout.startX;
+    for (const column of columns) {
+      let cursorY: number = turboWarpCleanUpLayout.startY;
+      let columnWidth = 0;
+      for (const script of column.scripts) {
+        moveScript(script, cursorX, cursorY);
+        cursorY += script.size.height + turboWarpCleanUpLayout.rowGap;
+        columnWidth = Math.max(
+          columnWidth,
+          script.size.width,
+          commentWidths.get(script.blockId) ?? 0,
+        );
+      }
+      cursorX += columnWidth + turboWarpCleanUpLayout.columnGap;
+    }
   }
 
   return {
     movedCommentCount: moveAttachedComments(target, blocks, movements),
-    movedScriptCount,
+    movedScriptCount: movements.size,
     scriptCount: scripts.length,
   };
 }
 
-export function cleanUpTurboWarpBlocks(project: ProjectJson): TurboWarpCleanUpResult {
+export function cleanUpTurboWarpBlocks(
+  project: ProjectJson,
+  {compact = false}: {compact?: boolean} = {},
+): TurboWarpCleanUpResult {
   assert(isObject(project), 'TurboWarp project must be an object.');
   assert(Array.isArray(project.targets), 'TurboWarp project targets must be an array.');
   const cleanedProject = structuredClone(project);
@@ -326,7 +478,7 @@ export function cleanUpTurboWarpBlocks(project: ProjectJson): TurboWarpCleanUpRe
 
   for (const [targetIndex, target] of targets.entries()) {
     assert(isObject(target), `Project target ${targetIndex} must be an object.`);
-    const result = cleanUpTarget(target, targetIndex);
+    const result = cleanUpTarget(target, targetIndex, compact);
     if (result.scriptCount > 0) targetCount += 1;
     movedCommentCount += result.movedCommentCount;
     movedScriptCount += result.movedScriptCount;
