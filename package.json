@@ -50,6 +50,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pack:check": "npm pack --dry-run --ignore-scripts",
+    "release:prepare": "node --experimental-strip-types scripts/prepare-release.ts && pnpm run build",
     "release:check": "npm publish --dry-run --access public",
     "repo:check": "node --experimental-strip-types scripts/check-repo.ts",
     "check": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run repo:check && pnpm run pack:check",
