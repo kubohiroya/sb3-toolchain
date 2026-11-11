@@ -298,7 +298,7 @@ function collectAssetReferences(
   const fonts = project.customFonts ?? [];
   assert(Array.isArray(fonts), 'project.source.json customFonts must be an array.');
   for (const [index, font] of fonts.entries()) {
-    if (!isObject(font) || font.system !== false) continue;
+    if (!isObject(font) || font.system !== false || font.md5ext === undefined) continue;
     const md5ext = font.md5ext;
     const match = typeof md5ext === 'string' && /^([a-f0-9]{32})\.(ttf|otf|woff2?)$/u.exec(md5ext);
     assert(match, `Invalid font asset reference for font ${index}: ${md5ext}`);

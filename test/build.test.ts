@@ -175,6 +175,7 @@ test('imports and rebuilds TurboWarp fonts alongside embedded and remote extensi
         webFont: {provider: 'google-fonts', id: 'roboto-mono'},
       },
       {system: false, family: 'Embedded', fallback: 'Serif', md5ext},
+      {system: false, family: 'Legacy entry without an asset', fallback: 'Serif'},
     ];
     const script = 'Scratch.extensions.register({});\n';
     const project = {
