@@ -190,9 +190,11 @@ expanded source; direct `extensions unbundle` of the generated SB3 requires the 
 
 ## Assets
 
-`assets/` contains costumes and sounds referenced by `project.source.json`. Each filename is
-`<assetId>.<dataFormat>`, and `assetId` must match the MD5 of its contents. An unreferenced, missing,
-or extra file is a validation error.
+`assets/` contains costumes, sounds, and embedded fonts referenced by `project.source.json`.
+Each filename is `<assetId>.<dataFormat>`, and `assetId` must match the MD5 of its contents.
+A `customFonts` entry with `system: false` references a font file by `md5ext` (`ttf`, `otf`, `woff`, or `woff2`).
+Entries with `system: true` are kept in the JSON, including any web font reference.
+An unreferenced, missing, or extra file is a validation error.
 
 ## Deterministic output
 

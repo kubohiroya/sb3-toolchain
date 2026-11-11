@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {strFromU8, strToU8, unzipSync} from 'fflate';
+import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 import {expect, test} from 'vitest';
 
 import {parseCliArguments, runCli} from '../src/cli';
@@ -156,6 +156,56 @@ test('build leaves identical output untouched and round-trips without source dif
     const comparison = await compareDirectories(fixtureSourceDirectory, roundTripDirectory);
     expect(comparison.identical).toBe(true);
     expect(comparison.differences).toStrictEqual({added: [], modified: [], removed: []});
+  });
+});
+
+test('imports and rebuilds TurboWarp fonts alongside embedded and remote extensions', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const original = path.join(directory, 'original.sb3');
+    const rebuilt = path.join(directory, 'rebuilt.sb3');
+    const sourceDirectory = path.join(directory, 'source');
+    const font = strToU8('font asset fixture');
+    const md5ext = `${createHash('md5').update(font).digest('hex')}.woff2`;
+    const customFonts = [
+      {system: true, family: 'Arial', fallback: 'Sans Serif'},
+      {
+        system: true,
+        family: 'Roboto Mono',
+        fallback: 'Sans Serif',
+        webFont: {provider: 'google-fonts', id: 'roboto-mono'},
+      },
+      {system: false, family: 'Embedded', fallback: 'Serif', md5ext},
+    ];
+    const script = 'Scratch.extensions.register({});\n';
+    const project = {
+      targets: [],
+      customFonts,
+      extensions: ['embedded', 'remote'],
+      extensionURLs: {
+        embedded: `data:text/javascript;base64,${Buffer.from(script).toString('base64')}`,
+        remote: 'https://example.org/remote.js',
+      },
+      meta: {semver: '3.0.0'},
+    };
+    await writeFile(
+      original,
+      zipSync({'project.json': strToU8(JSON.stringify(project)), [md5ext]: font}),
+    );
+    await importSb3({inputPath: original, outputDirectory: sourceDirectory});
+    const source = await validateSb3Source(sourceDirectory);
+    expect(source.assetReferenceCount).toBe(1);
+    expect(await readFile(path.join(sourceDirectory, 'extensions', 'embedded.js'), 'utf8')).toBe(
+      script,
+    );
+    await buildSb3({sourceDirectory, outputPath: rebuilt});
+    const result = unzipSync(await readFile(rebuilt));
+    expect(JSON.parse(strFromU8(result['project.json']))).toStrictEqual(project);
+    expect(result[md5ext]).toStrictEqual(font);
+
+    await writeFile(path.join(sourceDirectory, 'assets', md5ext), 'corrupt font');
+    await expect(validateSb3Source(sourceDirectory)).rejects.toThrow(
+      /Asset content hash mismatch for font 2/u,
+    );
   });
 });
 

@@ -188,9 +188,10 @@ APIマニフェストファイルは展開ソースの検証入力であり、SB
 
 ## アセット
 
-`assets/`には、`project.source.json`から参照されるコスチュームと音声が含まれます。各ファイル名は
-`<assetId>.<dataFormat>`であり、`assetId`は内容のMD5と一致しなければなりません。未参照、欠落、余分な
-ファイルはいずれも検証エラーです。
+`assets/`には、`project.source.json`から参照されるコスチューム、音声、埋め込みフォントが含まれます。
+各ファイル名は `<assetId>.<dataFormat>` で、`assetId` は内容の MD5 と一致する必要があります。
+`customFonts` の `system: false` の項目は、`md5ext` でフォントファイル（`ttf`、`otf`、`woff`、`woff2`）を参照します。
+`system: true` の項目と Web フォントの参照は JSON に保持します。未参照、欠落、余分なファイルはいずれも検証エラーです。
 
 ## 決定的出力
 
