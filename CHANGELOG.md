@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.23.0 - 2026-11-11
+
+- fix(fonts): keep legacy font entries without an asset
+- feat(fonts): 埋め込みフォントを含む作品フォルダをビルドする
+
 ## 0.22.0 - 2026-11-08
 
 - feat(release): sync version references in a release:prepare script (#85)
