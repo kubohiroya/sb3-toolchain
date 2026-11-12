@@ -155,6 +155,12 @@ await unbundleSb3({
 });
 ```
 
+### Create a project folder in a browser
+
+`unpackSb3(bytes)` from `@kubohiroya/sb3-toolchain/browser` expands SB3 bytes into a v1 project folder represented by a `Map<string, Uint8Array>` and a list of warnings. Use `validateSourceFiles(files)` to check the resulting files again. Both functions run without Node.js built-ins or filesystem access.
+
+The browser API reports and omits unreferenced assets with hash-based filenames and directory entries. It rejects Plus extension manifests and unsupported attachments with the `Sb3SourceError` code `unsupported-project`. Validation checks image, sound and font references and bytes, and the layout of embedded extensions. Use the CLI `check` and `build` commands for bundle builds and full managed-extension validation.
+
 ## Documentation
 
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows

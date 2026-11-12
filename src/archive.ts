@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import path from 'node:path';
-
 import {assert} from './assert';
 
 export function validateArchiveEntryName(entryName: unknown): string {
@@ -18,7 +16,7 @@ export function validateArchiveEntryName(entryName: unknown): string {
     `SB3 archive entry uses a backslash: ${JSON.stringify(entryName)}`,
   );
   assert(
-    !path.posix.isAbsolute(entryName) && !/^[A-Za-z]:/u.test(entryName),
+    !entryName.startsWith('/') && !/^[A-Za-z]:/u.test(entryName),
     `SB3 archive entry is absolute: ${JSON.stringify(entryName)}`,
   );
 

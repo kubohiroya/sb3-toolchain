@@ -10,6 +10,8 @@ const packageJson = require('./package.json') as {dependencies: Record<string, s
 
 const externalModules = [
   ...Object.keys(packageJson.dependencies),
+  '@noble/hashes/legacy.js',
+  '@noble/hashes/utils.js',
   ...builtinModules,
   ...builtinModules.map((name) => `node:${name}`),
 ];
@@ -23,6 +25,7 @@ export default defineConfig({
     lib: {
       entry: {
         bin: 'src/bin.ts',
+        browser: 'src/browser.ts',
         cli: 'src/cli.ts',
         index: 'src/index.ts',
       },

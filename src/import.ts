@@ -4,10 +4,8 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-import {strFromU8, unzipSync} from 'fflate';
-
-import {validateArchiveEntryName} from './archive';
-import {assert, errorMessage} from './assert';
+import {assert} from './assert';
+import {decodeExtensionBytes, expandArchive, formatSourceFiles} from './expand-archive';
 import {validateManagedExtensionApiManifest} from './extension-api-manifest';
 import {validateManagedExtensionContents} from './extension-dependencies';
 import {
@@ -20,14 +18,8 @@ import {
   validateOutputDirectoryPath,
 } from './output-safety';
 import type {DirectoryComparison, GitOutputState} from './output-safety';
-import {sourceFormatVersion} from './source';
-import type {
-  EmbeddedExtension,
-  ExtensionEncoding,
-  ExtensionSource,
-  ProjectJson,
-  UnknownRecord,
-} from './types';
+import {isObject, sourceFormatVersion} from './source-format';
+import type {ExtensionEncoding, ExtensionSource} from './types';
 
 export {validateOutputDirectoryPath} from './output-safety';
 
@@ -71,10 +63,6 @@ export interface ImportSb3Result {
   inputPath: string;
   outputDirectory: string;
   rollbackCleanupWarning: string | null;
-}
-
-function isObject(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function summarizeGitChanges(gitState: GitOutputState): string {
@@ -180,14 +168,6 @@ async function revalidateOutputReplacement({
   );
 }
 
-function extensionSourcePath(extensionId: string): string {
-  assert(
-    /^[A-Za-z0-9._-]+$/u.test(extensionId),
-    `Embedded extension ID cannot be used as a filename: ${JSON.stringify(extensionId)}`,
-  );
-  return `extensions/${extensionId}.js`;
-}
-
 async function readExistingExtensionSources(
   outputDirectory: string,
 ): Promise<Map<string, ExtensionSource>> {
@@ -229,51 +209,8 @@ async function readExistingExtensionSources(
 }
 
 export function decodeExtensionDataUrl(dataUrl: unknown): DecodedExtensionDataUrl {
-  assert(
-    typeof dataUrl === 'string' && dataUrl.startsWith('data:'),
-    'Embedded extension URL must be a data URL.',
-  );
-  const commaIndex = dataUrl.indexOf(',');
-  assert(commaIndex >= 0, 'Embedded extension data URL has no payload separator.');
-
-  const metadata = dataUrl.slice('data:'.length, commaIndex).split(';');
-  const mediaType = metadata.shift() || 'text/plain';
-  const base64Index = metadata.indexOf('base64');
-  const encoding: ExtensionEncoding = base64Index >= 0 ? 'base64' : 'percent';
-  if (base64Index >= 0) {
-    metadata.splice(base64Index, 1);
-  }
-
-  const payload = dataUrl.slice(commaIndex + 1);
-  let source: Buffer;
-  if (encoding === 'base64') {
-    assert(
-      /^[A-Za-z0-9+/]*={0,2}$/u.test(payload),
-      'Embedded extension data URL contains invalid base64.',
-    );
-    const unpaddedPayload = payload.replace(/=+$/u, '');
-    assert(
-      unpaddedPayload.length % 4 !== 1,
-      'Embedded extension data URL contains invalid base64.',
-    );
-    source = Buffer.from(
-      unpaddedPayload.padEnd(Math.ceil(unpaddedPayload.length / 4) * 4, '='),
-      'base64',
-    );
-  } else {
-    try {
-      source = Buffer.from(decodeURIComponent(payload), 'utf8');
-    } catch {
-      throw new Error('Embedded extension data URL contains invalid percent encoding.');
-    }
-  }
-
-  return {
-    encoding,
-    mediaType,
-    parameters: metadata,
-    source,
-  };
+  const decoded = decodeExtensionBytes(dataUrl);
+  return {...decoded, source: Buffer.from(decoded.source)};
 }
 
 export async function importSb3({
@@ -289,68 +226,23 @@ export async function importSb3({
   const resolvedInputPath = path.resolve(inputPath);
   const resolvedOutputDirectory = validateOutputDirectoryPath(outputDirectory, protectedRoot);
 
-  const archive = unzipSync(new Uint8Array(await readFile(resolvedInputPath)));
-  const archiveEntries = Object.entries(archive);
-  assert(archiveEntries.length > 0, 'SB3 archive is empty.');
-  for (const [entryName] of archiveEntries) {
-    validateArchiveEntryName(entryName);
+  const expanded = expandArchive(await readFile(resolvedInputPath));
+  const existingSources = await readExistingExtensionSources(resolvedOutputDirectory);
+  for (const extension of expanded.embeddedExtensions) {
+    const source = existingSources.get(`${extension.id}\u0000${extension.path}`);
+    if (source === undefined) continue;
+    extension.source = structuredClone(source);
+    validateManagedExtensionContents(extension, expanded.extensionFiles.get(extension.path)!);
+    if (extension.source.apiManifest) {
+      const contents = await readFile(
+        path.join(resolvedOutputDirectory, extension.source.apiManifest.path),
+      );
+      validateManagedExtensionApiManifest(extension, contents);
+      expanded.extensionFiles.set(extension.source.apiManifest.path, contents);
+    }
   }
-
-  const projectEntry = archive['project.json'];
-  assert(projectEntry, 'SB3 archive does not contain project.json.');
-
-  let project: unknown;
   let decision: OutputReplacementDecision | undefined;
   let rollbackCleanupWarning: string | null = null;
-  try {
-    project = JSON.parse(strFromU8(projectEntry));
-  } catch (error) {
-    throw new Error(`SB3 project.json is invalid JSON: ${errorMessage(error)}`, {cause: error});
-  }
-  assert(isObject(project), 'SB3 project.json must contain a JSON object.');
-  const projectJson: ProjectJson = project;
-
-  const extensionUrls: unknown = projectJson.extensionURLs ?? {};
-  assert(isObject(extensionUrls), 'SB3 project.json extensionURLs must be an object when present.');
-
-  const existingExtensionSources = await readExistingExtensionSources(resolvedOutputDirectory);
-  const embeddedExtensions: EmbeddedExtension[] = [];
-  const decodedExtensionSources: {path: string; source: Buffer}[] = [];
-  for (const [extensionId, extensionUrl] of Object.entries(extensionUrls)) {
-    if (typeof extensionUrl !== 'string' || !extensionUrl.startsWith('data:')) {
-      continue;
-    }
-    const sourcePath = extensionSourcePath(extensionId);
-    const decoded = decodeExtensionDataUrl(extensionUrl);
-    extensionUrls[extensionId] = `embedded-extension:${sourcePath}`;
-    const extension: EmbeddedExtension = {
-      id: extensionId,
-      path: sourcePath,
-      mediaType: decoded.mediaType,
-      parameters: decoded.parameters,
-      encoding: decoded.encoding,
-    };
-    const existingSource = existingExtensionSources.get(`${extensionId}\u0000${sourcePath}`);
-    let existingApiManifestContents: Buffer | null = null;
-    if (existingSource !== undefined) {
-      extension.source = structuredClone(existingSource);
-      validateManagedExtensionContents(extension, decoded.source);
-      if (extension.source.apiManifest) {
-        existingApiManifestContents = await readFile(
-          path.join(resolvedOutputDirectory, extension.source.apiManifest.path),
-        );
-        validateManagedExtensionApiManifest(extension, existingApiManifestContents);
-      }
-    }
-    embeddedExtensions.push(extension);
-    decodedExtensionSources.push({path: sourcePath, source: decoded.source});
-    if (existingApiManifestContents && extension.source?.apiManifest) {
-      decodedExtensionSources.push({
-        path: extension.source.apiManifest.path,
-        source: existingApiManifestContents,
-      });
-    }
-  }
 
   const outputParent = path.dirname(resolvedOutputDirectory);
   await mkdir(outputParent, {recursive: true});
@@ -359,48 +251,17 @@ export async function importSb3({
   );
 
   try {
-    const assetsDirectory = path.join(temporaryDirectory, 'assets');
-    await mkdir(assetsDirectory, {recursive: true});
+    await mkdir(path.join(temporaryDirectory, 'assets'), {recursive: true});
     await mkdir(path.join(temporaryDirectory, 'extensions'), {recursive: true});
-
-    for (const [entryName, contents] of archiveEntries) {
-      if (entryName === 'project.json' || entryName.endsWith('/')) {
-        continue;
-      }
-      const assetPath = path.resolve(assetsDirectory, entryName);
+    for (const [name, contents] of formatSourceFiles(expanded)) {
+      const outputPath = path.resolve(temporaryDirectory, name);
       assert(
-        assetPath.startsWith(`${assetsDirectory}${path.sep}`),
-        `SB3 archive entry escapes the assets directory: ${JSON.stringify(entryName)}`,
+        outputPath.startsWith(`${temporaryDirectory}${path.sep}`),
+        `SB3 archive entry escapes the source directory: ${JSON.stringify(name)}`,
       );
-      await mkdir(path.dirname(assetPath), {recursive: true});
-      await writeFile(assetPath, contents);
+      await mkdir(path.dirname(outputPath), {recursive: true});
+      await writeFile(outputPath, contents);
     }
-
-    for (const extension of decodedExtensionSources) {
-      await writeFile(path.join(temporaryDirectory, extension.path), extension.source);
-    }
-
-    const sourceManifest = {
-      formatVersion: sourceFormatVersion,
-      project: 'project.source.json',
-      embeddedExtensions: 'embedded-extensions.json',
-      assetsDirectory: 'assets',
-      archiveEntries: archiveEntries.map(([entryName]) => entryName),
-    };
-    await Promise.all([
-      writeFile(
-        path.join(temporaryDirectory, 'project.source.json'),
-        `${JSON.stringify(projectJson, null, 2)}\n`,
-      ),
-      writeFile(
-        path.join(temporaryDirectory, 'embedded-extensions.json'),
-        `${JSON.stringify({formatVersion: sourceFormatVersion, extensions: embeddedExtensions}, null, 2)}\n`,
-      ),
-      writeFile(
-        path.join(temporaryDirectory, 'sb3-source.json'),
-        `${JSON.stringify(sourceManifest, null, 2)}\n`,
-      ),
-    ]);
     decision = await authorizeOutputReplacement({
       candidateDirectory: temporaryDirectory,
       confirmReplace,
@@ -430,11 +291,9 @@ export async function importSb3({
   }
 
   return {
-    archiveEntryCount: archiveEntries.length,
-    assetCount: archiveEntries.filter(
-      ([entryName]) => entryName !== 'project.json' && !entryName.endsWith('/'),
-    ).length,
-    embeddedExtensionCount: embeddedExtensions.length,
+    archiveEntryCount: expanded.archiveEntries.length,
+    assetCount: expanded.assets.size,
+    embeddedExtensionCount: expanded.embeddedExtensions.length,
     changed: decision.action !== 'unchanged',
     differenceCounts: decision.comparison
       ? {
