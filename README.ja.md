@@ -34,7 +34,7 @@ Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確�
 再現可能なインストールのため、検証済みのnpmバージョンを固定します。
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.23.0
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.24.0
 ```
 
 ## クイックスタート
@@ -150,6 +150,12 @@ await unbundleSb3({
   yes: true,
 });
 ```
+
+### ブラウザーで作品フォルダを作る
+
+`@kubohiroya/sb3-toolchain/browser` の `unpackSb3(bytes)` は、SB3 のバイト列を作品フォルダ v1 の `Map<string, Uint8Array>` と警告の一覧に変換します。生成されたファイルは `validateSourceFiles(files)` で再検査できます。どちらの関数も Node.js の組み込みモジュールやファイルシステムを使いません。
+
+参照のないハッシュ名の素材と ZIP のディレクトリエントリーは、警告を返して除外します。Plus 拡張マニフェストと参照のない添付ファイルは、対応する作品フォルダで開けないため `Sb3SourceError` の `unsupported-project` として報告します。画像・音声・フォントの参照と内容、埋め込み拡張のファイル構成を確認します。バンドルのビルドと管理対象拡張の完全な検査には CLI の `check` と `build` を使えます。
 
 ## ドキュメント
 

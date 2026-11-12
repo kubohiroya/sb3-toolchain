@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/sb3-toolchain",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Git-friendly source management and deterministic builds for Scratch 3 and TurboWarp SB3 projects",
   "type": "module",
   "license": "MPL-2.0",
@@ -21,6 +21,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     },
     "./package.json": "./package.json"
   },
@@ -57,6 +61,7 @@
     "prepack": "pnpm run check"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "fflate": "0.8.3",
     "music-metadata": "11.14.0",
     "rolldown": "1.2.7",
