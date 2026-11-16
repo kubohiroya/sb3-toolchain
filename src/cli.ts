@@ -106,6 +106,7 @@ export interface ExtensionsBundleCliOptions {
   buildMode?: 'classic' | 'module';
   sharedDependencies?: Record<string, string>;
   paletteGroups?: 'single' | 'members';
+  memberColors?: 'bundle' | 'member';
 }
 
 export interface ExtensionsUnbundleSourceCliOptions {
@@ -187,7 +188,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--palette-groups single|members] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--palette-groups single|members] [--member-colors bundle|member] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -488,6 +489,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
   let yes = false;
   let buildMode: 'classic' | 'module' | undefined;
   let paletteGroups: 'single' | 'members' | undefined;
+  let memberColors: 'bundle' | 'member' | undefined;
   const sharedDependencies: Record<string, string> = {};
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -525,6 +527,11 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
         '--palette-groups must be single or members.',
       );
       paletteGroups = value;
+      index += 1;
+    } else if (argument === '--member-colors') {
+      const value = takeValue(arguments_, index, '--member-colors');
+      assert(value === 'bundle' || value === 'member', '--member-colors must be bundle or member.');
+      memberColors = value;
       index += 1;
     } else if (argument === '--share') {
       const value = takeValue(arguments_, index, '--share');
@@ -575,6 +582,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
     ...(buildMode === undefined ? {} : {buildMode}),
     ...(Object.keys(sharedDependencies).length ? {sharedDependencies} : {}),
     ...(paletteGroups === undefined ? {} : {paletteGroups}),
+    ...(memberColors === undefined ? {} : {memberColors}),
   };
 }
 
@@ -940,6 +948,7 @@ export async function runCli(
         buildMode: options.buildMode,
         sharedDependencies: options.sharedDependencies,
         paletteGroups: options.paletteGroups,
+        memberColors: options.memberColors,
         sourceDirectory: options.sourceDirectory,
         yes: options.yes,
       });

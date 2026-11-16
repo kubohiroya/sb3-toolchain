@@ -79,6 +79,11 @@ export interface ExtensionBundleConfiguration {
    * Other editors ignore it and show the bundle as one category either way.
    */
   paletteGroups?: 'single' | 'members';
+  /**
+   * Whose colours the members' blocks are drawn in: `bundle` (the default) uses the bundle's colours for every
+   * block, `member` keeps each member's own `color1`–`color3`, in every editor. A block's own colour always wins.
+   */
+  memberColors?: 'bundle' | 'member';
 }
 
 export interface EmbeddedExtensionManifest {

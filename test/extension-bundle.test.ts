@@ -696,7 +696,7 @@ test('makes each member a palette group of its own when asked, and one group by 
       betaSource
         .replace(
           "name: 'Beta Tools',",
-          "name: 'Beta Tools',\n        color1: '#112233',\n        groups: [{id: 'echoes', name: 'Echoes'}, {id: 'bad id', name: 'x'}],",
+          "name: 'Beta Tools',\n        color1: '#112233',\n        groups: [{id: 'echoes', name: {en: 'Echoes', ja: 'こだま\\nの声'}, color1: '#445566'}, {id: 'bad id', name: 'x'}],",
         )
         .replace(
           "text: 'echo [VALUE]',",
@@ -720,6 +720,11 @@ test('makes each member a palette group of its own when asked, and one group by 
             .map((block: any) => [block.opcode, block.paletteGroup]),
         ),
         everyBlockGrouped: blocks.every((block: any) => typeof block.paletteGroup === 'string'),
+        colors: Object.fromEntries(
+          blocks
+            .filter((block: any) => block.opcode)
+            .map((block: any) => [block.opcode, block.color1]),
+        ),
       };
     };
 
@@ -742,15 +747,53 @@ test('makes each member a palette group of its own when asked, and one group by 
         name: 'Alpha Tools',
         menuIconURI: 'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
       },
-      {id: 'beta', name: 'Beta Tools', color1: '#112233'},
-      {id: 'beta-echoes', name: 'Beta Tools: Echoes', color1: '#112233'},
+      // The bundle's colours are the default, so the groups carry none of the members' colours.
+      {id: 'beta', name: 'Beta Tools'},
+      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}},
     ]);
+    expect(members.colors.beta__echo).toBeUndefined();
     expect(members.byBlock).toMatchObject({
       alpha__value: 'alpha',
       beta__value: 'beta',
       beta__echo: 'beta-echoes',
     });
     expect(members.everyBlockGrouped).toBe(true);
+
+    // With member colours, the groups and the blocks keep the members' colours; a group's own wins.
+    await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
+    await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      paletteGroups: 'members',
+      memberColors: 'member',
+      sourceDirectory,
+      yes: true,
+    });
+    const coloured = await groupsOf();
+    expect(coloured.groups.slice(1)).toEqual([
+      {id: 'beta', name: 'Beta Tools', color1: '#112233'},
+      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}, color1: '#445566'},
+    ]);
+    expect(coloured.colors).toMatchObject({beta__echo: '#112233', alpha__value: undefined});
+
+    // Member colours without member groups colour the blocks and declare no groups.
+    await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
+    await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      memberColors: 'member',
+      sourceDirectory,
+      yes: true,
+    });
+    const colouredOnly = await groupsOf();
+    expect(colouredOnly.groups).toBeUndefined();
+    expect(colouredOnly.colors).toMatchObject({beta__value: '#112233', beta__echo: '#112233'});
+    expect(
+      JSON.parse(await readFile(path.join(sourceDirectory, 'embedded-extensions.json'), 'utf8'))
+        .extensionBundles[0].memberColors,
+    ).toBe('member');
 
     await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
     await bundleExtensions({
@@ -761,6 +804,7 @@ test('makes each member a palette group of its own when asked, and one group by 
       yes: true,
     });
     const single = await groupsOf();
+    expect(single.colors.beta__echo).toBeUndefined();
     expect(single.groups).toBeUndefined();
     // The default output is unchanged: a member's own mark stays, and without groups no palette reads it.
     expect(single.byBlock).toMatchObject({alpha__value: undefined, beta__echo: 'echoes'});
@@ -1187,6 +1231,34 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       'each',
     ]),
   ).toThrow(/--palette-groups must be single or members/u);
+  expect(
+    (
+      parseCliArguments([
+        'extensions',
+        'bundle',
+        'custom-source',
+        '--id',
+        'projectbundle',
+        '--name',
+        'Project Extension Bundle',
+        '--member-colors',
+        'member',
+      ]) as ExtensionsBundleCliOptions
+    ).memberColors,
+  ).toBe('member');
+  expect(() =>
+    parseCliArguments([
+      'extensions',
+      'bundle',
+      'custom-source',
+      '--id',
+      'projectbundle',
+      '--name',
+      'Project Extension Bundle',
+      '--member-colors',
+      'own',
+    ]),
+  ).toThrow(/--member-colors must be bundle or member/u);
   expect(
     parseCliArguments(['extensions', 'unbundle', 'custom-source', 'projectbundle', '--yes']),
   ).toStrictEqual({

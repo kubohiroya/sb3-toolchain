@@ -170,6 +170,12 @@ export function validateExtensionBundleConfigurations(
         bundle.paletteGroups === 'members',
       `Invalid paletteGroups for extension bundle ${id}.`,
     );
+    assert(
+      bundle.memberColors === undefined ||
+        bundle.memberColors === 'bundle' ||
+        bundle.memberColors === 'member',
+      `Invalid memberColors for extension bundle ${id}.`,
+    );
     if (bundle.sharedDependencies !== undefined) {
       assert(bundle.buildMode === 'module', `sharedDependencies requires buildMode module: ${id}`);
       assert(isObject(bundle.sharedDependencies), `sharedDependencies must be an object: ${id}`);
@@ -233,6 +239,7 @@ export function validateExtensionBundleConfigurations(
         : {metadata: validateExtensionBundleMetadata(bundle.metadata)}),
       ...(bundle.buildMode === undefined ? {} : {buildMode: bundle.buildMode}),
       ...(bundle.paletteGroups === undefined ? {} : {paletteGroups: bundle.paletteGroups}),
+      ...(bundle.memberColors === undefined ? {} : {memberColors: bundle.memberColors}),
       ...(bundle.sharedDependencies === undefined
         ? {}
         : {sharedDependencies: {...bundle.sharedDependencies} as Record<string, string>}),
@@ -551,15 +558,21 @@ export function createStaticExtensionBundle(
         .join('\n')
     : '';
   // With member palette groups, each member is a group named after it, and a group the member declares itself
-  // becomes MEMBER-GROUP. Without them the generated source stays byte for byte as before.
+  // becomes MEMBER-GROUP under its own name. With member colours, each member's blocks keep the member's colours
+  // instead of the bundle's. With neither, the generated source stays byte for byte as before.
   const memberGroups = bundle.paletteGroups === 'members';
-  const push = memberGroups ? 'pushBlock' : 'result.blocks.push';
-  const memberPaletteGroupsSource = `        const memberGroupIds = new Set();
+  const memberColors = bundle.memberColors === 'member';
+  const push = memberGroups || memberColors ? 'pushBlock' : 'result.blocks.push';
+  const memberColorsSource = memberColors
+    ? `
+        for (const key of ['color1', 'color2', 'color3']) {
+          if (typeof info[key] === 'string' && info[key]) memberColors[key] = info[key];
+        }`
+    : '';
+  const memberGroupsSource = memberGroups
+    ? `
+        const memberGroupIds = new Set();
         {
-          const memberColors = {};
-          for (const key of ['color1', 'color2', 'color3']) {
-            if (typeof info[key] === 'string' && info[key]) memberColors[key] = info[key];
-          }
           const memberIcon = info.menuIconURI || info.blockIconURI;
           const memberGroup = {id: componentId, name: info.name, ...memberColors};
           if (typeof memberIcon === 'string' && memberIcon) memberGroup.menuIconURI = memberIcon;
@@ -568,18 +581,44 @@ export function createStaticExtensionBundle(
             if (!group || typeof group.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(group.id)) continue;
             if (memberGroupIds.has(group.id)) continue;
             memberGroupIds.add(group.id);
-            const declared = {...memberGroup, ...group, id: componentId + '-' + group.id};
-            declared.name = info.name + ': ' + (typeof group.name === 'string' && group.name ? group.name : group.id);
+            const declared = {...memberGroup, id: componentId + '-' + group.id, name: group.id};
+            if ((typeof group.name === 'string' && group.name) || (group.name && typeof group.name === 'object')) {
+              declared.name = group.name;
+            }
+            if (typeof group.menuIconURI === 'string' && group.menuIconURI) declared.menuIconURI = group.menuIconURI;
+            if (${JSON.stringify(memberColors)}) {
+              for (const key of ['color1', 'color2', 'color3']) {
+                if (typeof group[key] === 'string' && group[key]) declared[key] = group[key];
+              }
+            }
             result.groups.push(declared);
           }
         }
         const paletteGroupOf = (block) =>
-          memberGroupIds.has(block.paletteGroup) ? componentId + '-' + block.paletteGroup : componentId;
+          memberGroupIds.has(block.paletteGroup) ? componentId + '-' + block.paletteGroup : componentId;`
+    : '';
+  const memberBlocksSource =
+    memberGroups || memberColors
+      ? `        const memberColors = {};${memberColorsSource}${memberGroupsSource}
         const pushBlock = (block) => {
-          if (block && typeof block === 'object') block.paletteGroup = paletteGroupOf(block);
+          if (block && typeof block === 'object') {${
+            memberGroups
+              ? `
+            block.paletteGroup = paletteGroupOf(block);`
+              : ''
+          }${
+            memberColors
+              ? `
+            const drawn = block.blockType !== Scratch.BlockType.LABEL &&
+              block.blockType !== Scratch.BlockType.BUTTON && block.blockType !== Scratch.BlockType.XML;
+            if (drawn && block.color1 === undefined) Object.assign(block, memberColors);`
+              : ''
+          }
+          }
           result.blocks.push(block);
         };
-`;
+`
+      : '';
   const runtime = `(function (Scratch) {
   'use strict';
 
@@ -791,7 +830,7 @@ ${
           throw new Error('Static bundle member ' + componentId + ' must have a non-empty name.');
         }
         const namespace = componentId + '__';
-${memberGroups ? memberPaletteGroupsSource : ''}        const memberBlockIconURI =
+${memberBlocksSource}        const memberBlockIconURI =
           typeof info.blockIconURI === 'string' && info.blockIconURI.length > 0
             ? info.blockIconURI
             : null;

@@ -58,6 +58,7 @@ export interface ExtensionBundleConfigurationInput {
   buildMode?: ExtensionBundleConfiguration['buildMode'];
   sharedDependencies?: Record<string, string>;
   paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
+  memberColors?: ExtensionBundleConfiguration['memberColors'];
 }
 
 export interface ExtensionBundlePlanResult {
@@ -134,6 +135,7 @@ async function configurationContext({
   buildMode,
   sharedDependencies,
   paletteGroups,
+  memberColors,
   metadata,
   sourceDirectory,
   willReplace,
@@ -148,6 +150,7 @@ async function configurationContext({
   buildMode?: ExtensionBundleConfiguration['buildMode'];
   sharedDependencies?: Record<string, string>;
   paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
+  memberColors?: ExtensionBundleConfiguration['memberColors'];
   metadata?: ExtensionBundleConfiguration['metadata'];
 }): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
@@ -181,6 +184,7 @@ async function configurationContext({
       ...(buildMode === undefined ? {} : {buildMode}),
       ...(sharedDependencies === undefined ? {} : {sharedDependencies}),
       ...(paletteGroups === 'members' ? {paletteGroups} : {}),
+      ...(memberColors === 'member' ? {memberColors} : {}),
       ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
     },
   ];
@@ -209,6 +213,7 @@ export async function planExtensionBundle({
   buildMode,
   sharedDependencies,
   paletteGroups,
+  memberColors,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
@@ -220,6 +225,7 @@ export async function planExtensionBundle({
     buildMode,
     sharedDependencies,
     paletteGroups,
+    memberColors,
     metadata,
     willReplace: false,
   });
@@ -310,6 +316,7 @@ export async function bundleExtensions({
   buildMode,
   sharedDependencies,
   paletteGroups,
+  memberColors,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
@@ -321,6 +328,7 @@ export async function bundleExtensions({
     buildMode,
     sharedDependencies,
     paletteGroups,
+    memberColors,
     metadata,
     willReplace: yes,
   });
