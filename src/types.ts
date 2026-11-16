@@ -87,6 +87,8 @@ export interface Sb3SourceManifest {
   embeddedExtensions: string;
   assetsDirectory: string;
   archiveEntries: string[];
+  /** Present only in source format 2. */
+  blockPalette?: string;
 }
 
 /**

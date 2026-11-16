@@ -2,6 +2,7 @@
 
 import {validateArchiveEntryName} from './archive';
 import {assert} from './assert';
+import {blockPaletteFile} from './block-palette';
 import type {
   EmbeddedExtension,
   ProjectAssetReference,
@@ -10,7 +11,14 @@ import type {
   UnknownRecord,
 } from './types';
 
+/** The source format version written for projects without block palette settings. */
 export const sourceFormatVersion = 1;
+/** The source format version written for projects with `block-palette.json`. */
+export const blockPaletteSourceFormatVersion = 2;
+/** Every source format version that readers accept. */
+export const supportedSourceFormatVersions: readonly number[] = [1, 2];
+/** `embedded-extensions.json` keeps its own version, independent of the source format. */
+export const embeddedExtensionManifestFormatVersion = 1;
 
 export function isObject(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -35,9 +43,20 @@ export function assertSameFileSet(
 export function validateSourceManifest(manifest: unknown): asserts manifest is Sb3SourceManifest {
   assert(isObject(manifest), 'sb3-source.json must contain an object.');
   assert(
-    manifest.formatVersion === sourceFormatVersion,
+    supportedSourceFormatVersions.includes(manifest.formatVersion as number),
     `Unsupported SB3 source format version: ${manifest.formatVersion}`,
   );
+  if (manifest.formatVersion === blockPaletteSourceFormatVersion) {
+    assert(
+      manifest.blockPalette === blockPaletteFile,
+      `SB3 source format 2 requires ${blockPaletteFile}.`,
+    );
+  } else {
+    assert(
+      manifest.blockPalette === undefined,
+      'sb3-source.json blockPalette requires SB3 source format 2.',
+    );
+  }
   assert(
     manifest.project === 'project.source.json',
     'SB3 source format 1 requires project.source.json.',
@@ -84,7 +103,7 @@ export function validateExtensionLayout(
 ): {extensionBundles: unknown; extensions: EmbeddedExtension[]} {
   assert(isObject(extensionManifest), 'embedded-extensions.json must contain an object.');
   assert(
-    extensionManifest.formatVersion === sourceFormatVersion,
+    extensionManifest.formatVersion === embeddedExtensionManifestFormatVersion,
     `Unsupported embedded extension manifest version: ${extensionManifest.formatVersion}`,
   );
   assert(

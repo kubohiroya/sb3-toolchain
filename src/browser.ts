@@ -6,6 +6,8 @@ import {strFromU8} from 'fflate';
 
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
+import {resolveBlockPaletteReferences, validateBlockPaletteDocument} from './block-palette';
+import type {BlockPaletteWarningCode} from './block-palette';
 import {expandArchive, formatSourceFiles, Sb3SourceError} from './expand-archive';
 import {
   assertSameFileSet,
@@ -19,10 +21,37 @@ import type {ProjectJson} from './types';
 export {Sb3SourceError} from './expand-archive';
 export type {Sb3SourceErrorCode} from './expand-archive';
 export {packageVersion} from './constants';
+export {
+  blockPaletteCommentMarker,
+  blockPaletteCommentMaxLength,
+  blockPaletteCommentReference,
+  blockPaletteFile,
+  blockPaletteFormatVersion,
+  blockPaletteSpriteCommentHeader,
+  blockPaletteStageCommentHeader,
+  formatBlockPaletteComment,
+  serializeBlockPaletteDocument,
+  validateBlockPaletteDocument,
+} from './block-palette';
+export type {
+  BlockPaletteDocument,
+  BlockPaletteSet,
+  BlockPaletteTargetSetting,
+} from './block-palette';
+export {
+  blockPaletteSourceFormatVersion,
+  sourceFormatVersion,
+  supportedSourceFormatVersions,
+} from './source-format';
 
 export interface UnpackWarning {
-  code: 'directory-entry' | 'unreferenced-asset';
+  code: 'directory-entry' | 'unreferenced-asset' | BlockPaletteWarningCode;
+  /** The archive entry, or `project.json` for block palette comments. */
   path: string;
+  /** Present for block palette warnings. */
+  commentId?: string;
+  message?: string;
+  target?: string;
 }
 
 export interface UnpackedSb3 {
@@ -120,11 +149,22 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
       }
     }
 
+    try {
+      const blockPalette =
+        manifest.blockPalette === undefined
+          ? null
+          : validateBlockPaletteDocument(json(manifest.blockPalette));
+      resolveBlockPaletteReferences(project, blockPalette);
+    } catch (cause) {
+      throw new Sb3SourceError('invalid-block-palette', errorMessage(cause), {cause});
+    }
+
     const extensionFiles: string[] = [];
     const expected = new Set([
       'sb3-source.json',
       manifest.project,
       manifest.embeddedExtensions,
+      ...(manifest.blockPalette === undefined ? [] : [manifest.blockPalette]),
       ...assetEntries.map((name) => `assets/${name}`),
     ]);
     for (const name of files.keys()) {
@@ -161,7 +201,10 @@ export function unpackSb3(bytes: Uint8Array): UnpackedSb3 {
       throw new Sb3SourceError('missing-asset', `Referenced asset is missing: ${name}`);
     }
   }
-  const warnings: UnpackWarning[] = [];
+  const warnings: UnpackWarning[] = expanded.blockPaletteWarnings.map((warning) => ({
+    ...warning,
+    path: 'project.json',
+  }));
   expanded.archiveEntries = expanded.archiveEntries.filter((name) => {
     if (name === 'project.json' || references.has(name)) return true;
     if (name.endsWith('/')) {

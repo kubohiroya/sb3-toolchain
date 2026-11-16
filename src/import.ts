@@ -18,8 +18,9 @@ import {
   validateOutputDirectoryPath,
 } from './output-safety';
 import type {DirectoryComparison, GitOutputState} from './output-safety';
-import {isObject, sourceFormatVersion} from './source-format';
+import {isObject, supportedSourceFormatVersions} from './source-format';
 import type {ExtensionEncoding, ExtensionSource} from './types';
+import type {BlockPaletteWarning} from './block-palette';
 
 export {validateOutputDirectoryPath} from './output-safety';
 
@@ -63,6 +64,8 @@ export interface ImportSb3Result {
   inputPath: string;
   outputDirectory: string;
   rollbackCleanupWarning: string | null;
+  /** Block palette comments that were normalized or kept as plain comments. */
+  warnings: BlockPaletteWarning[];
 }
 
 function summarizeGitChanges(gitState: GitOutputState): string {
@@ -93,7 +96,7 @@ async function authorizeOutputReplacement({
     return {action: 'create', comparison: null, gitState: null};
   }
 
-  await assertRecognizedOutputDirectory(outputDirectory, sourceFormatVersion);
+  await assertRecognizedOutputDirectory(outputDirectory, supportedSourceFormatVersions);
   const comparison = await compareDirectories(outputDirectory, candidateDirectory);
   if (comparison.identical) {
     return {action: 'unchanged', comparison, gitState: null};
@@ -305,5 +308,6 @@ export async function importSb3({
     inputPath: resolvedInputPath,
     outputDirectory: resolvedOutputDirectory,
     rollbackCleanupWarning,
+    warnings: expanded.blockPaletteWarnings,
   };
 }

@@ -1069,5 +1069,6 @@ export async function runCli(
   } else {
     log(`Already up to date; no files changed: ${result.outputDirectory}`);
   }
+  for (const warning of result.warnings) log(`Warning: ${warning.message}`);
   if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
 }
