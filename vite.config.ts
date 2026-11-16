@@ -46,6 +46,15 @@ export default defineConfig({
       include: ['src'],
       outDirs: ['dist'],
       entryRoot: 'src',
+      // Consumers that resolve modules as NodeNext need the extension on relative declaration imports.
+      beforeWriteFile: (filePath, content) => ({
+        filePath,
+        content: content.replace(
+          /((?:from|import)\s*\(?\s*['"])(\.{1,2}\/[^'"]+?)(['"])/gu,
+          (match, start: string, specifier: string, end: string) =>
+            /\.[cm]?js$/u.test(specifier) ? match : `${start}${specifier}.js${end}`,
+        ),
+      }),
     }),
   ],
   test: {
