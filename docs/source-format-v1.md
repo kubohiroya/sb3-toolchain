@@ -2,8 +2,8 @@
 
 [日本語版](ja/source-format-v1.md)
 
-Projects with block palette settings use [format v2](source-format-v2.md), which adds
-`block-palette.json` to this layout. Projects without them keep using v1.
+Import and unpack always write v1. Folders in [format v2](source-format-v2.md), which 0.25 wrote for
+projects with block palette comments, are still read and built.
 
 ## Layout
 
@@ -12,11 +12,20 @@ SOURCE_DIR/
 ├── sb3-source.json
 ├── project.source.json
 ├── embedded-extensions.json
+├── .tw-plus/
+│   └── workspace.json        (optional)
 ├── assets/
 │   └── <assetId>.<dataFormat>
 └── extensions/
     └── <extensionId>.js
 ```
+
+`.tw-plus/workspace.json` is the screen state TurboWarp Plus Editor saves with a project: its tab layout,
+the block groups each sprite shows in the palette, and so on. An SB3 carries it as the ZIP entry
+`tw-plus/workspace.json`, which Scratch and TurboWarp ignore. Import copies the entry to this file byte for
+byte and lists it in `archiveEntries`; build puts the file back in the same place. The Editor writes the file
+itself when it saves a project folder; such a file, not listed in `archiveEntries`, becomes the last entry of
+the SB3. The toolchain only checks that it is JSON, and a folder without it builds without the entry.
 
 `sb3-source.json` records the format version, paths to each component, and the ZIP entry order of the
 original SB3.

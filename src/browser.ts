@@ -13,6 +13,8 @@ import {
   assertSameFileSet,
   collectSourceAssetReferences,
   isObject,
+  screenStateEntry,
+  screenStateFile,
   validateExtensionLayout,
   validateSourceManifest,
 } from './source-format';
@@ -130,7 +132,21 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
     assert(isObject(project), 'project.source.json must contain an object.');
     const references = validatedAssetReferences(project);
 
-    const assetEntries = manifest.archiveEntries.filter((name) => name !== 'project.json');
+    const assetEntries = manifest.archiveEntries.filter(
+      (name) => name !== 'project.json' && name !== screenStateEntry,
+    );
+    // The Editor's screen state is optional and opaque here; it only has to be JSON.
+    if (files.has(screenStateFile)) {
+      try {
+        json(screenStateFile);
+      } catch (cause) {
+        throw new Sb3SourceError(
+          'invalid-source',
+          `${screenStateFile} is not valid JSON: ${errorMessage(cause)}`,
+          {cause},
+        );
+      }
+    }
     assertSameFileSet(
       assetEntries,
       references.map(({filename}) => filename),
@@ -170,6 +186,7 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
       'sb3-source.json',
       manifest.project,
       manifest.embeddedExtensions,
+      screenStateFile,
       ...(manifest.blockPalette === undefined ? [] : [manifest.blockPalette]),
       ...assetEntries.map((name) => `assets/${name}`),
     ]);
@@ -207,12 +224,9 @@ export function unpackSb3(bytes: Uint8Array): UnpackedSb3 {
       throw new Sb3SourceError('missing-asset', `Referenced asset is missing: ${name}`);
     }
   }
-  const warnings: UnpackWarning[] = expanded.blockPaletteWarnings.map((warning) => ({
-    ...warning,
-    path: 'project.json',
-  }));
+  const warnings: UnpackWarning[] = [];
   expanded.archiveEntries = expanded.archiveEntries.filter((name) => {
-    if (name === 'project.json' || references.has(name)) return true;
+    if (name === 'project.json' || name === screenStateEntry || references.has(name)) return true;
     if (name.endsWith('/')) {
       warnings.push({code: 'directory-entry', path: name});
     } else if (/^[a-f0-9]{32}\.[A-Za-z0-9]+$/u.test(name)) {

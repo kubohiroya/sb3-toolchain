@@ -2,6 +2,10 @@
 
 [日本語版](ja/source-format-v2.md)
 
+> **No longer written.** Since 0.26, import and unpack write [format v1](source-format-v1.md) and keep
+> palette comments as plain comments. TurboWarp Plus Editor now saves block palette settings in its screen
+> state (`.tw-plus/workspace.json`), not in comments. Folders in this format are still read and built.
+
 Format v2 is [format v1](source-format-v1.md) plus block palette settings: which block groups the
 block palette shows for each sprite and for the stage. Everything not described here is the same as
 in v1.

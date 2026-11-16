@@ -28,6 +28,8 @@ import {
   assertSameFileSet,
   collectSourceAssetReferences,
   isObject,
+  screenStateEntry,
+  screenStateFile,
   validateExtensionLayout,
   validateSourceManifest,
 } from './source-format';
@@ -56,6 +58,8 @@ export interface InspectedSb3Source {
   extensionContents: Map<string, Uint8Array>;
   project: ProjectJson;
   resolvedSourceDirectory: string;
+  /** The Editor's screen state (`.tw-plus/workspace.json`), or null when the folder has none. */
+  screenState: Uint8Array | null;
   sourceManifest: Sb3SourceManifest;
 }
 
@@ -165,8 +169,22 @@ async function inspectSb3Source(
   );
   validateSourceManifest(sourceManifest);
   const assetEntries = sourceManifest.archiveEntries.filter(
-    (entryName) => entryName !== 'project.json',
+    (entryName) => entryName !== 'project.json' && entryName !== screenStateEntry,
   );
+  // The Editor writes its screen state into the folder whenever it saves; it is optional and only has to be JSON.
+  let screenState: Uint8Array | null = null;
+  try {
+    screenState = await readFile(path.join(resolvedSourceDirectory, screenStateFile));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  if (screenState) {
+    try {
+      JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(screenState));
+    } catch (cause) {
+      throw new Error(`${screenStateFile} is not valid JSON: ${errorMessage(cause)}`, {cause});
+    }
+  }
   const project: unknown = await readJson(
     path.join(resolvedSourceDirectory, sourceManifest.project),
     'SB3 project source',
@@ -259,6 +277,7 @@ async function inspectSb3Source(
     extensionContents,
     project,
     resolvedSourceDirectory,
+    screenState,
     sourceManifest,
   };
 }
@@ -343,9 +362,17 @@ export async function createDeterministicSb3(
   project.extensionURLs = extensionUrls;
 
   const archiveEntries: Record<string, Uint8Array> = {};
-  for (const entryName of projectAssets.archiveEntries) {
+  // The screen state keeps its place in the archive; one the Editor wrote after the import goes last.
+  const entryNames = [...projectAssets.archiveEntries];
+  if (source.screenState && !entryNames.includes(screenStateEntry))
+    entryNames.push(screenStateEntry);
+  for (const entryName of entryNames) {
     if (entryName === 'project.json') {
       archiveEntries[entryName] = strToU8(`${JSON.stringify(project)}\n`);
+      continue;
+    }
+    if (entryName === screenStateEntry) {
+      if (source.screenState) archiveEntries[entryName] = source.screenState;
       continue;
     }
     const contents = projectAssets.assetContents.get(entryName);
@@ -364,7 +391,7 @@ export async function createDeterministicSb3(
     blockCleanUp,
     bundlePlans: bundled.bundlePlans,
     embeddedExtensionCount: bundled.extensions.length,
-    entryCount: projectAssets.archiveEntries.length,
+    entryCount: Object.keys(archiveEntries).length,
     projectAssetAdditions: projectAssets.summary,
     source,
   };

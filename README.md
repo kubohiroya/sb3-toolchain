@@ -157,9 +157,9 @@ await unbundleSb3({
 
 ### Create a project folder in a browser
 
-`unpackSb3(bytes)` from `@kubohiroya/sb3-toolchain/browser` expands SB3 bytes into a project folder represented by a `Map<string, Uint8Array>` and a list of warnings. The folder uses source format 2 when the project has block palette comments, and format 1 otherwise. Use `validateSourceFiles(files)` to check the resulting files again. Both functions run without Node.js built-ins or filesystem access.
+`unpackSb3(bytes)` from `@kubohiroya/sb3-toolchain/browser` expands SB3 bytes into a project folder represented by a `Map<string, Uint8Array>` and a list of warnings. The folder uses source format 1. The TurboWarp Plus Editor screen state (the ZIP entry `tw-plus/workspace.json`) becomes `.tw-plus/workspace.json`. Use `validateSourceFiles(files)` to check the resulting files again. Both functions run without Node.js built-ins or filesystem access.
 
-An editor that opens and saves project folders can use the same entry for block palette settings. `resolveBlockPaletteReferences(project, document)` and `applyBlockPaletteComments(project, document)` turn the references in `project.source.json` back into SB3 comment text. `extractBlockPalette(project)` moves palette comments into a `block-palette.json` document, and `hasBlockPaletteSettings(document)` tells whether the folder needs source format 2. See [Source format v2](docs/source-format-v2.md).
+The block palette functions of the same entry (`resolveBlockPaletteReferences`, `applyBlockPaletteComments`, `extractBlockPalette`, `hasBlockPaletteSettings`) remain for folders in [source format v2](docs/source-format-v2.md), which is no longer written.
 
 The browser API reports and omits unreferenced assets with hash-based filenames and directory entries. It rejects Plus extension manifests and unsupported attachments with the `Sb3SourceError` code `unsupported-project`. Validation checks image, sound and font references and bytes, and the layout of embedded extensions. Use the CLI `check` and `build` commands for bundle builds and full managed-extension validation.
 
@@ -167,7 +167,7 @@ The browser API reports and omits unreferenced assets with hash-based filenames 
 
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
 - [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
-- [`docs/source-format-v2.md`](docs/source-format-v2.md): format v2, which adds block palette settings
+- [`docs/source-format-v2.md`](docs/source-format-v2.md): format v2, which added block palette settings (read, no longer written)
 - [`docs/project-asset-additions.md`](docs/project-asset-additions.md): JSON/YAML `--project-assets`, backdrops, and editable or strict locks
 - [`docs/extension-id-migration.md`](docs/extension-id-migration.md): migration of extension IDs already used by a project
 - [`docs/extension-api-compatibility.md`](docs/extension-api-compatibility.md) ([日本語](docs/ja/extension-api-compatibility.md)): opt-in static API compatibility checks for extension updates

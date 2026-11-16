@@ -5,15 +5,10 @@ import {strFromU8, strToU8, unzipSync} from 'fflate';
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
 import {
-  blockPaletteFile,
-  extractBlockPalette,
-  serializeBlockPaletteDocument,
-} from './block-palette';
-import type {BlockPaletteDocument, BlockPaletteWarning} from './block-palette';
-import {
-  blockPaletteSourceFormatVersion,
   embeddedExtensionManifestFormatVersion,
   isObject,
+  screenStateEntry,
+  screenStateFile,
   sourceFormatVersion,
 } from './source-format';
 import type {EmbeddedExtension, ExtensionEncoding, ProjectJson} from './types';
@@ -51,11 +46,11 @@ interface ArchiveLimits {
 interface ExpandedArchive {
   archiveEntries: string[];
   assets: Map<string, Uint8Array>;
-  blockPalette: BlockPaletteDocument | null;
-  blockPaletteWarnings: BlockPaletteWarning[];
   embeddedExtensions: EmbeddedExtension[];
   extensionFiles: Map<string, Uint8Array>;
   project: ProjectJson;
+  /** The Editor's screen state, or null for an SB3 without one. */
+  screenState: Uint8Array | null;
 }
 
 export function decodeExtensionBytes(dataUrl: unknown): {
@@ -203,35 +198,31 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
     }
   }
 
-  let blockPalette: ReturnType<typeof extractBlockPalette>;
-  try {
-    blockPalette = extractBlockPalette(project);
-  } catch (cause) {
-    throw new Sb3SourceError('invalid-project', errorMessage(cause), {cause});
-  }
-
+  // The Editor's screen state goes to its own file, byte for byte; every other entry is an asset.
+  const screenState = archive[screenStateEntry] ?? null;
   const assets = new Map<string, Uint8Array>();
   for (const name of archiveEntries) {
-    if (name !== 'project.json' && !name.endsWith('/')) assets.set(name, archive[name]);
+    if (name !== 'project.json' && name !== screenStateEntry && !name.endsWith('/')) {
+      assets.set(name, archive[name]);
+    }
   }
   return {
     archiveEntries,
     assets,
-    blockPalette: blockPalette.document,
-    blockPaletteWarnings: blockPalette.warnings,
     embeddedExtensions,
     extensionFiles,
     project,
+    screenState,
   };
 }
 
 export function formatSourceFiles({
   archiveEntries,
   assets,
-  blockPalette,
   embeddedExtensions,
   extensionFiles,
   project,
+  screenState,
 }: ExpandedArchive): Map<string, Uint8Array> {
   const files = new Map<string, Uint8Array>();
   for (const [name, bytes] of assets) files.set(`assets/${name}`, bytes);
@@ -244,19 +235,16 @@ export function formatSourceFiles({
       extensions: embeddedExtensions,
     },
     'sb3-source.json': {
-      formatVersion: blockPalette ? blockPaletteSourceFormatVersion : sourceFormatVersion,
+      formatVersion: sourceFormatVersion,
       project: 'project.source.json',
       embeddedExtensions: 'embedded-extensions.json',
       assetsDirectory: 'assets',
       archiveEntries,
-      ...(blockPalette ? {blockPalette: blockPaletteFile} : {}),
     },
   };
   for (const [name, value] of Object.entries(documents)) {
     files.set(name, strToU8(`${JSON.stringify(value, null, 2)}\n`));
   }
-  if (blockPalette) {
-    files.set(blockPaletteFile, strToU8(serializeBlockPaletteDocument(blockPalette)));
-  }
+  if (screenState) files.set(screenStateFile, screenState);
   return files;
 }

@@ -20,6 +20,14 @@ export const supportedSourceFormatVersions: readonly number[] = [1, 2];
 /** `embedded-extensions.json` keeps its own version, independent of the source format. */
 export const embeddedExtensionManifestFormatVersion = 1;
 
+/**
+ * The screen state TurboWarp Plus Editor saves with a project (its tab layout, block palette settings and so on).
+ * An SB3 carries it as this ZIP entry; Scratch and TurboWarp ignore it.
+ */
+export const screenStateEntry = 'tw-plus/workspace.json';
+/** Where a source folder keeps the screen state: the same file the Editor writes in a project folder. */
+export const screenStateFile = '.tw-plus/workspace.json';
+
 export function isObject(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
