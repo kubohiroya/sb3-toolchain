@@ -35,7 +35,7 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 Pin the verified npm version for reproducible installation.
 
 ```bash
-pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.25.1
+pnpm add --save-dev --save-exact @kubohiroya/sb3-toolchain@0.26.0
 ```
 
 ## Quick start

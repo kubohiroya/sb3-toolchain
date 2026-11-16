@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.26.0 - 2026-11-16
+
+- TurboWarp Plus Editor の画面状態（SB3 の `tw-plus/workspace.json`）を、作品フォルダの `.tw-plus/workspace.json` とバイト列のまま行き来させる。エディターが後から書いたファイルは SB3 の最後のエントリにする。ブラウザー版の `unpackSb3` が、このエントリを含む SB3 を拒否しなくなった（#94）。
+- import と unpack は、ブロックパレットのコメントを `block-palette.json` に移さず、いつも形式 1 で書く。0.25 が書いた形式 2 の作品フォルダは、引き続き読んで build できる（#94）。
+
+## 0.26.0 - 2026-11-16
+
+- feat(source): エディターの画面状態を保ち、パレットのコメントを形式 2 に移すのをやめる (#94)
+
 ## 0.25.1 - 2026-11-16
 
 - ブロックパレットの設定を扱う `extractBlockPalette`・`resolveBlockPaletteReferences`・`applyBlockPaletteComments`・`hasBlockPaletteSettings` を、ブラウザー向けの入口とパッケージの入口から出した（#92）。
