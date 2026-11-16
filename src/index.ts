@@ -19,6 +19,7 @@ export type {
 export {assert} from './assert';
 export {validateArchiveEntryName} from './archive';
 export {
+  applyBlockPaletteComments,
   blockPaletteCommentMarker,
   blockPaletteCommentMaxLength,
   blockPaletteCommentReference,
@@ -26,7 +27,10 @@ export {
   blockPaletteFormatVersion,
   blockPaletteSpriteCommentHeader,
   blockPaletteStageCommentHeader,
+  extractBlockPalette,
   formatBlockPaletteComment,
+  hasBlockPaletteSettings,
+  resolveBlockPaletteReferences,
   serializeBlockPaletteDocument,
   validateBlockPaletteDocument,
 } from './block-palette';

@@ -22,6 +22,7 @@ export {Sb3SourceError} from './expand-archive';
 export type {Sb3SourceErrorCode} from './expand-archive';
 export {packageVersion} from './constants';
 export {
+  applyBlockPaletteComments,
   blockPaletteCommentMarker,
   blockPaletteCommentMaxLength,
   blockPaletteCommentReference,
@@ -29,7 +30,10 @@ export {
   blockPaletteFormatVersion,
   blockPaletteSpriteCommentHeader,
   blockPaletteStageCommentHeader,
+  extractBlockPalette,
   formatBlockPaletteComment,
+  hasBlockPaletteSettings,
+  resolveBlockPaletteReferences,
   serializeBlockPaletteDocument,
   validateBlockPaletteDocument,
 } from './block-palette';
@@ -37,6 +41,8 @@ export type {
   BlockPaletteDocument,
   BlockPaletteSet,
   BlockPaletteTargetSetting,
+  BlockPaletteWarning,
+  BlockPaletteWarningCode,
 } from './block-palette';
 export {
   blockPaletteSourceFormatVersion,

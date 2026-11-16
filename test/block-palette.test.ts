@@ -534,3 +534,21 @@ test('import CLI reports palette comment warnings', async () => {
     );
   });
 });
+
+test('the browser build exports the helpers an editor needs to load and save project folders', async () => {
+  const browser = await import('../src/browser');
+  const project = paletteProject();
+  const original = structuredClone(project);
+
+  const {document, warnings} = browser.extractBlockPalette(project);
+  expect(warnings).toEqual([]);
+  expect(document).not.toBeNull();
+  expect(browser.hasBlockPaletteSettings(document!)).toBe(true);
+  expect(project.targets[0].comments.z9.text).toBe(blockPaletteCommentReference);
+
+  const references = browser.resolveBlockPaletteReferences(project, document);
+  expect(references.map(({text}) => text)).toEqual([stageText, spriteText]);
+
+  browser.applyBlockPaletteComments(project, document);
+  expect(project).toEqual(original);
+});
