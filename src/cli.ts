@@ -105,6 +105,7 @@ export interface ExtensionsBundleCliOptions {
   yes: boolean;
   buildMode?: 'classic' | 'module';
   sharedDependencies?: Record<string, string>;
+  paletteGroups?: 'single' | 'members';
 }
 
 export interface ExtensionsUnbundleSourceCliOptions {
@@ -186,7 +187,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--palette-groups single|members] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -486,6 +487,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
   const extensionIds: string[] = [];
   let yes = false;
   let buildMode: 'classic' | 'module' | undefined;
+  let paletteGroups: 'single' | 'members' | undefined;
   const sharedDependencies: Record<string, string> = {};
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -515,6 +517,14 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
       const value = takeValue(arguments_, index, '--build-mode');
       assert(value === 'classic' || value === 'module', '--build-mode must be classic or module.');
       buildMode = value;
+      index += 1;
+    } else if (argument === '--palette-groups') {
+      const value = takeValue(arguments_, index, '--palette-groups');
+      assert(
+        value === 'single' || value === 'members',
+        '--palette-groups must be single or members.',
+      );
+      paletteGroups = value;
       index += 1;
     } else if (argument === '--share') {
       const value = takeValue(arguments_, index, '--share');
@@ -564,6 +574,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
     yes,
     ...(buildMode === undefined ? {} : {buildMode}),
     ...(Object.keys(sharedDependencies).length ? {sharedDependencies} : {}),
+    ...(paletteGroups === undefined ? {} : {paletteGroups}),
   };
 }
 
@@ -928,6 +939,7 @@ export async function runCli(
         recoveryCapsule: options.recoveryCapsule,
         buildMode: options.buildMode,
         sharedDependencies: options.sharedDependencies,
+        paletteGroups: options.paletteGroups,
         sourceDirectory: options.sourceDirectory,
         yes: options.yes,
       });

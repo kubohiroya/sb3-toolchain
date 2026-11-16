@@ -57,6 +57,7 @@ export interface ExtensionBundleConfigurationInput {
   yes?: boolean;
   buildMode?: ExtensionBundleConfiguration['buildMode'];
   sharedDependencies?: Record<string, string>;
+  paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
 }
 
 export interface ExtensionBundlePlanResult {
@@ -132,6 +133,7 @@ async function configurationContext({
   recoveryCapsule,
   buildMode,
   sharedDependencies,
+  paletteGroups,
   metadata,
   sourceDirectory,
   willReplace,
@@ -145,6 +147,7 @@ async function configurationContext({
   willReplace: boolean;
   buildMode?: ExtensionBundleConfiguration['buildMode'];
   sharedDependencies?: Record<string, string>;
+  paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
   metadata?: ExtensionBundleConfiguration['metadata'];
 }): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
@@ -177,6 +180,7 @@ async function configurationContext({
       ...(metadata === undefined ? {} : {metadata: validateExtensionBundleMetadata(metadata)}),
       ...(buildMode === undefined ? {} : {buildMode}),
       ...(sharedDependencies === undefined ? {} : {sharedDependencies}),
+      ...(paletteGroups === 'members' ? {paletteGroups} : {}),
       ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
     },
   ];
@@ -204,6 +208,7 @@ export async function planExtensionBundle({
   sourceDirectory,
   buildMode,
   sharedDependencies,
+  paletteGroups,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
@@ -214,6 +219,7 @@ export async function planExtensionBundle({
     sourceDirectory,
     buildMode,
     sharedDependencies,
+    paletteGroups,
     metadata,
     willReplace: false,
   });
@@ -303,6 +309,7 @@ export async function bundleExtensions({
   yes = false,
   buildMode,
   sharedDependencies,
+  paletteGroups,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
@@ -313,6 +320,7 @@ export async function bundleExtensions({
     sourceDirectory,
     buildMode,
     sharedDependencies,
+    paletteGroups,
     metadata,
     willReplace: yes,
   });

@@ -73,6 +73,12 @@ export interface ExtensionBundleConfiguration {
   blockEditorRegistrations?: boolean;
   buildMode?: 'classic' | 'module';
   sharedDependencies?: Record<string, string>;
+  /**
+   * How the palette of TurboWarp Plus groups the bundle's blocks: `single` (the default) keeps them in one group,
+   * `members` makes each member extension a group of its own (`groups` and `paletteGroup` in `getInfo()`).
+   * Other editors ignore it and show the bundle as one category either way.
+   */
+  paletteGroups?: 'single' | 'members';
 }
 
 export interface EmbeddedExtensionManifest {
