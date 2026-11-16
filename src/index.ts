@@ -18,6 +18,25 @@ export type {
 } from './types';
 export {assert} from './assert';
 export {validateArchiveEntryName} from './archive';
+export {
+  blockPaletteCommentMarker,
+  blockPaletteCommentMaxLength,
+  blockPaletteCommentReference,
+  blockPaletteFile,
+  blockPaletteFormatVersion,
+  blockPaletteSpriteCommentHeader,
+  blockPaletteStageCommentHeader,
+  formatBlockPaletteComment,
+  serializeBlockPaletteDocument,
+  validateBlockPaletteDocument,
+} from './block-palette';
+export type {
+  BlockPaletteDocument,
+  BlockPaletteSet,
+  BlockPaletteTargetSetting,
+  BlockPaletteWarning,
+  BlockPaletteWarningCode,
+} from './block-palette';
 export {buildSb3} from './build';
 export {cleanUpSb3, cleanUpSb3Archive} from './clean-up-sb3';
 export type {CleanUpSb3ArchiveResult, CleanUpSb3Options, CleanUpSb3Result} from './clean-up-sb3';
@@ -98,8 +117,10 @@ export {
 } from './output-safety';
 export {
   createDeterministicSb3,
+  blockPaletteSourceFormatVersion,
   fixedZipTimestamp,
   sourceFormatVersion,
+  supportedSourceFormatVersions,
   validateSb3Source,
 } from './source';
 export {

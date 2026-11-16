@@ -2,6 +2,9 @@
 
 [日本語版](ja/source-format-v1.md)
 
+Projects with block palette settings use [format v2](source-format-v2.md), which adds
+`block-palette.json` to this layout. Projects without them keep using v1.
+
 ## Layout
 
 ```text

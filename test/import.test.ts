@@ -101,6 +101,7 @@ test('imports assets and extracts embedded extensions without changing external 
       inputPath,
       outputDirectory,
       rollbackCleanupWarning: null,
+      warnings: [],
     });
     const importedProjectText = await readFile(
       path.join(outputDirectory, 'project.source.json'),

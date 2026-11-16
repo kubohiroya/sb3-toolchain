@@ -161,6 +161,7 @@ await unbundleSb3({
 
 - [`docs/ja/workflows.md`](docs/ja/workflows.md): SB3ソースと機能拡張を管理するワークフロー
 - [`docs/ja/source-format-v1.md`](docs/ja/source-format-v1.md): 展開ソース形式と決定的出力
+- [`docs/ja/source-format-v2.md`](docs/ja/source-format-v2.md): ブロックパレットの設定を足した形式 v2
 - [`docs/ja/project-asset-additions.md`](docs/ja/project-asset-additions.md): `--project-assets`のJSON／YAML、backdrop、編集／strict lock仕様
 - [`docs/ja/extension-id-migration.md`](docs/ja/extension-id-migration.md): プロジェクトで使用中の機能拡張IDの移行
 - [`docs/ja/extension-api-compatibility.md`](docs/ja/extension-api-compatibility.md): 機能拡張更新時の任意の静的API互換性検査

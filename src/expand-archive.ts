@@ -4,7 +4,18 @@ import {strFromU8, strToU8, unzipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
-import {isObject, sourceFormatVersion} from './source-format';
+import {
+  blockPaletteFile,
+  extractBlockPalette,
+  serializeBlockPaletteDocument,
+} from './block-palette';
+import type {BlockPaletteDocument, BlockPaletteWarning} from './block-palette';
+import {
+  blockPaletteSourceFormatVersion,
+  embeddedExtensionManifestFormatVersion,
+  isObject,
+  sourceFormatVersion,
+} from './source-format';
 import type {EmbeddedExtension, ExtensionEncoding, ProjectJson} from './types';
 
 export type Sb3SourceErrorCode =
@@ -16,6 +27,7 @@ export type Sb3SourceErrorCode =
   | 'missing-asset'
   | 'invalid-asset'
   | 'invalid-source'
+  | 'invalid-block-palette'
   | 'unsupported-project';
 
 export class Sb3SourceError extends Error {
@@ -39,6 +51,8 @@ interface ArchiveLimits {
 interface ExpandedArchive {
   archiveEntries: string[];
   assets: Map<string, Uint8Array>;
+  blockPalette: BlockPaletteDocument | null;
+  blockPaletteWarnings: BlockPaletteWarning[];
   embeddedExtensions: EmbeddedExtension[];
   extensionFiles: Map<string, Uint8Array>;
   project: ProjectJson;
@@ -189,16 +203,32 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
     }
   }
 
+  let blockPalette: ReturnType<typeof extractBlockPalette>;
+  try {
+    blockPalette = extractBlockPalette(project);
+  } catch (cause) {
+    throw new Sb3SourceError('invalid-project', errorMessage(cause), {cause});
+  }
+
   const assets = new Map<string, Uint8Array>();
   for (const name of archiveEntries) {
     if (name !== 'project.json' && !name.endsWith('/')) assets.set(name, archive[name]);
   }
-  return {archiveEntries, assets, embeddedExtensions, extensionFiles, project};
+  return {
+    archiveEntries,
+    assets,
+    blockPalette: blockPalette.document,
+    blockPaletteWarnings: blockPalette.warnings,
+    embeddedExtensions,
+    extensionFiles,
+    project,
+  };
 }
 
 export function formatSourceFiles({
   archiveEntries,
   assets,
+  blockPalette,
   embeddedExtensions,
   extensionFiles,
   project,
@@ -210,19 +240,23 @@ export function formatSourceFiles({
   const documents = {
     'project.source.json': project,
     'embedded-extensions.json': {
-      formatVersion: sourceFormatVersion,
+      formatVersion: embeddedExtensionManifestFormatVersion,
       extensions: embeddedExtensions,
     },
     'sb3-source.json': {
-      formatVersion: sourceFormatVersion,
+      formatVersion: blockPalette ? blockPaletteSourceFormatVersion : sourceFormatVersion,
       project: 'project.source.json',
       embeddedExtensions: 'embedded-extensions.json',
       assetsDirectory: 'assets',
       archiveEntries,
+      ...(blockPalette ? {blockPalette: blockPaletteFile} : {}),
     },
   };
   for (const [name, value] of Object.entries(documents)) {
     files.set(name, strToU8(`${JSON.stringify(value, null, 2)}\n`));
+  }
+  if (blockPalette) {
+    files.set(blockPaletteFile, strToU8(serializeBlockPaletteDocument(blockPalette)));
   }
   return files;
 }

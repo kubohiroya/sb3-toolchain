@@ -2,6 +2,8 @@
 
 [English](../source-format-v1.md)
 
+ブロックパレットの設定がある作品は、この構成に `block-palette.json` を足した[形式 v2](source-format-v2.md) を使う。設定のない作品は v1 のままである。
+
 ## レイアウト
 
 ```text

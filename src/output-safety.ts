@@ -85,7 +85,7 @@ export function validateOutputDirectoryPath(
 
 export async function assertRecognizedOutputDirectory(
   outputDirectory: string,
-  sourceFormatVersion: number,
+  sourceFormatVersions: readonly number[],
 ): Promise<void> {
   const stats = await lstat(outputDirectory);
   assert(
@@ -107,7 +107,8 @@ export async function assertRecognizedOutputDirectory(
   }
 
   assert(
-    manifest?.formatVersion === sourceFormatVersion &&
+    manifest !== null &&
+      sourceFormatVersions.includes(manifest.formatVersion as number) &&
       manifest.project === 'project.source.json' &&
       manifest.embeddedExtensions === 'embedded-extensions.json' &&
       manifest.assetsDirectory === 'assets' &&

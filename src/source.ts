@@ -7,6 +7,12 @@ import path from 'node:path';
 import {strToU8, zipSync} from 'fflate';
 
 import {assert, errorMessage} from './assert';
+import {
+  applyBlockPaletteComments,
+  resolveBlockPaletteReferences,
+  validateBlockPaletteDocument,
+} from './block-palette';
+import type {BlockPaletteDocument} from './block-palette';
 import {validateManagedExtensionApiManifest} from './extension-api-manifest';
 import {validateExtensionBundleConfigurations} from './extension-bundle';
 import {buildExtensionBundlesWithModules} from './extension-module-bundle';
@@ -32,12 +38,18 @@ import type {
   Sb3SourceManifest,
 } from './types';
 
-export {sourceFormatVersion} from './source-format';
+export {
+  blockPaletteSourceFormatVersion,
+  sourceFormatVersion,
+  supportedSourceFormatVersions,
+} from './source-format';
 export const fixedZipTimestamp = new Date(1980, 0, 1, 0, 0, 0, 0);
 
 export interface InspectedSb3Source {
   assetContents: Map<string, Uint8Array>;
   assetReferenceCount: number;
+  /** `block-palette.json` in source format 2, otherwise null. */
+  blockPalette: BlockPaletteDocument | null;
   extensions: EmbeddedExtension[];
   extensionApiManifestContents: Map<string, Uint8Array>;
   extensionBundles: ExtensionBundleConfiguration[];
@@ -160,6 +172,16 @@ async function inspectSb3Source(
     'SB3 project source',
   );
   assert(isObject(project), 'project.source.json must contain an object.');
+  const blockPalette =
+    sourceManifest.blockPalette === undefined
+      ? null
+      : validateBlockPaletteDocument(
+          await readJson(
+            path.join(resolvedSourceDirectory, sourceManifest.blockPalette),
+            'Block palette settings',
+          ),
+        );
+  resolveBlockPaletteReferences(project, blockPalette);
   const extensionManifest = await readJson(
     path.join(resolvedSourceDirectory, sourceManifest.embeddedExtensions),
     'Embedded extension manifest',
@@ -230,6 +252,7 @@ async function inspectSb3Source(
   return {
     assetContents,
     assetReferenceCount: references.length,
+    blockPalette,
     extensions,
     extensionApiManifestContents,
     extensionBundles,
@@ -310,6 +333,7 @@ export async function createDeterministicSb3(
       targetCount: cleaned.targetCount,
     };
   }
+  applyBlockPaletteComments(project, source.blockPalette);
   const extensionUrls: Record<string, unknown> = project.extensionURLs ?? {};
   for (const extension of bundled.extensions) {
     const contents = bundled.extensionContents.get(extension.id);
