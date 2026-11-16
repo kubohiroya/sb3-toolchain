@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.27.0 - 2026-11-17
+
+- `extensions bundle` に `--palette-groups single|members` を足した。`members` では、束ねた機能拡張の `getInfo()` がメンバーごとのグループ（`groups`）を宣言し、各ブロックに `paletteGroup` を付ける。TurboWarp Plus のパレットで、メンバーごとに表示・非表示を選べる。設定は bundle の `paletteGroups` としてマニフェストに残り、API の `bundleExtensions`・`planExtensionBundle` も受け付ける。既定の `single` では、生成する JavaScript は今までと同じ（#96）。
+
+## 0.27.0 - 2026-11-17
+
+- feat(bundle): 束ねた機能拡張を、1つのグループにするかメンバーごとのグループにするかを選べるようにする (#96)
+
 ## 0.26.0 - 2026-11-16
 
 - TurboWarp Plus Editor の画面状態（SB3 の `tw-plus/workspace.json`）を、作品フォルダの `.tw-plus/workspace.json` とバイト列のまま行き来させる。エディターが後から書いたファイルは SB3 の最後のエントリにする。ブラウザー版の `unpackSb3` が、このエントリを含む SB3 を拒否しなくなった（#94）。
