@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.28.0 - 2026-11-17
+
+- `extensions bundle` に `--member-colors bundle|member` を足した。`member` では、各メンバーのブロックをメンバー自身の色で描く。既定の `bundle` では、生成する JavaScript は今までと同じ（#98）。
+- `--palette-groups members` のグループは、`--member-colors member` のときだけメンバーの色を持つ。メンバーが宣言したグループの表示名は「メンバー名: グループ名」にせず、言語ごとの名前と改行をそのまま渡す（#98）。
+
+## 0.28.0 - 2026-11-17
+
+- feat(bundle): メンバーのブロックを、bundle の色とメンバー自身の色のどちらで描くかを選べるようにする (#98)
+
 ## 0.27.0 - 2026-11-17
 
 - `extensions bundle` に `--palette-groups single|members` を足した。`members` では、束ねた機能拡張の `getInfo()` がメンバーごとのグループ（`groups`）を宣言し、各ブロックに `paletteGroup` を付ける。TurboWarp Plus のパレットで、メンバーごとに表示・非表示を選べる。設定は bundle の `paletteGroups` としてマニフェストに残り、API の `bundleExtensions`・`planExtensionBundle` も受け付ける。既定の `single` では、生成する JavaScript は今までと同じ（#96）。
