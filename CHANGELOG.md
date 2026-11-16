@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.1 - 2026-11-16
+
+- ブロックパレットの設定を扱う `extractBlockPalette`・`resolveBlockPaletteReferences`・`applyBlockPaletteComments`・`hasBlockPaletteSettings` を、ブラウザー向けの入口とパッケージの入口から出した（#92）。
+- 型宣言の相対 import に拡張子を付け、`moduleResolution: NodeNext` の利用側で型検査が通るようにした（#92）。
+
+## 0.25.1 - 2026-11-16
+
+- feat(browser): ブロックパレットの関数をブラウザー向けの入口から出し、型宣言の import に拡張子を付ける (#92)
+
 ## 0.25.0 - 2026-11-16
 
 - ブロックパレットの設定を保つ展開ソース形式 v2 を追加した。設定は作品フォルダでは `block-palette.json` に、SB3 ではスプライト・背景ごとのコメントに入る。設定のない作品は今までどおり v1 で書く（#90）。
