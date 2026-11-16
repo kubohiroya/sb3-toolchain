@@ -308,6 +308,7 @@ export async function importSb3({
     inputPath: resolvedInputPath,
     outputDirectory: resolvedOutputDirectory,
     rollbackCleanupWarning,
-    warnings: expanded.blockPaletteWarnings,
+    // Import no longer moves palette comments, so it has no palette warnings; the field stays for callers.
+    warnings: [],
   };
 }

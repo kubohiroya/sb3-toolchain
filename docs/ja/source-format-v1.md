@@ -2,7 +2,7 @@
 
 [English](../source-format-v1.md)
 
-ブロックパレットの設定がある作品は、この構成に `block-palette.json` を足した[形式 v2](source-format-v2.md) を使う。設定のない作品は v1 のままである。
+import と unpack は、いつも v1 で書く。0.25 がブロックパレットのコメントのある作品に書いた[形式 v2](source-format-v2.md)の作品フォルダも、引き続き読んで build できる。
 
 ## レイアウト
 
@@ -11,11 +11,15 @@ SOURCE_DIR/
 ├── sb3-source.json
 ├── project.source.json
 ├── embedded-extensions.json
+├── .tw-plus/
+│   └── workspace.json        （任意）
 ├── assets/
 │   └── <assetId>.<dataFormat>
 └── extensions/
     └── <extensionId>.js
 ```
+
+`.tw-plus/workspace.json` は、TurboWarp Plus Editor が作品と一緒に保存する画面状態である。タブの配置や、スプライトごとにパレットに出すブロックグループなどが入る。SB3 では ZIP のエントリ `tw-plus/workspace.json` で、Scratch と TurboWarp はこれを無視する。import はこのエントリをバイト列のままこのファイルに写し、`archiveEntries` にも記録する。build は同じ位置に戻す。エディターは作品フォルダを保存するときにこのファイルを自分で書く。`archiveEntries` に載っていないこのファイルは、SB3 の最後のエントリになる。toolchain は JSON であることだけを確かめ、ファイルのない作品フォルダはこのエントリなしで build する。
 
 `sb3-source.json`は、形式のバージョン、各構成要素へのパス、元のSB3におけるZIPエントリ順を記録します。
 

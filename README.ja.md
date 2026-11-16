@@ -153,9 +153,9 @@ await unbundleSb3({
 
 ### ブラウザーで作品フォルダを作る
 
-`@kubohiroya/sb3-toolchain/browser` の `unpackSb3(bytes)` は、SB3 のバイト列を作品フォルダの `Map<string, Uint8Array>` と警告の一覧に変換します。作品にブロックパレットのコメントがあれば展開ソース形式 2、なければ形式 1 で作ります。生成されたファイルは `validateSourceFiles(files)` で再検査できます。どちらの関数も Node.js の組み込みモジュールやファイルシステムを使いません。
+`@kubohiroya/sb3-toolchain/browser` の `unpackSb3(bytes)` は、SB3 のバイト列を作品フォルダの `Map<string, Uint8Array>` と警告の一覧に変換します。作品フォルダは展開ソース形式 1 で作ります。TurboWarp Plus Editor の画面状態（ZIP のエントリ `tw-plus/workspace.json`）は `.tw-plus/workspace.json` になります。生成されたファイルは `validateSourceFiles(files)` で再検査できます。どちらの関数も Node.js の組み込みモジュールやファイルシステムを使いません。
 
-作品フォルダを開いて保存するエディターは、同じ入口からブロックパレットの設定を扱えます。`resolveBlockPaletteReferences(project, document)` と `applyBlockPaletteComments(project, document)` は、`project.source.json` の参照を SB3 のコメントの本文に戻します。`extractBlockPalette(project)` はパレットのコメントを `block-palette.json` の内容に移し、`hasBlockPaletteSettings(document)` は作品フォルダに形式 2 が必要かどうかを返します。詳しくは[展開ソース形式 v2](docs/ja/source-format-v2.md)を参照してください。
+同じ入口のブロックパレットの関数（`resolveBlockPaletteReferences`・`applyBlockPaletteComments`・`extractBlockPalette`・`hasBlockPaletteSettings`）は、今は書かない[展開ソース形式 v2](docs/ja/source-format-v2.md)の作品フォルダを扱うために残しています。
 
 参照のないハッシュ名の素材と ZIP のディレクトリエントリーは、警告を返して除外します。Plus 拡張マニフェストと参照のない添付ファイルは、対応する作品フォルダで開けないため `Sb3SourceError` の `unsupported-project` として報告します。画像・音声・フォントの参照と内容、埋め込み拡張のファイル構成を確認します。バンドルのビルドと管理対象拡張の完全な検査には CLI の `check` と `build` を使えます。
 
@@ -163,7 +163,7 @@ await unbundleSb3({
 
 - [`docs/ja/workflows.md`](docs/ja/workflows.md): SB3ソースと機能拡張を管理するワークフロー
 - [`docs/ja/source-format-v1.md`](docs/ja/source-format-v1.md): 展開ソース形式と決定的出力
-- [`docs/ja/source-format-v2.md`](docs/ja/source-format-v2.md): ブロックパレットの設定を足した形式 v2
+- [`docs/ja/source-format-v2.md`](docs/ja/source-format-v2.md): ブロックパレットの設定を足した形式 v2（読むだけで、今は書かない）
 - [`docs/ja/project-asset-additions.md`](docs/ja/project-asset-additions.md): `--project-assets`のJSON／YAML、backdrop、編集／strict lock仕様
 - [`docs/ja/extension-id-migration.md`](docs/ja/extension-id-migration.md): プロジェクトで使用中の機能拡張IDの移行
 - [`docs/ja/extension-api-compatibility.md`](docs/ja/extension-api-compatibility.md): 機能拡張更新時の任意の静的API互換性検査
