@@ -686,6 +686,87 @@ test('omits recovery data by default and preserves runtime composition', async (
   });
 });
 
+test('makes each member a palette group of its own when asked, and one group by default', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourceDirectory = path.join(directory, 'source');
+    await writeBundleSource(sourceDirectory);
+    // Beta declares a palette group of its own for one block.
+    await writeFile(
+      path.join(sourceDirectory, 'extensions/beta.js'),
+      betaSource
+        .replace(
+          "name: 'Beta Tools',",
+          "name: 'Beta Tools',\n        color1: '#112233',\n        groups: [{id: 'echoes', name: 'Echoes'}, {id: 'bad id', name: 'x'}],",
+        )
+        .replace(
+          "text: 'echo [VALUE]',",
+          "text: 'echo [VALUE]',\n            paletteGroup: 'echoes',",
+        ),
+    );
+    const groupsOf = async () => {
+      const built = await createDeterministicSb3(sourceDirectory);
+      const project = JSON.parse(strFromU8(unzipSync(built.archive)['project.json']));
+      const runtime = evaluateBundle(
+        decodeDataUrl(project.extensionURLs.projectbundle),
+        project.extensionStorage,
+      );
+      const info = runtime.registrations[0].getInfo();
+      const blocks = info.blocks.filter((block: any) => block && typeof block === 'object');
+      return {
+        groups: info.groups,
+        byBlock: Object.fromEntries(
+          blocks
+            .filter((block: any) => block.opcode)
+            .map((block: any) => [block.opcode, block.paletteGroup]),
+        ),
+        everyBlockGrouped: blocks.every((block: any) => typeof block.paletteGroup === 'string'),
+      };
+    };
+
+    await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      paletteGroups: 'members',
+      sourceDirectory,
+      yes: true,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(sourceDirectory, 'embedded-extensions.json'), 'utf8'),
+    );
+    expect(manifest.extensionBundles[0].paletteGroups).toBe('members');
+    const members = await groupsOf();
+    expect(members.groups).toEqual([
+      {
+        id: 'alpha',
+        name: 'Alpha Tools',
+        menuIconURI: 'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
+      },
+      {id: 'beta', name: 'Beta Tools', color1: '#112233'},
+      {id: 'beta-echoes', name: 'Beta Tools: Echoes', color1: '#112233'},
+    ]);
+    expect(members.byBlock).toMatchObject({
+      alpha__value: 'alpha',
+      beta__value: 'beta',
+      beta__echo: 'beta-echoes',
+    });
+    expect(members.everyBlockGrouped).toBe(true);
+
+    await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
+    await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      sourceDirectory,
+      yes: true,
+    });
+    const single = await groupsOf();
+    expect(single.groups).toBeUndefined();
+    // The default output is unchanged: a member's own mark stays, and without groups no palette reads it.
+    expect(single.byBlock).toMatchObject({alpha__value: undefined, beta__echo: 'echoes'});
+  });
+});
+
 function evaluateSandboxedBundle(source: string, language: string) {
   const registrations: any[] = [];
   const reports: {level: string; text: string}[] = [];
@@ -1078,6 +1159,34 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       ]) as ExtensionsBundleCliOptions
     ).recoveryCapsule,
   ).toBe(true);
+  expect(
+    (
+      parseCliArguments([
+        'extensions',
+        'bundle',
+        'custom-source',
+        '--id',
+        'projectbundle',
+        '--name',
+        'Project Extension Bundle',
+        '--palette-groups',
+        'members',
+      ]) as ExtensionsBundleCliOptions
+    ).paletteGroups,
+  ).toBe('members');
+  expect(() =>
+    parseCliArguments([
+      'extensions',
+      'bundle',
+      'custom-source',
+      '--id',
+      'projectbundle',
+      '--name',
+      'Project Extension Bundle',
+      '--palette-groups',
+      'each',
+    ]),
+  ).toThrow(/--palette-groups must be single or members/u);
   expect(
     parseCliArguments(['extensions', 'unbundle', 'custom-source', 'projectbundle', '--yes']),
   ).toStrictEqual({

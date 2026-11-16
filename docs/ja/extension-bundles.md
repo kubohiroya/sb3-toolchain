@@ -479,6 +479,26 @@ bundleに`"recoveryCapsule": true`を指定するか、設定時に`--include-re
 `SB3-Toolchain-Reversible-Bundle-v1`カプセルを追加します。カプセルは各メンバーの元のdata URL、メンバー順、
 元の`extensions`と`extensionURLs`の順序を記録しますが、出力サイズは増加します。
 
+### パレットのグループ
+
+既定では、bundle 全体が1つのブロックグループになり、TurboWarp Plus ではまとめて表示・非表示を切り替えます。
+`--palette-groups members`（bundle の `paletteGroups: "members"`、または `bundleExtensions` /
+`planExtensionBundle` の `paletteGroups`）を指定すると、メンバーの機能拡張がそれぞれ別のグループになります。
+スプライトごとに、あるメンバーのブロックだけを表示し、別のメンバーのブロックを隠せます。
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo --palette-groups members
+```
+
+- bundle の `getInfo()` は、メンバーごとのグループを `groups` に宣言し、各ブロックに `paletteGroup` を付けます。
+  グループの名前と色はメンバーのものです。メンバー自身が宣言したグループは `メンバー-グループ` になり、
+  名前は `メンバー名: グループ名` になります。
+- オペコードは変わりません。標準の TurboWarp と Scratch は `groups` と `paletteGroup` を無視し、今までどおり
+  bundle を1つのカテゴリとして表示します。
+- `single`（既定）はマニフェストに書かず、生成する JavaScript も今までとバイト単位で同じです。bundle は
+  `groups` を宣言しないので、メンバーがブロックに印を付けていても、1つのグループのままです。
+
 ### unsandboxedでの読み込みを宣言する
 
 各機能拡張は、許可するときにTurboWarpの「サンドボックスなしで実行する」へのチェックが必要かどうかを、

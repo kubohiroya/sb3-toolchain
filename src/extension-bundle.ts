@@ -164,6 +164,12 @@ export function validateExtensionBundleConfigurations(
         bundle.buildMode === 'module',
       `Invalid buildMode for extension bundle ${id}.`,
     );
+    assert(
+      bundle.paletteGroups === undefined ||
+        bundle.paletteGroups === 'single' ||
+        bundle.paletteGroups === 'members',
+      `Invalid paletteGroups for extension bundle ${id}.`,
+    );
     if (bundle.sharedDependencies !== undefined) {
       assert(bundle.buildMode === 'module', `sharedDependencies requires buildMode module: ${id}`);
       assert(isObject(bundle.sharedDependencies), `sharedDependencies must be an object: ${id}`);
@@ -226,6 +232,7 @@ export function validateExtensionBundleConfigurations(
         ? {}
         : {metadata: validateExtensionBundleMetadata(bundle.metadata)}),
       ...(bundle.buildMode === undefined ? {} : {buildMode: bundle.buildMode}),
+      ...(bundle.paletteGroups === undefined ? {} : {paletteGroups: bundle.paletteGroups}),
       ...(bundle.sharedDependencies === undefined
         ? {}
         : {sharedDependencies: {...bundle.sharedDependencies} as Record<string, string>}),
@@ -543,6 +550,36 @@ export function createStaticExtensionBundle(
         )
         .join('\n')
     : '';
+  // With member palette groups, each member is a group named after it, and a group the member declares itself
+  // becomes MEMBER-GROUP. Without them the generated source stays byte for byte as before.
+  const memberGroups = bundle.paletteGroups === 'members';
+  const push = memberGroups ? 'pushBlock' : 'result.blocks.push';
+  const memberPaletteGroupsSource = `        const memberGroupIds = new Set();
+        {
+          const memberColors = {};
+          for (const key of ['color1', 'color2', 'color3']) {
+            if (typeof info[key] === 'string' && info[key]) memberColors[key] = info[key];
+          }
+          const memberIcon = info.menuIconURI || info.blockIconURI;
+          const memberGroup = {id: componentId, name: info.name, ...memberColors};
+          if (typeof memberIcon === 'string' && memberIcon) memberGroup.menuIconURI = memberIcon;
+          result.groups.push(memberGroup);
+          for (const group of Array.isArray(info.groups) ? info.groups : []) {
+            if (!group || typeof group.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(group.id)) continue;
+            if (memberGroupIds.has(group.id)) continue;
+            memberGroupIds.add(group.id);
+            const declared = {...memberGroup, ...group, id: componentId + '-' + group.id};
+            declared.name = info.name + ': ' + (typeof group.name === 'string' && group.name ? group.name : group.id);
+            result.groups.push(declared);
+          }
+        }
+        const paletteGroupOf = (block) =>
+          memberGroupIds.has(block.paletteGroup) ? componentId + '-' + block.paletteGroup : componentId;
+        const pushBlock = (block) => {
+          if (block && typeof block === 'object') block.paletteGroup = paletteGroupOf(block);
+          result.blocks.push(block);
+        };
+`;
   const runtime = `(function (Scratch) {
   'use strict';
 
@@ -732,7 +769,7 @@ ${
         blocks: [],
         menus: {},
         customFieldTypes: {},
-      };${
+      };${memberGroups ? '\n      result.groups = [];' : ''}${
         requirement === 'optional'
           ? `
       if (SANDBOXED) result.blocks.push(...sandboxedNoticeBlocks(), '---', '---');`
@@ -754,7 +791,7 @@ ${
           throw new Error('Static bundle member ' + componentId + ' must have a non-empty name.');
         }
         const namespace = componentId + '__';
-        const memberBlockIconURI =
+${memberGroups ? memberPaletteGroupsSource : ''}        const memberBlockIconURI =
           typeof info.blockIconURI === 'string' && info.blockIconURI.length > 0
             ? info.blockIconURI
             : null;
@@ -763,14 +800,14 @@ ${
           result.customFieldTypes[namespace + fieldName] = fieldInfo;
         }
         if (componentIndex > 0) result.blocks.push('---', '---');
-        result.blocks.push({
+        ${push}({
           blockType: Scratch.BlockType.LABEL,
           sb3Toolchain: {kind: 'bundle-member-heading', memberId: componentId},
           text: '◆ ' + info.name + ' [' + componentId + '] ◆',
         });
         if (info.docsURI) {
           const docsURI = String(info.docsURI);
-          result.blocks.push({
+          ${push}({
             blockType: Scratch.BlockType.XML,
             sb3Toolchain: {
               docsURI,
@@ -813,14 +850,14 @@ ${
             );
           }
           if (block.blockType === Scratch.BlockType.LABEL) {
-            result.blocks.push(transformed);
+            ${push}(transformed);
             continue;
           }
           if (block.blockType === Scratch.BlockType.BUTTON) {
             const delegateName = namespace + 'button__' + block.func;
             transformed.func = delegateName;
             this.addDelegate(delegateName, component, block.func);
-            result.blocks.push(transformed);
+            ${push}(transformed);
             continue;
           }
           if (typeof block.opcode !== 'string' || block.opcode.length === 0) {
@@ -838,7 +875,7 @@ ${
           } else {
             delete transformed.func;
           }
-          result.blocks.push(transformed);
+          ${push}(transformed);
         }
         for (const [menuName, menu] of Object.entries(info.menus || {})) {
           const transformedMenuName = namespace + menuName;

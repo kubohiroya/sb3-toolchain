@@ -495,6 +495,26 @@ Set `"recoveryCapsule": true` on a bundle, or pass `--include-recovery-capsule` 
 to append an `SB3-Toolchain-Reversible-Bundle-v1` capsule. It records each original member data URL,
 member order, and the original `extensions` and `extensionURLs` order, at the cost of a larger output.
 
+### Palette groups
+
+By default the bundle is one block group: TurboWarp Plus shows and hides it as a whole. With
+`--palette-groups members` (`paletteGroups: "members"` on the bundle, or the `paletteGroups` option of
+`bundleExtensions` and `planExtensionBundle`), each member becomes a group of its own, so a sprite can show
+one member's blocks and hide another's.
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo --palette-groups members
+```
+
+- The bundle's `getInfo()` declares `groups` with one group per member, named and coloured after the member,
+  and marks each block with `paletteGroup`. A group a member declares itself becomes `MEMBER-GROUP`, named
+  `Member: Group`.
+- Opcodes do not change. Standard TurboWarp and Scratch ignore `groups` and `paletteGroup` and show the bundle
+  as one category, as before.
+- `single` (the default) is not written to the manifest, and the generated JavaScript stays byte for byte as
+  before. The bundle declares no `groups`, so it stays one group even if a member marks its blocks.
+
 ### Declare unsandboxed loading
 
 Each extension can declare, in its own header, whether the user must check TurboWarp's "Run
