@@ -507,13 +507,23 @@ sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension
   extensionone extensiontwo --palette-groups members
 ```
 
-- The bundle's `getInfo()` declares `groups` with one group per member, named and coloured after the member,
-  and marks each block with `paletteGroup`. A group a member declares itself becomes `MEMBER-GROUP`, named
-  `Member: Group`.
+- The bundle's `getInfo()` declares `groups` with one group per member, named after the member, and marks
+  each block with `paletteGroup`. A group a member declares itself becomes `MEMBER-GROUP`, and keeps the
+  member's display name for it: one text, or texts by locale such as `{en: 'Speech', ja: 'セリフ'}`, which may
+  hold `\n` line breaks. The ID stays the same in every language.
 - Opcodes do not change. Standard TurboWarp and Scratch ignore `groups` and `paletteGroup` and show the bundle
   as one category, as before.
 - `single` (the default) is not written to the manifest, and the generated JavaScript stays byte for byte as
   before. The bundle declares no `groups`, so it stays one group even if a member marks its blocks.
+
+### Member colours
+
+By default every block of the bundle is drawn in the bundle's colours. With `--member-colors member`
+(`memberColors: "member"` on the bundle, or the `memberColors` option of the API), each member's blocks keep
+the member's own `color1`–`color3`. This works in every editor, since it sets the colours on the blocks. With
+member palette groups too, each member group carries the member's colours, and a group the member declares
+keeps its own. A block that sets its own colour keeps it either way. `bundle` (the default) is not written to
+the manifest.
 
 ### Declare unsandboxed loading
 
