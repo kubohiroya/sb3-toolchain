@@ -290,6 +290,8 @@ export async function compileExtensionModuleBundle(
     resolve: {conditionNames: ['browser', 'import', 'default'], symlinks: true},
     transform: {target: 'es2020'},
     tsconfig: false,
+    // Module debug comments embed absolute paths and break cross-directory reproducibility.
+    experimental: {attachDebugInfo: 'none'},
     plugins: [plugin],
     onwarn(warning, defaultHandler) {
       assert(warning.code !== 'UNRESOLVED_IMPORT', warning.message);

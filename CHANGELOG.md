@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.1 - 2026-11-21
+
+- music-metadata、rolldown、semver、yamlを更新した。
+- Rolldownの絶対パスを含むデバッグコメントを抑制し、異なる作業ディレクトリでも同じSB3を生成できるようにした。
+
 ## 0.28.0 - 2026-11-17
 
 - `extensions bundle` に `--member-colors bundle|member` を足した。`member` では、各メンバーのブロックをメンバー自身の色で描く。既定の `bundle` では、生成する JavaScript は今までと同じ（#98）。
