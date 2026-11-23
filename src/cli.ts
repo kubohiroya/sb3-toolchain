@@ -56,6 +56,7 @@ export interface BuildCliOptions {
   outputPath: string;
   projectAssetsPath?: string;
   sourceDirectory: string;
+  stripTests?: boolean;
   yes: boolean;
 }
 
@@ -180,7 +181,7 @@ export function usage() {
   return `Usage:
   sb3-toolchain import INPUT.sb3 --output SOURCE_DIR [--yes] [--discard-local-changes]
   sb3-toolchain check SOURCE_DIR [--project-assets MANIFEST.json] [--allow-asset-root DIR ...]
-  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--yes]
+  sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--strip-tests] [--yes]
   sb3-toolchain clean-up INPUT.sb3 --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions digests INPUT.sb3 [INPUT.sb3 ...] [--json]
   sb3-toolchain extensions replace-sb3 INPUT.sb3 [--from DONOR.sb3] --output OUTPUT.sb3 [--yes]
@@ -204,6 +205,12 @@ Build layout cleanup:
   layout to every target in the generated SB3. It never deletes blocks,
   variables, lists, or comments. The expanded source is unchanged, but the
   generated SB3 might not be able to undo the coordinate changes.
+
+Test scripts:
+  --strip-tests removes every script under a test hat (kubohiroyatest_whentest,
+  kubohiroyatest_whensetup) and the comments on its blocks from the generated SB3.
+  Without it the test scripts are kept; the green flag does not start them.
+  The two builds differ byte for byte. The expanded source is unchanged.
 
 Project asset additions:
   --project-assets validates a JSON or YAML manifest and adds its sprites,
@@ -326,6 +333,7 @@ function parseCheckArguments(arguments_: string[]): CheckCliOptions {
 function parseBuildArguments(arguments_: string[]): BuildCliOptions {
   const allowedAssetRoots: string[] = [];
   let cleanUpBlocks = false;
+  let stripTests = false;
   let sourceDirectory: string | undefined;
   let outputPath: string | undefined;
   let projectAssetsPath: string | undefined;
@@ -335,6 +343,8 @@ function parseBuildArguments(arguments_: string[]): BuildCliOptions {
     const argument = arguments_[index];
     if (argument === '--clean-up-blocks') {
       cleanUpBlocks = true;
+    } else if (argument === '--strip-tests') {
+      stripTests = true;
     } else if (argument === '--project-assets') {
       projectAssetsPath = path.resolve(takeValue(arguments_, index, '--project-assets'));
       index += 1;
@@ -366,6 +376,7 @@ function parseBuildArguments(arguments_: string[]): BuildCliOptions {
     outputPath,
     ...(projectAssetsPath ? {projectAssetsPath} : {}),
     sourceDirectory,
+    ...(stripTests ? {stripTests} : {}),
     yes,
   };
 }
@@ -884,16 +895,20 @@ export async function runCli(
       outputPath: options.outputPath,
       projectAssetsPath: options.projectAssetsPath,
       sourceDirectory: options.sourceDirectory,
+      stripTests: options.stripTests,
       yes: options.yes,
     });
     const action = result.changed ? 'Built' : 'Already up to date';
     const cleanUpMessage = result.blockCleanUp
       ? `, ${result.blockCleanUp.movedScriptCount}/${result.blockCleanUp.scriptCount} scripts laid out`
       : '';
+    const testStripMessage = result.testStrip
+      ? `, ${result.testStrip.removedScriptCount} test scripts stripped`
+      : '';
     log(
       `${action}: ${result.outputPath} (${result.entryCount} entries, ` +
         `${result.assetCount} assets, ${result.embeddedExtensionCount} embedded extensions` +
-        `${cleanUpMessage}).`,
+        `${cleanUpMessage}${testStripMessage}).`,
     );
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
     return;

@@ -34,6 +34,7 @@ export interface BuildSb3Options {
   outputPath: string;
   projectAssetsPath?: string;
   sourceDirectory: string;
+  stripTests?: boolean;
   yes?: boolean;
 }
 
@@ -191,6 +192,7 @@ export async function buildSb3({
   outputPath,
   projectAssetsPath,
   sourceDirectory,
+  stripTests = false,
   yes = false,
 }: BuildSb3Options): Promise<DeterministicSb3 & WriteSb3ArchiveResult> {
   assert(typeof sourceDirectory === 'string', 'SB3 source directory is required.');
@@ -198,6 +200,7 @@ export async function buildSb3({
     allowedAssetRoots,
     cleanUpBlocks,
     projectAssetsPath,
+    stripTests,
   });
   const written = await writeSb3Archive({
     archive: built.archive,

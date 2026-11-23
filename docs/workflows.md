@@ -98,6 +98,20 @@ scripts. Only the generated `project.json` is transformed, so the expanded sourc
 TurboWarp might not be able to undo these coordinate changes after opening the generated SB3. Omit
 the option and rebuild to roll back to the source coordinates.
 
+Test scripts written in the project under a test hat (`kubohiroyatest_whentest`,
+`kubohiroyatest_whensetup`) are kept by default. The green flag does not start them. To leave them
+out of a release, opt in:
+
+```bash
+sb3-toolchain build app --output dist/project.sb3 --strip-tests
+```
+
+`--strip-tests` removes every script under a test hat and the comments attached to its blocks from
+the generated `project.json`. Other scripts, variables, lists, extensions, and coordinates are
+unchanged, and so is the expanded source. Both builds are deterministic, but they are different
+files, so record which one you released. An HTML file packaged from the stripped SB3 contains no
+test scripts either. Omit the option and rebuild to keep the tests again.
+
 In addition to project-specific tests, open the generated SB3 in TurboWarp and verify startup, primary
 operations, images, sounds, and embedded extension behavior.
 

@@ -142,6 +142,7 @@ export {
   verifySb3ReleaseSnapshot,
   writeSb3ReleaseCandidate,
 } from './release-snapshot';
+export {stripTestScripts, testHatOpcodes} from './test-scripts';
 export {cleanUpTurboWarpBlocks, turboWarpCleanUpLayout} from './turbowarp-clean-up';
 export type {BuildSb3Options, WriteSb3ArchiveOptions, WriteSb3ArchiveResult} from './build';
 export type {CliOptions} from './cli';
@@ -189,6 +190,7 @@ export type {DirectoryComparison, DirectoryDifferences, GitOutputState} from './
 export type {ProjectAssetAdditionsSummary} from './project-asset-additions';
 export type {Sb3ReleaseSnapshotMetadata} from './release-snapshot';
 export type {DeterministicSb3, InspectedSb3Source} from './source';
+export type {StripTestScriptsResult, TestScriptStripSummary} from './test-scripts';
 export type {TurboWarpCleanUpResult} from './turbowarp-clean-up';
 
 export {

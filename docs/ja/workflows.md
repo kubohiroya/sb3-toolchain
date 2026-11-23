@@ -99,6 +99,19 @@ sb3-toolchain build app --output dist/project.sb3 --clean-up-blocks
 のは生成物内の`project.json`だけであり、展開ソースは変更しません。生成SB3をTurboWarpで開いた後は座標変更を
 元に戻せない場合があります。ソース座標へ戻すにはこのオプションを外して再ビルドしてください。
 
+作品の中にテスト用ハット（`kubohiroyatest_whentest`、`kubohiroyatest_whensetup`）で書いたテストの
+スクリプトは、既定では残します。緑の旗では起動しません。配布物から外すには、オプションを指定します。
+
+```bash
+sb3-toolchain build app --output dist/project.sb3 --strip-tests
+```
+
+`--strip-tests`は、テスト用ハットの下のスクリプトと、そのブロックに付いたコメントを、生成物の
+`project.json`から取り除きます。ほかのスクリプト、変数、リスト、機能拡張、座標は変えず、展開ソースも
+変更しません。どちらのビルドも決定的ですが、別のファイルになるため、どちらを配布したかを記録してください。
+除去したSB3からPackagerで作るHTMLにも、テストのスクリプトは入りません。テストを残すには、このオプションを
+外して再ビルドしてください。
+
 プロジェクト固有のテストに加えて、生成SB3をTurboWarpで開き、起動、主要な操作、画像、音声、埋め込み
 機能拡張の動作を確認してください。
 
