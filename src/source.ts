@@ -23,6 +23,8 @@ import {
 } from './extension-dependencies';
 import {applyProjectAssetAdditions} from './project-asset-additions';
 import type {ProjectAssetAdditionsSummary} from './project-asset-additions';
+import {stripTestScripts} from './test-scripts';
+import type {TestScriptStripSummary} from './test-scripts';
 import {cleanUpTurboWarpBlocks} from './turbowarp-clean-up';
 import {
   assertSameFileSet,
@@ -74,6 +76,8 @@ export interface DeterministicSb3Options {
   allowedAssetRoots?: string[];
   cleanUpBlocks?: boolean;
   projectAssetsPath?: string;
+  /** Removes the scripts under test hats from the generated SB3; the expanded source is unchanged. */
+  stripTests?: boolean;
 }
 
 export interface DeterministicSb3 {
@@ -86,6 +90,7 @@ export interface DeterministicSb3 {
   entryCount: number;
   projectAssetAdditions: Readonly<ProjectAssetAdditionsSummary> | null;
   source: InspectedSb3Source;
+  testStrip: TestScriptStripSummary | null;
 }
 
 async function readJson(filePath: string, description: string): Promise<unknown> {
@@ -304,8 +309,14 @@ export async function createDeterministicSb3(
   sourceDirectory: string,
   options: DeterministicSb3Options = {},
 ): Promise<DeterministicSb3> {
-  const {allowedAssetRoots = [], cleanUpBlocks = false, projectAssetsPath} = options;
+  const {
+    allowedAssetRoots = [],
+    cleanUpBlocks = false,
+    projectAssetsPath,
+    stripTests = false,
+  } = options;
   assert(typeof cleanUpBlocks === 'boolean', 'cleanUpBlocks must be a boolean.');
+  assert(typeof stripTests === 'boolean', 'stripTests must be a boolean.');
   assert(Array.isArray(allowedAssetRoots), 'allowedAssetRoots must be an array.');
   assert(
     projectAssetsPath === undefined || typeof projectAssetsPath === 'string',
@@ -333,12 +344,20 @@ export async function createDeterministicSb3(
         project: source.project,
         summary: null,
       };
+  let testStrip: TestScriptStripSummary | null = null;
+  let projectToBundle = projectAssets.project;
+  if (stripTests) {
+    // Before bundling, while the test hats still have their own extension's opcodes.
+    const {project: strippedProject, ...summary} = stripTestScripts(projectToBundle);
+    projectToBundle = strippedProject;
+    testStrip = summary;
+  }
   const bundled = await buildExtensionBundlesWithModules({
     sourceDirectory: source.resolvedSourceDirectory,
     extensionBundles: source.extensionBundles,
     extensionContents: source.extensionContents,
     extensions: source.extensions,
-    project: projectAssets.project,
+    project: projectToBundle,
   });
   let project = structuredClone(bundled.project);
   let blockCleanUp: BlockCleanUpSummary | null = null;
@@ -394,5 +413,6 @@ export async function createDeterministicSb3(
     entryCount: Object.keys(archiveEntries).length,
     projectAssetAdditions: projectAssets.summary,
     source,
+    testStrip,
   };
 }
