@@ -31,6 +31,12 @@
       "import": "./dist/web-distribution.js",
       "default": "./dist/web-distribution.js"
     },
+    "./standard-extension-build": {
+      "node": {
+        "types": "./dist/standard-extension-build.d.ts",
+        "import": "./dist/standard-extension-build.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -66,7 +72,7 @@
     "prepack": "pnpm run check"
   },
   "dependencies": {
-    "@kubohiroya/turbowarp-extension-manifest": "0.7.0",
+    "@kubohiroya/turbowarp-extension-manifest": "0.8.0",
     "@noble/hashes": "2.4.0",
     "fflate": "0.8.3",
     "music-metadata": "12.7.0",

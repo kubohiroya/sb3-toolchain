@@ -12,8 +12,10 @@ const externalModules = [
   ...Object.keys(packageJson.dependencies),
   '@kubohiroya/turbowarp-extension-manifest/distribution',
   '@kubohiroya/turbowarp-extension-manifest/resources',
+  '@kubohiroya/turbowarp-extension-manifest/build-profile',
   '@noble/hashes/legacy.js',
   '@noble/hashes/utils.js',
+  'rolldown/parseAst',
   ...builtinModules,
   ...builtinModules.map((name) => `node:${name}`),
 ];
@@ -30,6 +32,7 @@ export default defineConfig({
         browser: 'src/browser.ts',
         cli: 'src/cli.ts',
         index: 'src/index.ts',
+        'standard-extension-build': 'src/standard-extension-build.ts',
         'web-distribution': 'src/web-distribution.ts',
       },
       formats: ['es'],
