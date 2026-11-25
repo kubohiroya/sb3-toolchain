@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.0 - 2026-11-25
+
+- Node 専用の標準ソースビルドを追加した。Template の宣言に沿った TypeScript のスナップショットから、開発用 JavaScript、API manifest、ソースマップを生成する。
+
 ## 0.29.0 - 2026-11-25
 
 - Web 向け公開入口 `@kubohiroya/sb3-toolchain/web-distribution` を追加した。npm の正確な版と GitHub Release のタグ URL から静的な配布 descriptor を読み、実行前に対象ファイルのサイズ・ハッシュと取得元を照合する。

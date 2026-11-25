@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@kubohiroya/turbowarp-extension-manifest':
-        specifier: 0.7.0
-        version: 0.7.0
+        specifier: 0.8.0
+        version: 0.8.0
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -155,8 +155,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@kubohiroya/turbowarp-extension-manifest@0.7.0':
-    resolution: {integrity: sha512-bSTjJ5NPMw8rO9v5N7HH05VIYVSkAK3RUpHmmPrR0tyYB0SF6u1tHIrp934xe45pYddW2tM5w+224rbLlh7vgA==}
+  '@kubohiroya/turbowarp-extension-manifest@0.8.0':
+    resolution: {integrity: sha512-mSVMD34rgwefDBEjCSVfDXCe0bpT3S0CdSaTSDjUCRLBsvNpDupeznVWYuk6VsoMYJ34iqTYbRnS7TLItJX46A==}
     engines: {node: '>=24'}
 
   '@napi-rs/wasm-runtime@1.2.6':
@@ -1357,7 +1357,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@kubohiroya/turbowarp-extension-manifest@0.7.0': {}
+  '@kubohiroya/turbowarp-extension-manifest@0.8.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:
