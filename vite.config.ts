@@ -10,6 +10,8 @@ const packageJson = require('./package.json') as {dependencies: Record<string, s
 
 const externalModules = [
   ...Object.keys(packageJson.dependencies),
+  '@kubohiroya/turbowarp-extension-manifest/distribution',
+  '@kubohiroya/turbowarp-extension-manifest/resources',
   '@noble/hashes/legacy.js',
   '@noble/hashes/utils.js',
   ...builtinModules,
@@ -28,6 +30,7 @@ export default defineConfig({
         browser: 'src/browser.ts',
         cli: 'src/cli.ts',
         index: 'src/index.ts',
+        'web-distribution': 'src/web-distribution.ts',
       },
       formats: ['es'],
     },

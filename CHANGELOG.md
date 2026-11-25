@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.29.0 - 2026-11-25
 
-- `build` に `--strip-tests` を足した。作品内のテスト用ハット（`kubohiroyatest_whentest`、`kubohiroyatest_whensetup`）の下のスクリプトと、そのブロックに付いたコメントを、生成する SB3 から取り除く。指定しなければ今までと同じ SB3 を生成する。API の `createDeterministicSb3`・`buildSb3` は `stripTests` を受け付け、`stripTestScripts` と `testHatOpcodes` を公開する（kubohiroya/turbowarp-plus-editor#774）。
+- Web 向け公開入口 `@kubohiroya/sb3-toolchain/web-distribution` を追加した。npm の正確な版と GitHub Release のタグ URL から静的な配布 descriptor を読み、実行前に対象ファイルのサイズ・ハッシュと取得元を照合する。
+- `build` に `--strip-tests` を追加した。テスト用ハットの下のスクリプトとコメントを生成する SB3 から取り除ける。既定のビルドでは従来どおり保持する。
 
 ## 0.28.1 - 2026-11-21
 
