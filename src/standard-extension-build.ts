@@ -14,7 +14,9 @@ import {readPackageResourceDeclaration} from '@kubohiroya/turbowarp-extension-ma
 import type {Plugin} from 'rolldown';
 
 const virtualRoot = '/__turbowarp_extension_source__';
+const unsupportedRequire = 'turbowarp:standard-build-commonjs';
 const rootFiles = [BUILD_PROFILE_FILENAME, 'package.json', 'pnpm-lock.yaml'];
+const windowsDeviceName = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 const sourcePath =
   /^src\/(?:[\p{L}\p{M}\p{N}_-][\p{L}\p{M}\p{N}_. -]*\/)*[\p{L}\p{M}\p{N}_-][\p{L}\p{M}\p{N}_. -]*\.(?:ts|js|json)$/u;
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -42,12 +44,9 @@ function validateBundle(ast: unknown) {
     if (
       value.type === 'ImportExpression' ||
       (value.type === 'MetaProperty' &&
-        (value.meta as {name?: string} | undefined)?.name === 'import') ||
-      (value.type === 'Identifier' && value.name === 'require')
+        (value.meta as {name?: string} | undefined)?.name === 'import')
     ) {
-      throw new Error(
-        'The standard build does not support dynamic imports, import.meta or require',
-      );
+      throw new Error('The standard build does not support dynamic imports or import.meta');
     }
     if (value.type === 'CallExpression') {
       const callee = value.callee as Record<string, unknown> | undefined;
@@ -101,6 +100,12 @@ export async function buildStandardExtension(
   };
   const profile = parseExtensionBuildProfile(JSON.parse(read(BUILD_PROFILE_FILENAME).text));
   const settings = parseExtensionBuildSettings(JSON.parse(read(profile.settings).text));
+  if (!/^[A-Za-z]/u.test(settings.id)) {
+    throw new Error('The extension ID must start with an ASCII letter for Scratch VM registration');
+  }
+  if (windowsDeviceName.test(settings.slug)) {
+    throw new Error('The extension slug is a reserved Windows device name');
+  }
   const resources = readPackageResourceDeclaration(JSON.parse(read('package.json').text));
   if (resources?.resources.length) {
     throw new Error('The standard build does not support declared runtime resources');
@@ -124,6 +129,9 @@ export async function buildStandardExtension(
     name: 'standard-extension-snapshot',
     resolveId(request, importer, {kind}) {
       if (!importer && request === `${virtualRoot}/${profile.entry}`) return request;
+      if (request === unsupportedRequire) {
+        throw new Error('The standard build does not support CommonJS require');
+      }
       if (
         kind !== 'import-statement' ||
         !importer?.startsWith(`${virtualRoot}/`) ||
@@ -156,7 +164,8 @@ export async function buildStandardExtension(
     input: `${virtualRoot}/${profile.entry}`,
     platform: 'browser',
     tsconfig: false,
-    transform: {target: 'es2020'},
+    // Only unbound require references become imports, which the resolver rejects.
+    transform: {target: 'es2020', inject: {require: unsupportedRequire}},
     experimental: {attachDebugInfo: 'none'},
     plugins: [plugin],
   });

@@ -9,7 +9,7 @@ import {describe, expect, it} from 'vitest';
 
 import {buildStandardExtension} from '../src/standard-extension-build.js';
 
-function fixture() {
+function fixture(settings: {id?: string; slug?: string} = {}) {
   return new Map(
     Object.entries({
       'extension-build.json': JSON.stringify(STANDARD_BUILD_PROFILE),
@@ -27,6 +27,7 @@ function fixture() {
         unsandboxed: false,
         docsURI: 'https://example.test/fixture',
         blockIconURI: 'data:image/svg+xml;base64,PHN2Zy8+',
+        ...settings,
       }),
       'src/block-definitions.json': JSON.stringify({
         blocks: [{opcode: 'greet', blockType: 'REPORTER', text: 'greet'}],
@@ -73,6 +74,74 @@ describe('standard extension build', () => {
       new SourceMap(payload).findEntry(generatedLine, lines[generatedLine].indexOf('throw')),
     ).toMatchObject({originalSource: 'src/greeting.ts', originalLine: 2, originalColumn: 2});
   });
+
+  it('rejects an extension ID that Scratch VM cannot register', async () => {
+    await expect(buildStandardExtension(fixture({id: '7greet'}))).rejects.toThrow(
+      'The extension ID must start with an ASCII letter',
+    );
+  });
+
+  it.each(['con', 'prn', 'aux', 'nul', 'com1', 'com9', 'lpt1', 'lpt9'])(
+    'rejects the Windows device name %s before generating artifacts',
+    async (slug) => {
+      await expect(buildStandardExtension(fixture({slug}))).rejects.toThrow(
+        'The extension slug is a reserved Windows device name',
+      );
+    },
+  );
+
+  it('allows slugs that merely start like a Windows device name', async () => {
+    const build = await buildStandardExtension(fixture({slug: 'com10'}));
+    expect(build.files.has('com10.js')).toBe(true);
+  });
+
+  it('allows require as a block method, property and local binding', async () => {
+    const snapshot = fixture();
+    snapshot.set(
+      'src/block-definitions.json',
+      Buffer.from(
+        JSON.stringify({blocks: [{opcode: 'require', blockType: 'REPORTER', text: 'require'}]}),
+      ),
+    );
+    snapshot.set(
+      'src/index.ts',
+      Buffer.from(`
+        import {format} from './helper.js';
+        const config = {require: 'hello'};
+        const require = (value: string) => format(value);
+        Scratch.extensions.register({require() { return require(config.require); }});
+      `),
+    );
+    snapshot.set(
+      'src/helper.js',
+      Buffer.from('export const format = value => value.toUpperCase();'),
+    );
+    const build = await buildStandardExtension(snapshot);
+    const registered: Array<{require(): string}> = [];
+    runInNewContext(Buffer.from(build.files.get('recipe-fixture.js')!).toString(), {
+      Scratch: {extensions: {register: (item: {require(): string}) => registered.push(item)}},
+    });
+    expect(registered[0].require()).toBe('HELLO');
+  });
+
+  it.each([
+    ['direct TypeScript call', 'ts', 'return require(name);'],
+    ['aliased JavaScript call', 'js', 'const load = require; return load(name);'],
+  ])(
+    'rejects an unbound CommonJS require used in a %s',
+    async (_label, extension, implementation) => {
+      const snapshot = fixture();
+      snapshot.set(
+        'src/index.ts',
+        Buffer.from("import {greet} from './helper.js'; Scratch.extensions.register({greet});"),
+      );
+      snapshot.set(
+        `src/helper.${extension}`,
+        Buffer.from(`export function greet(name) { ${implementation} }`),
+      );
+      await expect(buildStandardExtension(snapshot)).rejects.toThrow('CommonJS require');
+    },
+  );
 
   it.each([
     "'node:fs'",
