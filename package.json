@@ -26,6 +26,11 @@
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js"
     },
+    "./web-distribution": {
+      "types": "./dist/web-distribution.d.ts",
+      "import": "./dist/web-distribution.js",
+      "default": "./dist/web-distribution.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -61,6 +66,7 @@
     "prepack": "pnpm run check"
   },
   "dependencies": {
+    "@kubohiroya/turbowarp-extension-manifest": "0.7.0",
     "@noble/hashes": "2.4.0",
     "fflate": "0.8.3",
     "music-metadata": "12.7.0",
