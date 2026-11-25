@@ -49,7 +49,7 @@ function npmArchive(files: Record<string, string>) {
   return new Uint8Array(gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)])));
 }
 
-function npmFixture(file = bundle, changeIntegrity = false) {
+function npmFixture(file = bundle, changeIntegrity = false, expected = bundle) {
   const archive = npmArchive({
     'package.json': JSON.stringify({
       name: packageName,
@@ -57,7 +57,10 @@ function npmFixture(file = bundle, changeIntegrity = false) {
       license: 'MIT',
       turbowarpExtension: {resourceDeclaration: resources},
     }),
-    'dist/extension-package.json': descriptor,
+    'dist/extension-package.json': JSON.stringify({
+      ...distribution,
+      bundle: artifact(filename, expected),
+    }),
     'dist/extension-manifest.json': api,
     'dist/sample.js': file,
   });
@@ -130,6 +133,30 @@ describe('published extension resolution', () => {
     expect(npm.bytes).toEqual(github.bytes);
     expect(new TextDecoder().decode(github.bytes)).toBe(bundle);
     expect(github.source).toMatchObject({commit, releaseID: 123});
+  });
+
+  it('can resolve another package after a bundle whose header sample cuts a UTF-8 character', async () => {
+    const split = bundle + 'a'.repeat(4095 - Buffer.byteLength(bundle)) + '界';
+    await resolvePublishedExtension(packageName + '@' + version, npmFixture(split, false, split));
+    const next = await resolvePublishedExtension(packageName + '@' + version, npmFixture());
+    expect(new TextDecoder().decode(next.bytes)).toBe(bundle);
+  });
+
+  it('reports malformed npm tarball metadata before fetching an archive', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        name: packageName,
+        version,
+        dist: {
+          tarball: 'https://registry.npmjs.org/%ZZ',
+          integrity: 'sha512-' + 'a'.repeat(86) + '==',
+        },
+      }),
+    );
+    await expect(
+      resolvePublishedExtension(packageName + '@' + version, {fetchImpl}),
+    ).rejects.toMatchObject({code: 'NPM_METADATA'});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('rejects tarball and artifact integrity mismatches independently', async () => {

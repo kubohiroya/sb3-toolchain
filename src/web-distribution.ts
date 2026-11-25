@@ -103,7 +103,9 @@ function getAssetDigest(release: Record<string, unknown>, filename: string) {
 }
 
 function validateBundle(distribution: ExtensionDistribution, bytes: Uint8Array) {
-  const lines = decoder.decode(bytes.subarray(0, 4096), {stream: true}).split(/\r?\n/u);
+  // The sample can end mid-character. Keep any unfinished bytes local to this inspection.
+  const headerDecoder = new TextDecoder('utf-8', {fatal: true});
+  const lines = headerDecoder.decode(bytes.subarray(0, 4096), {stream: true}).split(/\r?\n/u);
   const headers = new Map<string, string>();
   for (const line of lines) {
     if (!/^\/\/ /u.test(line)) break;
@@ -214,12 +216,19 @@ export async function resolvePublishedExtension(
     ) {
       throw new DistributionError('NPM_METADATA', 'Unexpected npm version metadata');
     }
-    const url = new URL(tarball);
+    let url: URL;
+    let path: string;
+    try {
+      url = new URL(tarball);
+      path = decodeURIComponent(url.pathname);
+    } catch (cause) {
+      throw new DistributionError('NPM_METADATA', 'Invalid npm tarball address', {cause});
+    }
     const expectedPath =
       '/' + packageName + '/-/' + packageName.split('/').at(-1) + '-' + version + '.tgz';
     if (
       url.origin !== REGISTRY ||
-      decodeURIComponent(url.pathname) !== expectedPath ||
+      path !== expectedPath ||
       url.username ||
       url.password ||
       url.search ||
