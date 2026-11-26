@@ -1,2 +1,3 @@
 minimumReleaseAgeExclude:
   - '@kubohiroya/turbowarp-extension-manifest@0.7.0 || 0.8.0'
+  - "@kubohiroya/turbowarp-plus-editor-test@0.4.0"
