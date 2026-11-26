@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.31.0 - 2026-11-26
 
 - Web の静的拡張取得で npm の dist-tag（版省略時は `latest`）と GitHub リポジトリ URL に対応した。リポジトリは GitHub が示す最新の安定版 Release だけを対象とし、未公開ソースにはフォールバックしない。
 - 検証済みの取得元を `expectedSource` で固定して再取得できる。npm は解決後の正確な版と tarball integrity、Release は正確なタグ・commit・Release ID と各 asset の ID・名前・SHA-256 を保持する。検証結果は拡張を実行する許可ではない。
+
+- `test list` で SB3 のテストを列挙し、`test run` で固定したローカル Editor をヘッドレス実行できる。既定では作品が指定した外部拡張を実行せず、事前に検証したsandboxed成果物のみ明示的に指定できる。
 
 ## 0.30.0 - 2026-11-25
 
