@@ -12,8 +12,8 @@ importers:
         specifier: 0.8.0
         version: 0.8.0
       '@kubohiroya/turbowarp-plus-editor-test':
-        specifier: 0.3.1
-        version: 0.3.1
+        specifier: 0.4.0
+        version: 0.4.0
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -165,8 +165,8 @@ packages:
     resolution: {integrity: sha512-mSVMD34rgwefDBEjCSVfDXCe0bpT3S0CdSaTSDjUCRLBsvNpDupeznVWYuk6VsoMYJ34iqTYbRnS7TLItJX46A==}
     engines: {node: '>=24'}
 
-  '@kubohiroya/turbowarp-plus-editor-test@0.3.1':
-    resolution: {integrity: sha512-/x0Ia+/yLcgSKeb/tiJn3Wlhc8cAscbSY5FZFDoh/D+UumPmbO0fjCpMHUvBgba2QhJVGegc+x9Gbd7ZhC74ww==}
+  '@kubohiroya/turbowarp-plus-editor-test@0.4.0':
+    resolution: {integrity: sha512-YbcxADcPtFSrm6Hvmgfy9fz0cOv67OG56P9EfaRyyTy/nPbvKVM2r40txqDHbDXz7ig94+2ssxP/LYcn7ManhQ==}
 
   '@napi-rs/wasm-runtime@1.2.6':
     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
@@ -1373,7 +1373,7 @@ snapshots:
 
   '@kubohiroya/turbowarp-extension-manifest@0.8.0': {}
 
-  '@kubohiroya/turbowarp-plus-editor-test@0.3.1': {}
+  '@kubohiroya/turbowarp-plus-editor-test@0.4.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:
