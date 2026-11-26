@@ -66,6 +66,33 @@ sb3-toolchain extensions digests one.sb3 two.sb3
 プロジェクトリポジトリに推奨する信頼できる唯一の情報源、再import、置換保護、機能拡張更新、CIの
 ワークフローについては、[`docs/ja/workflows.md`](docs/ja/workflows.md)を参照してください。
 
+### 作品内のテストを一覧にする
+
+`sb3-toolchain test list app --json` または `sb3-toolchain test list project.sb3 --json`
+で、テスト用ハットをターゲット名とブロック ID で一覧にできます。`--json` を省略すると、
+各行に識別子と表示名を引用符付きで表示します。拡張機能や VM は実行しません。
+配布用の SB3 からテスト・セットアップ用スクリプトを除くには、`build` に `--strip-tests`
+を付けます。既定では残します。
+
+### 固定したローカルの Editor で作品内テストを実行する
+
+`npx playwright-core@1.64.1 install chromium` で対応する Chromium を入れ、
+信頼できる手元の TurboWarp Plus Editor ビルドと、サイト側の完全なコミット SHA を指定します。
+
+```bash
+sb3-toolchain test run project.sb3 --editor-dir /path/to/build \
+  --editor-revision FULL_SITE_SHA --test Stage/BLOCK_ID --reporter junit --out results.xml
+```
+
+`--test` を省くと全件、繰り返すと複数件を指定できます。外部に接続せず、Editor の実テストフレームで実行します。
+組み込みの TurboWarp Test（`extensions/turbowarp-test.js`、ハッシュ `7f6541ce…`）のみ対応します。
+旧形式の URL、外部拡張、ハッシュの不一致は起動前に拒否します。依存のない同梱拡張に限り、
+`--allow-sandboxed ID=SHA256` を明示すると、サンドボックス内で実行できます。出所不明の SB3 の
+自己申告ではなく、信頼できるビルド出力のダイジェストを使い、実際の読み込みダイジェストを報告する
+Editor が必要です。コミット SHA はローカルのビルド情報との照合であり、署名検証ではありません。
+信頼できるビルドだけを指定してください。
+JUnit は既定で標準出力、`--out` で新規ファイルに出力します。失敗・エラー・タイムアウトは非ゼロで終了します。
+
 ## JavaScript API
 
 ```js

@@ -18,9 +18,13 @@ const API_BYTES = 1024 * 1024;
 const BUNDLE_BYTES = 8 * 1024 * 1024;
 const TARBALL_BYTES = 16 * 1024 * 1024;
 const TAR_BYTES = 48 * 1024 * 1024;
+const NPM_DIST_TAG = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/u;
 const REGISTRY = 'https://registry.npmjs.org';
 const decoder = new TextDecoder('utf-8', {fatal: true});
+const REPOSITORY_URL = /^https:\/\/github\.com\/([\w-]+)\/([\w.-]+)\/?$/u;
 const RELEASE_URL = /^https:\/\/github\.com\/([\w-]+)\/([\w.-]+)\/releases\/tag\/([\w.+-]+)\/?$/u;
+
+export type ReleaseAssetReceipt = Readonly<{id: number; name: string; sha256: string}>;
 
 export type PublishedExtensionSource =
   | Readonly<{provider: 'npm'; package: string; version: string; integrity: string}>
@@ -31,6 +35,11 @@ export type PublishedExtensionSource =
       commit: string;
       releaseID: number;
       descriptorSHA256: string;
+      assets: Readonly<{
+        descriptor: ReleaseAssetReceipt;
+        bundle: ReleaseAssetReceipt;
+        api: ReleaseAssetReceipt;
+      }>;
     }>;
 
 export interface PublishedExtension {
@@ -84,13 +93,14 @@ async function verify(
   return bytes;
 }
 
-function getAssetDigest(release: Record<string, unknown>, filename: string) {
+function getAssetReceipt(release: Record<string, unknown>, filename: string) {
   const assets = Array.isArray(release.assets) ? release.assets.map(object) : [];
   const matches = assets.filter((asset) => asset.name === filename);
-  const digest = matches[0]?.digest;
+  const {id, digest} = matches[0] ?? {};
   if (
     matches.length !== 1 ||
     matches[0]?.state !== 'uploaded' ||
+    !positiveID(id) ||
     typeof digest !== 'string' ||
     !/^sha256:[a-f0-9]{64}$/u.test(digest)
   ) {
@@ -99,7 +109,27 @@ function getAssetDigest(release: Record<string, unknown>, filename: string) {
       'The release does not provide a unique hashed asset: ' + filename,
     );
   }
-  return digest.slice(7);
+  return Object.freeze({id, name: filename, sha256: digest.slice(7)});
+}
+
+function positiveID(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function assertUnchanged(ok: boolean) {
+  if (!ok)
+    throw new DistributionError(
+      'SOURCE_CHANGED',
+      'The published extension source no longer matches the receipt',
+    );
+}
+
+function sameAsset(observed: ReleaseAssetReceipt, expected: ReleaseAssetReceipt) {
+  return (
+    observed.id === expected.id &&
+    observed.name === expected.name &&
+    observed.sha256 === expected.sha256
+  );
 }
 
 function validateBundle(distribution: ExtensionDistribution, bytes: Uint8Array) {
@@ -129,6 +159,12 @@ function validateBundle(distribution: ExtensionDistribution, bytes: Uint8Array) 
   }
 }
 
+function stableReleaseTag(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 128) return false;
+  const version = value.replace(/^v/u, '');
+  return EXACT_VERSION.test(version) && !version.split('+')[0]!.includes('-');
+}
+
 function parseReference(reference: string) {
   const value = reference.trim();
   if (value.length <= 512) {
@@ -145,31 +181,50 @@ function parseReference(reference: string) {
         version: release[3]!,
       };
     }
+    const repository = REPOSITORY_URL.exec(value);
+    if (repository && repository[2] !== '.' && repository[2] !== '..') {
+      return {
+        provider: 'github' as const,
+        repository: repository[1]! + '/' + repository[2]!,
+        version: undefined,
+      };
+    }
     const start = value.startsWith('npm:') ? 4 : 0;
     const split = value.lastIndexOf('@');
-    const packageName = split > start ? value.slice(start, split) : '';
-    const version = value.slice(split + 1);
+    const packageName = split > start ? value.slice(start, split) : value.slice(start);
+    const version = split > start ? value.slice(split + 1) : 'latest';
     if (
       packageName.length <= 214 &&
       version.length <= 128 &&
       NPM_PACKAGE.test(packageName) &&
-      EXACT_VERSION.test(version)
+      (split > start || !EXACT_VERSION.test(packageName)) &&
+      (EXACT_VERSION.test(version) || NPM_DIST_TAG.test(version))
     ) {
       return {provider: 'npm' as const, packageName, version};
     }
   }
   throw new DistributionError(
     'INVALID_REFERENCE',
-    'Enter an exact npm package version or a GitHub Release tag URL',
+    'Enter an npm package with a version or tag, a GitHub Release tag URL, or a GitHub repository URL',
   );
 }
 
 /** Resolve and verify a published extension without executing any package code. */
 export async function resolvePublishedExtension(
   reference: string,
-  {fetchImpl = globalThis.fetch, signal}: {fetchImpl?: typeof fetch; signal?: AbortSignal} = {},
+  {
+    fetchImpl = globalThis.fetch,
+    signal,
+    expectedSource,
+  }: {
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+    /** Lock from a prior successful resolution, not from author-supplied metadata. */
+    expectedSource?: PublishedExtensionSource;
+  } = {},
 ): Promise<PublishedExtension> {
   const selected = parseReference(reference);
+  if (expectedSource) assertUnchanged(selected.provider === expectedSource.provider);
   const deadline = AbortSignal.timeout(45_000);
   const operation = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const get = async (url: string, limit: number) => {
@@ -200,16 +255,26 @@ export async function resolvePublishedExtension(
   let bundle: Uint8Array<ArrayBuffer>;
   let api: Uint8Array<ArrayBuffer>;
   if (selected.provider === 'npm') {
-    const {packageName, version} = selected;
+    const {packageName, version: selector} = selected;
+    const expected = expectedSource?.provider === 'npm' ? expectedSource : undefined;
+    const exact = EXACT_VERSION.test(selector);
+    if (expected)
+      assertUnchanged(
+        expected.package === packageName && (!exact || expected.version === selector),
+      );
     const metadata = await getJSON(
-      REGISTRY + '/' + encodeURIComponent(packageName) + '/' + encodeURIComponent(version),
+      REGISTRY + '/' + encodeURIComponent(packageName) + '/' + encodeURIComponent(selector),
     );
+    const version = metadata.version;
     const dist = object(metadata.dist);
     const integrity = dist.integrity;
     const tarball = dist.tarball;
     if (
       metadata.name !== packageName ||
-      metadata.version !== version ||
+      typeof version !== 'string' ||
+      version.length > 128 ||
+      !EXACT_VERSION.test(version) ||
+      (exact && selector !== version) ||
       typeof integrity !== 'string' ||
       !/^sha512-[A-Za-z0-9+/]{86}==$/u.test(integrity) ||
       typeof tarball !== 'string'
@@ -236,6 +301,7 @@ export async function resolvePublishedExtension(
     ) {
       throw new DistributionError('NPM_METADATA', 'Unexpected npm tarball address');
     }
+    if (expected) assertUnchanged(expected.version === version && expected.integrity === integrity);
     const compressed = await get(url.href, TARBALL_BYTES);
     if (
       'sha512-' + btoa(String.fromCharCode(...(await hash(compressed, 'SHA-512')))) !==
@@ -274,10 +340,34 @@ export async function resolvePublishedExtension(
     api = read('dist/' + API_MANIFEST);
     source = {provider: 'npm', package: packageName, version, integrity};
   } else {
-    const {repository, version: tag} = selected;
+    const {repository, version} = selected;
+    const expected = expectedSource?.provider === 'github' ? expectedSource : undefined;
+    if (expected)
+      assertUnchanged(
+        expected.repository === repository && (version === undefined || expected.tag === version),
+      );
     const root = 'https://api.github.com/repos/' + repository;
+    // Resolve only through GitHub itself. Never infer mappings from a README or repository metadata.
+    const latest = version === undefined ? await getJSON(root + '/releases/latest') : undefined;
+    let tag: string;
+    if (version === undefined) {
+      if (
+        !latest ||
+        latest.draft !== false ||
+        latest.prerelease !== false ||
+        !stableReleaseTag(latest.tag_name)
+      )
+        throw new DistributionError(
+          'RELEASE_METADATA',
+          'The repository has no published stable extension Release',
+        );
+      tag = latest.tag_name;
+    } else {
+      tag = version;
+    }
+    if (expected) assertUnchanged(expected.tag === tag);
     const [release, ref] = await Promise.all([
-      getJSON(root + '/releases/tags/' + encodeURIComponent(tag)),
+      latest ?? getJSON(root + '/releases/tags/' + encodeURIComponent(tag)),
       getJSON(root + '/git/ref/tags/' + encodeURIComponent(tag)),
     ]);
     const target = object(ref.object);
@@ -297,8 +387,7 @@ export async function resolvePublishedExtension(
     if (
       release.tag_name !== tag ||
       release.draft !== false ||
-      typeof release.id !== 'number' ||
-      !Number.isSafeInteger(release.id) ||
+      !positiveID(release.id) ||
       typeof commit !== 'string' ||
       !objectID.test(commit)
     ) {
@@ -307,7 +396,15 @@ export async function resolvePublishedExtension(
     // Release downloads redirect to a host without CORS. Read the immutable commit and require
     // the digests published for all three release assets to match the bytes served from it.
     const rawRoot = 'https://raw.githubusercontent.com/' + repository + '/' + commit + '/dist/';
-    const descriptorSHA256 = getAssetDigest(release, DISTRIBUTION_DESCRIPTOR);
+    const descriptorAsset = getAssetReceipt(release, DISTRIBUTION_DESCRIPTOR);
+    const descriptorSHA256 = descriptorAsset.sha256;
+    if (expected)
+      assertUnchanged(
+        expected.commit === commit &&
+          expected.releaseID === release.id &&
+          expected.descriptorSHA256 === descriptorSHA256 &&
+          sameAsset(descriptorAsset, expected.assets.descriptor),
+      );
     const descriptorBytes = await get(rawRoot + DISTRIBUTION_DESCRIPTOR, METADATA_BYTES);
     if ((await sha256(descriptorBytes)) !== descriptorSHA256) {
       throw new DistributionError(
@@ -316,16 +413,23 @@ export async function resolvePublishedExtension(
       );
     }
     distribution = parseExtensionDistribution(json(descriptorBytes, METADATA_BYTES));
+    const bundleAsset = getAssetReceipt(release, distribution.bundle.file);
+    const apiAsset = getAssetReceipt(release, API_MANIFEST);
     if (
       (tag !== distribution.version && tag !== 'v' + distribution.version) ||
-      getAssetDigest(release, distribution.bundle.file) !== distribution.bundle.sha256 ||
-      getAssetDigest(release, API_MANIFEST) !== distribution.api.sha256
+      bundleAsset.sha256 !== distribution.bundle.sha256 ||
+      apiAsset.sha256 !== distribution.api.sha256 ||
+      new Set([descriptorAsset.id, bundleAsset.id, apiAsset.id]).size !== 3
     ) {
       throw new DistributionError(
         'RELEASE_METADATA',
         'Release version or asset digests do not match the distribution',
       );
     }
+    if (expected)
+      assertUnchanged(
+        sameAsset(bundleAsset, expected.assets.bundle) && sameAsset(apiAsset, expected.assets.api),
+      );
     if (distribution.bundle.size > BUNDLE_BYTES || distribution.api.size > API_BYTES) {
       throw new DistributionError(
         'SIZE_LIMIT',
@@ -336,7 +440,15 @@ export async function resolvePublishedExtension(
       get(rawRoot + distribution.bundle.file, distribution.bundle.size),
       get(rawRoot + API_MANIFEST, distribution.api.size),
     ]);
-    source = {provider: 'github', repository, tag, commit, releaseID: release.id, descriptorSHA256};
+    source = {
+      provider: 'github',
+      repository,
+      tag,
+      commit,
+      releaseID: release.id,
+      descriptorSHA256,
+      assets: Object.freeze({descriptor: descriptorAsset, bundle: bundleAsset, api: apiAsset}),
+    };
     sourceURL = rawRoot + distribution.bundle.file;
   }
   await Promise.all([

@@ -49,22 +49,29 @@ function npmArchive(files: Record<string, string>) {
   return new Uint8Array(gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)])));
 }
 
-function npmFixture(file = bundle, changeIntegrity = false, expected = bundle) {
+function npmFixture(
+  file = bundle,
+  changeIntegrity = false,
+  expected = bundle,
+  resolvedVersion = version,
+) {
   const archive = npmArchive({
     'package.json': JSON.stringify({
       name: packageName,
-      version,
+      version: resolvedVersion,
       license: 'MIT',
       turbowarpExtension: {resourceDeclaration: resources},
     }),
     'dist/extension-package.json': JSON.stringify({
       ...distribution,
+      version: resolvedVersion,
       bundle: artifact(filename, expected),
     }),
     'dist/extension-manifest.json': api,
     'dist/sample.js': file,
   });
-  const tarball = 'https://registry.npmjs.org/' + packageName + '/-/sample-' + version + '.tgz';
+  const tarball =
+    'https://registry.npmjs.org/' + packageName + '/-/sample-' + resolvedVersion + '.tgz';
   const integrity =
     'sha512-' +
     createHash('sha512')
@@ -73,24 +80,53 @@ function npmFixture(file = bundle, changeIntegrity = false, expected = bundle) {
   const fetchImpl = vi.fn<typeof fetch>(async (url) =>
     url === tarball
       ? new Response(archive)
-      : Response.json({name: packageName, version, dist: {tarball, integrity}}),
+      : Response.json({name: packageName, version: resolvedVersion, dist: {tarball, integrity}}),
   );
   return {fetchImpl};
 }
 
-function releaseFixture(changedAsset = false) {
+function releaseFixture(
+  changes: {
+    changedAsset?: boolean;
+    changedAssetID?: boolean;
+    missingAsset?: boolean;
+    commit?: string;
+    releaseID?: number;
+    latestTag?: string;
+    latestPrerelease?: boolean;
+  } = {},
+) {
+  const {
+    changedAsset = false,
+    changedAssetID = false,
+    missingAsset = false,
+    commit: revision = commit,
+    releaseID = 123,
+    latestTag = tag,
+    latestPrerelease = false,
+  } = changes;
   const assets = [
     artifact('extension-package.json', descriptor),
     distribution.bundle,
     distribution.api,
-  ].map(({file, sha256}) => ({
-    name: file,
-    state: 'uploaded',
-    digest: 'sha256:' + (changedAsset && file === filename ? '0'.repeat(64) : sha256),
-  }));
+  ]
+    .map(({file, sha256}, index) => ({
+      id: changedAssetID && file === filename ? 999 : index + 101,
+      name: file,
+      state: 'uploaded',
+      digest: 'sha256:' + (changedAsset && file === filename ? '0'.repeat(64) : sha256),
+    }))
+    .filter((asset) => !missingAsset || asset.name !== filename);
   const route = {
+    ['https://api.github.com/repos/owner/sample/releases/latest']: Response.json({
+      id: releaseID,
+      tag_name: latestTag,
+      draft: false,
+      prerelease: latestPrerelease,
+      assets,
+    }),
     ['https://api.github.com/repos/owner/sample/releases/tags/' + tag]: Response.json({
-      id: 123,
+      id: releaseID,
       tag_name: tag,
       draft: false,
       assets,
@@ -100,7 +136,7 @@ function releaseFixture(changedAsset = false) {
       object: {type: 'tag', sha: 'b'.repeat(40)},
     }),
     ['https://api.github.com/repos/owner/sample/git/tags/' + 'b'.repeat(40)]: Response.json({
-      object: {type: 'commit', sha: commit},
+      object: {type: 'commit', sha: revision},
     }),
     ...Object.fromEntries(
       Object.entries({
@@ -108,7 +144,7 @@ function releaseFixture(changedAsset = false) {
         'extension-manifest.json': api,
         [filename]: bundle,
       }).map(([file, bytes]) => [
-        'https://raw.githubusercontent.com/owner/sample/' + commit + '/dist/' + file,
+        'https://raw.githubusercontent.com/owner/sample/' + revision + '/dist/' + file,
         new Response(bytes),
       ]),
     ),
@@ -133,6 +169,116 @@ describe('published extension resolution', () => {
     expect(npm.bytes).toEqual(github.bytes);
     expect(new TextDecoder().decode(github.bytes)).toBe(bundle);
     expect(github.source).toMatchObject({commit, releaseID: 123});
+  });
+
+  it('pins Release identity and all observed asset names, IDs and digests on re-resolution', async () => {
+    const reference = 'https://github.com/owner/sample/releases/tag/' + tag;
+    const first = await resolvePublishedExtension(reference, releaseFixture());
+    expect(first.source).toMatchObject({
+      commit,
+      releaseID: 123,
+      assets: {
+        descriptor: {id: 101, name: 'extension-package.json', sha256: sha256(descriptor)},
+        bundle: {id: 102, name: filename, sha256: sha256(bundle)},
+        api: {id: 103, name: 'extension-manifest.json', sha256: sha256(api)},
+      },
+    });
+    await expect(
+      resolvePublishedExtension(reference, {...releaseFixture(), expectedSource: first.source}),
+    ).resolves.toMatchObject({source: first.source});
+    for (const changes of [{changedAssetID: true}, {commit: 'f'.repeat(40)}, {releaseID: 124}]) {
+      const fixture = releaseFixture(changes);
+      await expect(
+        resolvePublishedExtension(reference, {...fixture, expectedSource: first.source}),
+      ).rejects.toMatchObject({code: 'SOURCE_CHANGED'});
+      expect(
+        fixture.fetchImpl.mock.calls
+          .map(([url]) => String(url))
+          .some((url) => url.endsWith('/' + filename)),
+      ).toBe(false);
+    }
+    await expect(
+      resolvePublishedExtension(reference, {
+        ...releaseFixture({missingAsset: true}),
+        expectedSource: first.source,
+      }),
+    ).rejects.toMatchObject({code: 'MISSING_RELEASE_ASSET'});
+    const otherProvider = npmFixture();
+    await expect(
+      resolvePublishedExtension(packageName + '@' + version, {
+        ...otherProvider,
+        expectedSource: first.source,
+      }),
+    ).rejects.toMatchObject({code: 'SOURCE_CHANGED'});
+    expect(otherProvider.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not download an npm archive after its published integrity changed from the receipt', async () => {
+    const reference = packageName + '@' + version;
+    const first = await resolvePublishedExtension(reference, npmFixture());
+    const changed = npmFixture(bundle, true);
+    await expect(
+      resolvePublishedExtension(reference, {...changed, expectedSource: first.source}),
+    ).rejects.toMatchObject({code: 'SOURCE_CHANGED'});
+    expect(changed.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves a repository only through its latest stable published GitHub release', async () => {
+    const reference = 'https://github.com/owner/sample';
+    const fixture = releaseFixture();
+    const resolved = await resolvePublishedExtension(reference, fixture);
+    expect(resolved.source).toMatchObject({tag, commit, releaseID: 123});
+    expect(fixture.fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      'https://api.github.com/repos/owner/sample/releases/latest',
+      expect.objectContaining({credentials: 'omit', redirect: 'error'}),
+    );
+    expect(fixture.fetchImpl.mock.calls.map(([url]) => String(url))).not.toContain(
+      'https://api.github.com/repos/owner/sample/releases/tags/' + tag,
+    );
+    const next = releaseFixture({latestTag: 'v1.2.4'});
+    await expect(
+      resolvePublishedExtension(reference, {...next, expectedSource: resolved.source}),
+    ).rejects.toMatchObject({code: 'SOURCE_CHANGED'});
+    expect(next.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{latestTag: 'v1.2.3-rc.1'}, {latestPrerelease: true}])(
+    'rejects non-stable repository metadata %o before requesting other artifacts',
+    async (changes) => {
+      const fixture = releaseFixture(changes);
+      await expect(
+        resolvePublishedExtension('https://github.com/owner/sample', fixture),
+      ).rejects.toMatchObject({code: 'RELEASE_METADATA'});
+      expect(fixture.fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not fall back to source or other releases if the repository has no latest release', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, {status: 404}));
+    await expect(
+      resolvePublishedExtension('https://github.com/owner/sample', {fetchImpl}),
+    ).rejects.toMatchObject({code: 'HTTP_ERROR'});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves npm dist-tags to exact versions and does not follow a moved tag under a lock', async () => {
+    const fixture = npmFixture();
+    const reference = packageName + '@next';
+    const resolved = await resolvePublishedExtension(reference, fixture);
+    expect(resolved.source).toMatchObject({provider: 'npm', version});
+    const root = 'https://registry.npmjs.org/' + encodeURIComponent(packageName);
+    expect(fixture.fetchImpl.mock.calls[0]?.[0]).toEqual(root + '/next');
+    const bare = npmFixture();
+    await expect(resolvePublishedExtension(packageName, bare)).resolves.toMatchObject({
+      source: resolved.source,
+    });
+    expect(bare.fetchImpl.mock.calls[0]?.[0]).toEqual(root + '/latest');
+    const moved = npmFixture(bundle, false, bundle, '1.2.4');
+    await expect(
+      resolvePublishedExtension(reference, {...moved, expectedSource: resolved.source}),
+    ).rejects.toMatchObject({code: 'SOURCE_CHANGED'});
+    expect(moved.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('can resolve another package after a bundle whose header sample cuts a UTF-8 character', async () => {
@@ -169,16 +315,16 @@ describe('published extension resolution', () => {
     await expect(
       resolvePublishedExtension(
         'https://github.com/owner/sample/releases/tag/' + tag,
-        releaseFixture(true),
+        releaseFixture({changedAsset: true}),
       ),
     ).rejects.toMatchObject({code: 'RELEASE_METADATA'});
   });
 
   it.each([
     '1.0.0',
-    packageName + '@latest',
+    packageName + '@^1.0.0',
     'https://github.com/owner/../releases/tag/v1.2.3',
-    'https://github.com/owner/sample',
+    'https://github.com/owner/sample/tree/main',
     'https://github.com/owner/sample/releases/tag/..',
   ])('rejects %s before making requests', async (reference) => {
     const fetchImpl = vi.fn<typeof fetch>();

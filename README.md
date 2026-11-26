@@ -68,6 +68,37 @@ sb3-toolchain extensions digests one.sb3 two.sb3
 See [`docs/workflows.md`](docs/workflows.md) for the recommended source-of-truth, re-import,
 replacement protection, extension update, and CI workflows for a project repository.
 
+### Discover tests included in a project
+
+`sb3-toolchain test list app --json` and `sb3-toolchain test list project.sb3 --json`
+list the same test hats by target and block ID. Without `--json`, each line shows the
+address and display name as quoted text. Discovery never loads extensions or runs a
+VM. To make a distribution without the test and setup scripts, add `--strip-tests` to
+`build`; the default keeps them.
+
+### Run project tests in a pinned local Editor
+
+Install Chromium for the matching Playwright Core version
+(`npx playwright-core@1.64.1 install chromium`), then provide a trusted local
+TurboWarp Plus Editor build and its full site revision:
+
+```bash
+sb3-toolchain test run project.sb3 --editor-dir /path/to/build \
+  --editor-revision FULL_SITE_SHA --test Stage/BLOCK_ID --reporter junit --out results.xml
+```
+
+Omit `--test` to run all cases; repeat it to select several. The command runs offline
+in the actual Editor test frame. Only the pinned, embedded TurboWarp Test extension
+(`7f6541ce…`, at `extensions/turbowarp-test.js`) is supported. Archives with legacy,
+remote, additional or differently hashed extensions are rejected before launching the
+browser unless you explicitly grant an extra, dependency-free sandboxed embedded file
+with `--allow-sandboxed ID=SHA256`. Use the digest of trusted local build output, not
+a value asserted by an unknown archive. These grants require an Editor build that
+reports the exact loaded build digests. The matching revision is an identity check
+on local build metadata, not cryptographic authentication; only supply a trusted
+Editor build. JUnit goes to standard output by default or to a new file
+with `--out`. Failed assertions, errors and timeouts exit nonzero.
+
 ## JavaScript API
 
 ```js

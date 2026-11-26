@@ -106,12 +106,14 @@ test('builds deterministic SB3 archives with tests kept or stripped', async () =
 
     const builtBlocks = (archive: Uint8Array): string[] =>
       Object.keys(JSON.parse(strFromU8(unzipSync(archive)['project.json'])).targets[0].blocks);
-    const [kept, stripped, strippedAgain] = await Promise.all([
+    const [kept, keptAgain, stripped, strippedAgain] = await Promise.all([
+      createDeterministicSb3(sourceDirectory),
       createDeterministicSb3(sourceDirectory),
       createDeterministicSb3(sourceDirectory, {stripTests: true}),
       createDeterministicSb3(sourceDirectory, {stripTests: true}),
     ]);
     expect(kept.testStrip).toBeNull();
+    expect(Buffer.from(kept.archive)).toStrictEqual(Buffer.from(keptAgain.archive));
     expect(builtBlocks(kept.archive)).toHaveLength(8);
     expect(stripped.testStrip).toStrictEqual({
       removedBlockCount: 5,
