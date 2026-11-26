@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Web の静的拡張取得で npm の dist-tag（版省略時は `latest`）と GitHub リポジトリ URL に対応した。リポジトリは GitHub が示す最新の安定版 Release だけを対象とし、未公開ソースにはフォールバックしない。
+- 検証済みの取得元を `expectedSource` で固定して再取得できる。npm は解決後の正確な版と tarball integrity、Release は正確なタグ・commit・Release ID と各 asset の ID・名前・SHA-256 を保持する。検証結果は拡張を実行する許可ではない。
+
 ## 0.30.0 - 2026-11-25
 
 - Node 専用の標準ソースビルドを追加した。Template の宣言に沿った TypeScript のスナップショットから、開発用 JavaScript、API manifest、ソースマップを生成する。

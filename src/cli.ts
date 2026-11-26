@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+import {writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import {createInterface} from 'node:readline/promises';
@@ -25,6 +26,9 @@ import {importSb3} from './import';
 import type {OutputReplacementContext} from './import';
 import type {DirectoryDifferences} from './output-safety';
 import {createDeterministicSb3, validateSb3Source} from './source';
+import {listProjectTests} from './test-list';
+import {runProjectTests} from './test-run';
+import {toJUnitXml} from '@kubohiroya/turbowarp-plus-editor-test/junit';
 
 export interface HelpCliOptions {
   command: 'help';
@@ -153,7 +157,78 @@ export type ExtensionsCliOptions =
   | ExtensionsUnbundleSourceCliOptions
   | ExtensionsUnbundleArchiveCliOptions;
 
+export interface TestListCliOptions {
+  command: 'test';
+  action: 'list';
+  inputPath: string;
+  json: boolean;
+}
+
+export interface TestRunCliOptions {
+  command: 'test';
+  action: 'run';
+  inputPath: string;
+  editorDirectory: string;
+  revision: string;
+  only: string[];
+  allowed: Map<string, string>;
+  outputPath?: string;
+}
+
+function parseTestRunArguments(input: string | undefined, args: string[]): TestRunCliOptions {
+  assert(input && !input.startsWith('-'), 'The test run command requires an INPUT.sb3.');
+  const flags = new Map<string, string>();
+  const only: string[] = [];
+  const allowed = new Map<string, string>();
+  for (let i = 0; i < args.length; i += 2) {
+    const key = args[i];
+    const value = args[i + 1];
+    assert(value && !value.startsWith('--'), `Missing value: ${key}`);
+    if (key === '--test') {
+      only.push(value);
+      continue;
+    }
+    if (key === '--allow-sandboxed') {
+      const grant = /^([a-zA-Z0-9]+)=([0-9a-f]{64})$/.exec(value);
+      assert(
+        grant && grant[1] !== 'kubohiroyatest' && !allowed.has(grant[1]) && allowed.size < 32,
+        'Use a unique --allow-sandboxed ID=SHA256 for each extra extension.',
+      );
+      allowed.set(grant[1], grant[2]);
+      continue;
+    }
+    assert(
+      ['--editor-dir', '--editor-revision', '--reporter', '--out'].includes(key) && !flags.has(key),
+      `Unknown or duplicate option: ${key}`,
+    );
+    flags.set(key, value);
+  }
+  const editorDirectory = flags.get('--editor-dir');
+  const revision = flags.get('--editor-revision');
+  const outputPath = flags.get('--out');
+  assert(
+    editorDirectory && revision && /^[0-9a-f]{40}$/.test(revision),
+    'Supply --editor-dir and a full --editor-revision commit SHA.',
+  );
+  assert(
+    !flags.has('--reporter') || flags.get('--reporter') === 'junit',
+    'Only the junit reporter is supported.',
+  );
+  return {
+    command: 'test',
+    action: 'run',
+    inputPath: path.resolve(input),
+    editorDirectory: path.resolve(editorDirectory),
+    revision,
+    only,
+    allowed,
+    ...(outputPath ? {outputPath: path.resolve(outputPath)} : {}),
+  };
+}
+
 export type CliOptions =
+  | TestRunCliOptions
+  | TestListCliOptions
   | HelpCliOptions
   | VersionCliOptions
   | ImportCliOptions
@@ -183,6 +258,8 @@ export function usage() {
   sb3-toolchain check SOURCE_DIR [--project-assets MANIFEST.json] [--allow-asset-root DIR ...]
   sb3-toolchain build SOURCE_DIR --output OUTPUT.sb3 [--project-assets MANIFEST.json] [--allow-asset-root DIR ...] [--clean-up-blocks] [--strip-tests] [--yes]
   sb3-toolchain clean-up INPUT.sb3 --output OUTPUT.sb3 [--yes]
+  sb3-toolchain test list INPUT.sb3|SOURCE_DIR [--json]
+  sb3-toolchain test run INPUT.sb3 --editor-dir DIR --editor-revision SHA [--test TARGET/BLOCK_ID ...] [--allow-sandboxed ID=SHA256 ...] [--reporter junit] [--out FILE]
   sb3-toolchain extensions digests INPUT.sb3 [INPUT.sb3 ...] [--json]
   sb3-toolchain extensions replace-sb3 INPUT.sb3 [--from DONOR.sb3] --output OUTPUT.sb3 [--yes]
   sb3-toolchain extensions status SOURCE_DIR
@@ -199,6 +276,7 @@ Commands:
   build       Build a deterministic SB3 from expanded sources.
   clean-up    Arrange scripts in a more compact layout and write a separate SB3.
   extensions  Inspect, restore, or update managed embedded extensions.
+  test list   Find project tests by target and block ID without executing them.
 
 Build layout cleanup:
   --clean-up-blocks applies a deterministic TurboWarp-style "Clean up Blocks"
@@ -744,6 +822,19 @@ export function parseCliArguments(arguments_: string[]): CliOptions {
   if (command === 'build') return parseBuildArguments(commandArguments);
   if (command === 'clean-up') return parseCleanUpArguments(commandArguments);
   if (command === 'extensions') return parseExtensionsArguments(commandArguments);
+  if (command === 'test') {
+    const [action, input, flag, ...extra] = commandArguments;
+    if (action === 'run') return parseTestRunArguments(input, commandArguments.slice(2));
+    assert(action === 'list', 'The test command supports list or run.');
+    assert(
+      input &&
+        !input.startsWith('-') &&
+        (flag === undefined || flag === '--json') &&
+        extra.length === 0,
+      'Usage: sb3-toolchain test list INPUT.sb3|SOURCE_DIR [--json]',
+    );
+    return {command: 'test', action, inputPath: path.resolve(input), json: flag === '--json'};
+  }
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -923,6 +1014,30 @@ export async function runCli(
         `(${result.movedScriptCount}/${result.scriptCount} scripts moved across ${result.targetCount} targets).`,
     );
     if (result.rollbackCleanupWarning) log(result.rollbackCleanupWarning);
+    return;
+  }
+  if (options.command === 'test') {
+    if (options.action === 'run') {
+      const report = await runProjectTests(
+        options.inputPath,
+        options.editorDirectory,
+        options.revision,
+        options.only.length ? options.only : undefined,
+        options.allowed,
+      );
+      const xml = toJUnitXml(report);
+      if (options.outputPath) await writeFile(options.outputPath, xml, {flag: 'wx'});
+      else log(xml.trimEnd());
+      assert(report.ok, 'One or more project tests did not pass.');
+      return;
+    }
+    const discovery = await listProjectTests(options.inputPath);
+    if (options.json) {
+      log(JSON.stringify(discovery, null, 2));
+    } else {
+      for (const item of discovery.tests)
+        log(`${JSON.stringify(item.address)}	${JSON.stringify(item.name)}`);
+    }
     return;
   }
   if (options.command === 'extensions') {

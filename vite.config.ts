@@ -13,6 +13,8 @@ const externalModules = [
   '@kubohiroya/turbowarp-extension-manifest/distribution',
   '@kubohiroya/turbowarp-extension-manifest/resources',
   '@kubohiroya/turbowarp-extension-manifest/build-profile',
+  '@kubohiroya/turbowarp-plus-editor-test/test-discovery',
+  '@kubohiroya/turbowarp-plus-editor-test/junit',
   '@noble/hashes/legacy.js',
   '@noble/hashes/utils.js',
   'rolldown/parseAst',
