@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@kubohiroya/turbowarp-extension-manifest':
-        specifier: 0.8.0
-        version: 0.8.0
+        specifier: 0.9.1
+        version: 0.9.1
       '@kubohiroya/turbowarp-plus-editor-test':
         specifier: 0.4.0
         version: 0.4.0
@@ -149,8 +149,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@kubohiroya/turbowarp-extension-manifest@0.8.0':
-    resolution: {integrity: sha512-mSVMD34rgwefDBEjCSVfDXCe0bpT3S0CdSaTSDjUCRLBsvNpDupeznVWYuk6VsoMYJ34iqTYbRnS7TLItJX46A==}
+  '@kubohiroya/turbowarp-extension-manifest@0.9.1':
+    resolution: {integrity: sha512-/RfNPvFGFskDPTIo1rzNCdfkNVp7XdyIPG0TGqRR09CHm5eonJPfDanDvNFQcsUIuPfnlUyVaYJXDUiqzpgHDA==}
     engines: {node: '>=24'}
 
   '@kubohiroya/turbowarp-plus-editor-test@0.4.0':
@@ -1312,7 +1312,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@kubohiroya/turbowarp-extension-manifest@0.8.0': {}
+  '@kubohiroya/turbowarp-extension-manifest@0.9.1': {}
 
   '@kubohiroya/turbowarp-plus-editor-test@0.4.0': {}
 
