@@ -72,7 +72,7 @@
     "prepack": "pnpm run check"
   },
   "dependencies": {
-    "@kubohiroya/turbowarp-extension-manifest": "0.8.0",
+    "@kubohiroya/turbowarp-extension-manifest": "0.9.1",
     "@kubohiroya/turbowarp-plus-editor-test": "0.4.0",
     "@noble/hashes": "2.4.0",
     "fflate": "0.8.3",
