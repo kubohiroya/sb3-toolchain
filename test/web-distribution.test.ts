@@ -3,6 +3,10 @@ import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {describe, expect, it, vi} from 'vitest';
 import {resolvePublishedExtension} from '../src/web-distribution';
+import {
+  lockPublishedExtension,
+  validateExtensionArtifactLock,
+} from '../src/extension-artifact-lock';
 
 const filename = 'sample.js';
 const packageName = '@outside-editor/sample';
@@ -169,6 +173,15 @@ describe('published extension resolution', () => {
     expect(npm.bytes).toEqual(github.bytes);
     expect(new TextDecoder().decode(github.bytes)).toBe(bundle);
     expect(github.source).toMatchObject({commit, releaseID: 123});
+    for (const candidate of [npm, github]) {
+      const lock = lockPublishedExtension(candidate);
+      expect(() =>
+        validateExtensionArtifactLock(JSON.parse(JSON.stringify(lock)), 'sample', candidate.bytes),
+      ).not.toThrow();
+      expect(JSON.parse(lock.apiJSON)).toEqual(JSON.parse(api));
+      expect(candidate.measurements).toMatchObject({cacheBytes: 0, temporaryDiskBytes: 0});
+      expect(candidate.measurements.downloadBytes).toBeGreaterThan(candidate.bytes.length);
+    }
   });
 
   it('pins Release identity and all observed asset names, IDs and digests on re-resolution', async () => {

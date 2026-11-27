@@ -13,6 +13,7 @@ import {
   validateBlockPaletteDocument,
 } from './block-palette';
 import type {BlockPaletteDocument} from './block-palette';
+import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
 import {validateManagedExtensionApiManifest} from './extension-api-manifest';
 import {validateExtensionBundleConfigurations} from './extension-bundle';
 import {buildExtensionBundlesWithModules} from './extension-module-bundle';
@@ -174,7 +175,10 @@ async function inspectSb3Source(
   );
   validateSourceManifest(sourceManifest);
   const assetEntries = sourceManifest.archiveEntries.filter(
-    (entryName) => entryName !== 'project.json' && entryName !== screenStateEntry,
+    (entryName) =>
+      entryName !== 'project.json' &&
+      entryName !== screenStateEntry &&
+      entryName !== extensionLocksEntry,
   );
   // The Editor writes its screen state into the folder whenever it saves; it is optional and only has to be JSON.
   let screenState: Uint8Array | null = null;
@@ -256,6 +260,9 @@ async function inspectSb3Source(
   await Promise.all(
     extensions.map(async (extension) => {
       const contents = await readFile(path.join(resolvedSourceDirectory, extension.path));
+      if (extension.artifactLock !== undefined) {
+        validateExtensionArtifactLock(extension.artifactLock, extension.id, contents);
+      }
       if (validateManagedExtensions) {
         validateManagedExtensionContents(extension, contents);
       }
@@ -359,6 +366,17 @@ export async function createDeterministicSb3(
     extensions: source.extensions,
     project: projectToBundle,
   });
+  const lockedExtensions = source.extensions.filter(
+    (extension) => extension.artifactLock !== undefined,
+  );
+  for (const extension of lockedExtensions) {
+    const contents = bundled.extensionContents.get(extension.id);
+    assert(
+      contents && bundled.extensions.some((item) => item.id === extension.id),
+      'Bundling would discard a locked extension; prepare a new verified artifact first',
+    );
+    validateExtensionArtifactLock(extension.artifactLock, extension.id, contents);
+  }
   let project = structuredClone(bundled.project);
   let blockCleanUp: BlockCleanUpSummary | null = null;
   if (cleanUpBlocks) {
@@ -385,7 +403,22 @@ export async function createDeterministicSb3(
   const entryNames = [...projectAssets.archiveEntries];
   if (source.screenState && !entryNames.includes(screenStateEntry))
     entryNames.push(screenStateEntry);
+  const lockBytes = lockedExtensions.length
+    ? strToU8(
+        `${JSON.stringify({formatVersion: 1, extensions: lockedExtensions.map(({id, artifactLock}) => ({id, artifactLock}))})}\n`,
+      )
+    : null;
+  assert(
+    lockedExtensions.length <= 256 && (!lockBytes || lockBytes.byteLength <= 8 * 1024 * 1024),
+    'Extension locks attachment exceeds its size limit',
+  );
+  if (lockBytes && !entryNames.includes(extensionLocksEntry)) entryNames.push(extensionLocksEntry);
   for (const entryName of entryNames) {
+    if (entryName === extensionLocksEntry) {
+      assert(lockBytes, 'Extension locks attachment lost its records; refusing to discard it');
+      archiveEntries[entryName] = lockBytes;
+      continue;
+    }
     if (entryName === 'project.json') {
       archiveEntries[entryName] = strToU8(`${JSON.stringify(project)}\n`);
       continue;

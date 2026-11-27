@@ -1,0 +1,111 @@
+{
+  "at": "2026-11-27T03:17:28.874Z",
+  "browser": "156.0.8078.4",
+  "browserSecurityDisabled": false,
+  "rows": [
+    {
+      "reference": "@kubohiroya/turbowarp-extension-template@0.13.0",
+      "status": "ok",
+      "source": {
+        "provider": "npm",
+        "package": "@kubohiroya/turbowarp-extension-template",
+        "version": "0.13.0",
+        "integrity": "sha512-bkEUFhs4q2UY1ETrkFdE3dkLlv8BHtyVflSe+mRZ29vbeaKb809diVCvZYsoAwx4y4h7xH3fVI7Y6zKxLQ9xIA=="
+      },
+      "bundleBytes": 2838,
+      "measurements": {
+        "downloadBytes": 367219,
+        "expandedBytes": 4345856,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      }
+    },
+    {
+      "reference": "https://github.com/kubohiroya/turbowarp-extension-template/releases/tag/v0.13.0",
+      "status": "ok",
+      "source": {
+        "provider": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "tag": "v0.13.0",
+        "commit": "b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a",
+        "releaseID": 458061951,
+        "descriptorSHA256": "0049aaaaef1812fc717b93b533d3a6ada1eba49601b6c6979f3bd1e393885261",
+        "assets": {
+          "descriptor": {
+            "id": 791405265,
+            "name": "extension-package.json",
+            "sha256": "0049aaaaef1812fc717b93b533d3a6ada1eba49601b6c6979f3bd1e393885261"
+          },
+          "bundle": {
+            "id": 791405220,
+            "name": "example-extension.js",
+            "sha256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3"
+          },
+          "api": {
+            "id": 791405333,
+            "name": "extension-manifest.json",
+            "sha256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+          }
+        }
+      },
+      "bundleBytes": 2838,
+      "measurements": {
+        "downloadBytes": 16749,
+        "expandedBytes": 0,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      }
+    },
+    {
+      "reference": "https://github.com/kubohiroya/turbowarp-extension-template",
+      "status": "ok",
+      "source": {
+        "provider": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "tag": "v0.13.0",
+        "commit": "b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a",
+        "releaseID": 458061951,
+        "descriptorSHA256": "0049aaaaef1812fc717b93b533d3a6ada1eba49601b6c6979f3bd1e393885261",
+        "assets": {
+          "descriptor": {
+            "id": 791405265,
+            "name": "extension-package.json",
+            "sha256": "0049aaaaef1812fc717b93b533d3a6ada1eba49601b6c6979f3bd1e393885261"
+          },
+          "bundle": {
+            "id": 791405220,
+            "name": "example-extension.js",
+            "sha256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3"
+          },
+          "api": {
+            "id": 791405333,
+            "name": "extension-manifest.json",
+            "sha256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+          }
+        }
+      },
+      "bundleBytes": 2838,
+      "measurements": {
+        "downloadBytes": 16749,
+        "expandedBytes": 0,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      }
+    }
+  ],
+  "cors": [
+    {
+      "url": "https://registry.npmjs.org/@kubohiroya%2Fturbowarp-extension-template/0.13.0",
+      "status": 200,
+      "bytes": 4014
+    },
+    {
+      "url": "https://github.com/kubohiroya/turbowarp-extension-template/releases/download/v0.13.0/extension-package.json",
+      "error": "Failed to fetch"
+    }
+  ],
+  "consoleErrors": [
+    "Access to fetch at 'https://github.com/kubohiroya/turbowarp-extension-template/releases/download/v0.13.0/extension-package.json' from origin 'http://127.0.0.1:50813' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+    "Failed to load resource: net::ERR_FAILED"
+  ]
+}

@@ -188,6 +188,8 @@ await unbundleSb3({
 
 ## ドキュメント
 
+- [外部拡張の取得・標準ソースビルド・成果物 lock](docs/ja/external-extension-resolution.md)
+
 - [`docs/ja/workflows.md`](docs/ja/workflows.md): SB3ソースと機能拡張を管理するワークフロー
 - [`docs/ja/source-format-v1.md`](docs/ja/source-format-v1.md): 展開ソース形式と決定的出力
 - [`docs/ja/source-format-v2.md`](docs/ja/source-format-v2.md): ブロックパレットの設定を足した形式 v2（読むだけで、今は書かない）

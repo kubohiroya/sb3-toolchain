@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- 外部拡張の取得元・build receipt・API を版付きの成果物 lock として SB3／展開ソースで保持し、未知の版や改変による情報欠落を拒否する。
+- GitHub の確定 commit から標準ビルド用 snapshot を取得し、環境変数を限定した子プロセスの timeout／中断・終了後の一時領域削除に対応する。OS 隔離は Desktop 側で必要。
+- npm archive の危険な path／link／重複／entry 数を検査し、公開 resolver・source snapshot・build に容量の記録を追加する。
+
 ## 0.31.2 - 2026-11-27
 
 - 依存関係を更新した。

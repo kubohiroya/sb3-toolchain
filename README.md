@@ -196,6 +196,8 @@ The browser API reports and omits unreferenced assets with hash-based filenames 
 
 ## Documentation
 
+- [External extension resolution, standard builds and artifact locks (Japanese)](docs/ja/external-extension-resolution.md)
+
 - [`docs/workflows.md`](docs/workflows.md): SB3 source and extension management workflows
 - [`docs/source-format-v1.md`](docs/source-format-v1.md): expanded source format and deterministic output
 - [`docs/source-format-v2.md`](docs/source-format-v2.md): format v2, which added block palette settings (read, no longer written)
