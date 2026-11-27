@@ -23,7 +23,7 @@ const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 const encode = (value: string) => Buffer.from(value, 'utf8');
 // Updated together with the host-owned compiler dependency and its lockfile entry.
 const compilerIntegrity =
-  'sha512-ksB1g74e7haRy02OYm4lOQAlr6sK6hBpAY5R+YC30Gkv4L1COwF6M9umBAYAPxWpGow6Vr+IXtyDjH9fq7A+Zg==';
+  'sha512-p2rq4bfBmF0M6yaR8+A89fbkBQynZI2fxUW4G07eq9kpctAkpo7q5BZ4X4Mo4XZ7HHROu33cX9PeopUFN6u+2Q==';
 
 export interface StandardExtensionBuild {
   readonly files: ReadonlyMap<string, Uint8Array>;
@@ -216,7 +216,7 @@ export async function buildStandardExtension(
     },
   };
   const {rolldown, VERSION} = await import('rolldown');
-  if (VERSION !== '1.3.3') throw new Error('Unsupported host compiler version');
+  if (VERSION !== '1.3.4') throw new Error('Unsupported host compiler version');
   const {parseAst} = await import('rolldown/parseAst');
   signal?.throwIfAborted();
   const build = await rolldown({
