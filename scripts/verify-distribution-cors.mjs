@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 import {rolldown} from 'rolldown';
 import {chromium} from 'playwright-core';
 import {createServer} from 'node:http';
