@@ -9,6 +9,7 @@ import {assert, errorMessage} from './assert';
 import {resolveBlockPaletteReferences, validateBlockPaletteDocument} from './block-palette';
 import type {BlockPaletteWarningCode} from './block-palette';
 import {expandArchive, formatSourceFiles, Sb3SourceError} from './expand-archive';
+import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
 import {
   assertSameFileSet,
   collectSourceAssetReferences,
@@ -133,7 +134,8 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
     const references = validatedAssetReferences(project);
 
     const assetEntries = manifest.archiveEntries.filter(
-      (name) => name !== 'project.json' && name !== screenStateEntry,
+      (name) =>
+        name !== 'project.json' && name !== screenStateEntry && name !== extensionLocksEntry,
     );
     // The Editor's screen state is optional and opaque here; it only has to be JSON.
     if (files.has(screenStateFile)) {
@@ -203,7 +205,20 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
       }
     }
     try {
-      validateExtensionLayout(json(manifest.embeddedExtensions), project, extensionFiles);
+      const {extensions} = validateExtensionLayout(
+        json(manifest.embeddedExtensions),
+        project,
+        extensionFiles,
+      );
+      for (const extension of extensions) {
+        if (extension.artifactLock !== undefined) {
+          validateExtensionArtifactLock(
+            extension.artifactLock,
+            extension.id,
+            files.get(extension.path),
+          );
+        }
+      }
     } catch (cause) {
       throw new Sb3SourceError('invalid-extension', errorMessage(cause), {cause});
     }
@@ -226,7 +241,13 @@ export function unpackSb3(bytes: Uint8Array): UnpackedSb3 {
   }
   const warnings: UnpackWarning[] = [];
   expanded.archiveEntries = expanded.archiveEntries.filter((name) => {
-    if (name === 'project.json' || name === screenStateEntry || references.has(name)) return true;
+    if (
+      name === 'project.json' ||
+      name === screenStateEntry ||
+      name === extensionLocksEntry ||
+      references.has(name)
+    )
+      return true;
     if (name.endsWith('/')) {
       warnings.push({code: 'directory-entry', path: name});
     } else if (/^[a-f0-9]{32}\.[A-Za-z0-9]+$/u.test(name)) {

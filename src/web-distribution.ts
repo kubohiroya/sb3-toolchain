@@ -12,6 +12,8 @@ import {
 } from '@kubohiroya/turbowarp-extension-manifest/distribution';
 import {readPackageResourceDeclaration} from '@kubohiroya/turbowarp-extension-manifest/resources';
 import {indexNpmDistribution, readBounded} from './distribution-archive';
+export {lockPublishedExtension, validateExtensionArtifactLock} from './extension-artifact-lock';
+export type {ExtensionArtifactLock} from './extension-artifact-lock';
 
 const METADATA_BYTES = 256 * 1024;
 const API_BYTES = 1024 * 1024;
@@ -47,6 +49,13 @@ export interface PublishedExtension {
   readonly source: PublishedExtensionSource;
   readonly sourceURL?: string;
   readonly bytes: Uint8Array<ArrayBuffer>;
+  readonly apiBytes: Uint8Array<ArrayBuffer>;
+  readonly measurements: Readonly<{
+    downloadBytes: number;
+    expandedBytes: number;
+    cacheBytes: 0;
+    temporaryDiskBytes: 0;
+  }>;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -227,6 +236,8 @@ export async function resolvePublishedExtension(
   if (expectedSource) assertUnchanged(selected.provider === expectedSource.provider);
   const deadline = AbortSignal.timeout(45_000);
   const operation = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  let downloadBytes = 0;
+  let expandedBytes = 0;
   const get = async (url: string, limit: number) => {
     try {
       const response = await fetchImpl(url, {
@@ -239,7 +250,9 @@ export async function resolvePublishedExtension(
           'HTTP_ERROR',
           'Distribution request returned HTTP ' + response.status,
         );
-      return await readBounded(response.body, limit);
+      const bytes = await readBounded(response.body, limit, operation);
+      downloadBytes += bytes.length;
+      return bytes;
     } catch (cause) {
       if (cause instanceof DistributionError) throw cause;
       throw new DistributionError('FETCH_FAILED', 'Could not fetch the published distribution', {
@@ -312,7 +325,9 @@ export async function resolvePublishedExtension(
     const tar = new Blob([compressed])
       .stream()
       .pipeThrough(new DecompressionStream('gzip'), {signal: operation});
-    const entries = indexNpmDistribution(await readBounded(tar, TAR_BYTES));
+    const expanded = await readBounded(tar, TAR_BYTES, operation);
+    expandedBytes = expanded.length;
+    const entries = indexNpmDistribution(expanded);
     const read = (file: string) => {
       const bytes = entries.get('package/' + file);
       if (!bytes)
@@ -457,10 +472,18 @@ export async function resolvePublishedExtension(
   ]);
   assertDistributionApi(distribution, json(api, API_BYTES));
   validateBundle(distribution, bundle);
+  operation.throwIfAborted();
   return Object.freeze({
     distribution,
     source: Object.freeze(source),
     ...(sourceURL ? {sourceURL} : {}),
     bytes: bundle,
+    apiBytes: api,
+    measurements: Object.freeze({
+      downloadBytes,
+      expandedBytes,
+      cacheBytes: 0,
+      temporaryDiskBytes: 0,
+    }),
   });
 }

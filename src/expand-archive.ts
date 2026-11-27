@@ -4,9 +4,11 @@ import {strFromU8, strToU8, unzipSync} from 'fflate';
 
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
+import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
 import {
   embeddedExtensionManifestFormatVersion,
   isObject,
+  lockedExtensionManifestFormatVersion,
   screenStateEntry,
   screenStateFile,
   sourceFormatVersion,
@@ -198,11 +200,57 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
     }
   }
 
-  // The Editor's screen state goes to its own file, byte for byte; every other entry is an asset.
+  if (archive[extensionLocksEntry]) {
+    try {
+      assert(
+        archive[extensionLocksEntry].length <= 8 * 1024 * 1024,
+        'Extension locks attachment exceeds its size limit',
+      );
+      const document: unknown = JSON.parse(
+        new TextDecoder('utf-8', {fatal: true}).decode(archive[extensionLocksEntry]),
+      );
+      assert(
+        isObject(document) &&
+          document.formatVersion === 1 &&
+          Object.keys(document).length === 2 &&
+          Array.isArray(document.extensions) &&
+          document.extensions.length > 0 &&
+          document.extensions.length <= 256,
+        'Unsupported extension locks attachment',
+      );
+      const locked = new Set<string>();
+      for (const record of document.extensions) {
+        assert(
+          isObject(record) &&
+            Object.keys(record).length === 2 &&
+            typeof record.id === 'string' &&
+            !locked.has(record.id),
+          'Invalid or duplicate extension lock',
+        );
+        locked.add(record.id);
+        const extension = embeddedExtensions.find((extension) => extension.id === record.id);
+        assert(extension, 'Extension lock has no embedded artifact');
+        validateExtensionArtifactLock(
+          record.artifactLock,
+          extension.id,
+          extensionFiles.get(extension.path),
+        );
+        extension.artifactLock = record.artifactLock;
+      }
+    } catch (cause) {
+      throw new Sb3SourceError('invalid-extension', errorMessage(cause), {cause});
+    }
+  }
+  // Attachments are handled separately from the project's asset files.
   const screenState = archive[screenStateEntry] ?? null;
   const assets = new Map<string, Uint8Array>();
   for (const name of archiveEntries) {
-    if (name !== 'project.json' && name !== screenStateEntry && !name.endsWith('/')) {
+    if (
+      name !== 'project.json' &&
+      name !== screenStateEntry &&
+      name !== extensionLocksEntry &&
+      !name.endsWith('/')
+    ) {
       assets.set(name, archive[name]);
     }
   }
@@ -231,7 +279,9 @@ export function formatSourceFiles({
   const documents = {
     'project.source.json': project,
     'embedded-extensions.json': {
-      formatVersion: embeddedExtensionManifestFormatVersion,
+      formatVersion: embeddedExtensions.some((extension) => extension.artifactLock !== undefined)
+        ? lockedExtensionManifestFormatVersion
+        : embeddedExtensionManifestFormatVersion,
       extensions: embeddedExtensions,
     },
     'sb3-source.json': {

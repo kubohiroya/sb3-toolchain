@@ -16,6 +16,7 @@ const externalModules = [
   '@kubohiroya/turbowarp-plus-editor-test/test-discovery',
   '@kubohiroya/turbowarp-plus-editor-test/junit',
   '@noble/hashes/legacy.js',
+  '@noble/hashes/sha2.js',
   '@noble/hashes/utils.js',
   'rolldown/parseAst',
   ...builtinModules,

@@ -17,6 +17,12 @@ export type {
   Sb3SourceManifest,
 } from './types';
 export {assert} from './assert';
+export {
+  lockPublishedExtension,
+  lockStandardExtensionBuild,
+  validateExtensionArtifactLock,
+} from './extension-artifact-lock';
+export type {ExtensionArtifactLock} from './extension-artifact-lock';
 export {validateArchiveEntryName} from './archive';
 export {
   applyBlockPaletteComments,
