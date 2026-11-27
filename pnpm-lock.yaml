@@ -12,8 +12,8 @@ importers:
         specifier: 0.9.1
         version: 0.9.1
       '@kubohiroya/turbowarp-plus-editor-test':
-        specifier: 0.4.0
-        version: 0.4.0
+        specifier: 0.4.1
+        version: 0.4.1
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -153,8 +153,8 @@ packages:
     resolution: {integrity: sha512-/RfNPvFGFskDPTIo1rzNCdfkNVp7XdyIPG0TGqRR09CHm5eonJPfDanDvNFQcsUIuPfnlUyVaYJXDUiqzpgHDA==}
     engines: {node: '>=24'}
 
-  '@kubohiroya/turbowarp-plus-editor-test@0.4.0':
-    resolution: {integrity: sha512-YbcxADcPtFSrm6Hvmgfy9fz0cOv67OG56P9EfaRyyTy/nPbvKVM2r40txqDHbDXz7ig94+2ssxP/LYcn7ManhQ==}
+  '@kubohiroya/turbowarp-plus-editor-test@0.4.1':
+    resolution: {integrity: sha512-Ynx3jLU1LkGaceRzsIT5qvyb2qU9kLTDrqGysb0FfF1DYgny29LpIqhN0IC/niX+v5gK/gj/xlWxS0kR6H9ZUQ==}
 
   '@noble/hashes@2.4.0':
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
@@ -1314,7 +1314,7 @@ snapshots:
 
   '@kubohiroya/turbowarp-extension-manifest@0.9.1': {}
 
-  '@kubohiroya/turbowarp-plus-editor-test@0.4.0': {}
+  '@kubohiroya/turbowarp-plus-editor-test@0.4.1': {}
 
   '@noble/hashes@2.4.0': {}
 
