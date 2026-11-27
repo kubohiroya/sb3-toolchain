@@ -6,15 +6,22 @@ const decoder = new TextDecoder('utf-8', {fatal: true});
 export async function readBounded(
   body: ReadableStream<Uint8Array> | null,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer>> {
   if (!body)
     throw new DistributionError('MISSING_ARTIFACT', 'The distribution response has no body');
+  signal?.throwIfAborted();
   const reader = body.getReader();
+  const abort = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener('abort', abort, {once: true});
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
       const {done, value} = await reader.read();
+      signal?.throwIfAborted();
       if (done) break;
       size += value.length;
       if (size > limit) {
@@ -29,6 +36,7 @@ export async function readBounded(
     void reader.cancel().catch(() => {});
     throw error;
   } finally {
+    signal?.removeEventListener('abort', abort);
     reader.releaseLock();
   }
   const bytes = new Uint8Array(size);
@@ -57,6 +65,7 @@ export function indexNpmDistribution(
   archive: Uint8Array<ArrayBuffer>,
 ): Map<string, Uint8Array<ArrayBuffer>> {
   const entries = new Map<string, Uint8Array<ArrayBuffer>>();
+  const names = new Set<string>();
   let hasExtendedHeader = false;
   for (let offset = 0; offset + 512 <= archive.length;) {
     const header = archive.subarray(offset, offset + 512);
@@ -72,6 +81,21 @@ export function indexNpmDistribution(
     const file = (prefix ? prefix + '/' : '') + field(header, 0, 100);
     const type = header[156];
     const size = octal(field(header, 124, 12));
+    if (names.size >= 4096)
+      throw new DistributionError('SIZE_LIMIT', 'Too many npm archive entries');
+    // Reject unsafe entries even when the resolver would not extract them.
+    const segments = file.replace(/\/$/u, '').split('/');
+    if (
+      segments[0] !== 'package' ||
+      segments.some((segment) => !segment || segment === '.' || segment === '..') ||
+      /[\\\u0000-\u001f\u007f:]/u.test(file) ||
+      names.has(file) ||
+      ![0, 48, 53, 120, 76, 75, 103].includes(type!) ||
+      (type === 53 && size !== 0)
+    ) {
+      throw new DistributionError('INVALID_ARCHIVE', 'Unsafe or duplicate npm archive entry');
+    }
+    names.add(file);
     const start = offset + 512;
     offset = start + Math.ceil(size / 512) * 512;
     if (offset > archive.length)

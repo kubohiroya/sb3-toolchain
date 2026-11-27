@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 /** Shapes shared across the expanded source format, the CLI, and the SB3 builders. */
+import type {ExtensionArtifactLock} from './extension-artifact-lock';
 
 export interface ExtensionApiManifestSource {
   artifact: string;
@@ -47,6 +48,7 @@ export interface EmbeddedExtension {
   parameters: string[];
   encoding: ExtensionEncoding;
   source?: ExtensionSource;
+  artifactLock?: ExtensionArtifactLock;
 }
 
 /** Explicit presentation of the bundle itself, independent of its member packages. */

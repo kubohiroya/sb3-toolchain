@@ -3,6 +3,7 @@
 import {validateArchiveEntryName} from './archive';
 import {assert} from './assert';
 import {blockPaletteFile} from './block-palette';
+import {validateExtensionArtifactLock} from './extension-artifact-lock';
 import type {
   EmbeddedExtension,
   ProjectAssetReference,
@@ -19,6 +20,7 @@ export const blockPaletteSourceFormatVersion = 2;
 export const supportedSourceFormatVersions: readonly number[] = [1, 2];
 /** `embedded-extensions.json` keeps its own version, independent of the source format. */
 export const embeddedExtensionManifestFormatVersion = 1;
+export const lockedExtensionManifestFormatVersion = 2;
 
 /**
  * The screen state TurboWarp Plus Editor saves with a project (its tab layout, block palette settings and so on).
@@ -111,7 +113,9 @@ export function validateExtensionLayout(
 ): {extensionBundles: unknown; extensions: EmbeddedExtension[]} {
   assert(isObject(extensionManifest), 'embedded-extensions.json must contain an object.');
   assert(
-    extensionManifest.formatVersion === embeddedExtensionManifestFormatVersion,
+    [embeddedExtensionManifestFormatVersion, lockedExtensionManifestFormatVersion].includes(
+      extensionManifest.formatVersion as number,
+    ),
     `Unsupported embedded extension manifest version: ${extensionManifest.formatVersion}`,
   );
   assert(
@@ -131,6 +135,13 @@ export function validateExtensionLayout(
   for (const entry of extensionManifest.extensions as unknown[]) {
     assert(isObject(entry), 'Each embedded extension manifest entry must be an object.');
     const extension = entry as unknown as EmbeddedExtension;
+    if (extension.artifactLock !== undefined) {
+      assert(
+        extensionManifest.formatVersion === lockedExtensionManifestFormatVersion,
+        'Extension artifact locks require embedded manifest format 2',
+      );
+      validateExtensionArtifactLock(extension.artifactLock, extension.id);
+    }
     assert(
       typeof extension.id === 'string' && /^[A-Za-z0-9._-]+$/u.test(extension.id),
       `Invalid embedded extension ID: ${JSON.stringify(extension.id)}`,
