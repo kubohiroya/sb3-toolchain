@@ -1,0 +1,169 @@
+{
+  "at": "2026-11-27T20:20:27.138Z",
+  "node": "26.7.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "toolchainVersion": "0.31.3",
+  "manifestVersion": "0.9.1",
+  "templateVersion": "0.13.2",
+  "published": [
+    {
+      "reference": "@kubohiroya/turbowarp-extension-template@0.13.2",
+      "source": {
+        "provider": "npm",
+        "package": "@kubohiroya/turbowarp-extension-template",
+        "version": "0.13.2",
+        "integrity": "sha512-sy2ul/lXmoryvgX6YktQp5mn1UHF368Rp7TILzACP/GOVRpWALFL+SmIlU7xk1qqa8ceLutGY/CRRgxcZnBJnA=="
+      },
+      "measurements": {
+        "downloadBytes": 378849,
+        "expandedBytes": 4385280,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      },
+      "bundleSHA256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3",
+      "apiSHA256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+    },
+    {
+      "reference": "@kubohiroya/turbowarp-extension-template@latest",
+      "source": {
+        "provider": "npm",
+        "package": "@kubohiroya/turbowarp-extension-template",
+        "version": "0.13.2",
+        "integrity": "sha512-sy2ul/lXmoryvgX6YktQp5mn1UHF368Rp7TILzACP/GOVRpWALFL+SmIlU7xk1qqa8ceLutGY/CRRgxcZnBJnA=="
+      },
+      "measurements": {
+        "downloadBytes": 378849,
+        "expandedBytes": 4385280,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      },
+      "bundleSHA256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3",
+      "apiSHA256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+    },
+    {
+      "reference": "https://github.com/kubohiroya/turbowarp-extension-template/releases/tag/v0.13.2",
+      "source": {
+        "provider": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "tag": "v0.13.2",
+        "commit": "13ff059a303963e583ca1d7a7f06ca158d05ae71",
+        "releaseID": 460980991,
+        "descriptorSHA256": "e75df77a3e6410bdf7c04480d40dd7d63931696efc01dee961a0d038200385d6",
+        "assets": {
+          "descriptor": {
+            "id": 801733216,
+            "name": "extension-package.json",
+            "sha256": "e75df77a3e6410bdf7c04480d40dd7d63931696efc01dee961a0d038200385d6"
+          },
+          "bundle": {
+            "id": 801733136,
+            "name": "example-extension.js",
+            "sha256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3"
+          },
+          "api": {
+            "id": 801733274,
+            "name": "extension-manifest.json",
+            "sha256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+          }
+        }
+      },
+      "measurements": {
+        "downloadBytes": 19704,
+        "expandedBytes": 0,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      },
+      "bundleSHA256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3",
+      "apiSHA256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+    },
+    {
+      "reference": "https://github.com/kubohiroya/turbowarp-extension-template",
+      "source": {
+        "provider": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "tag": "v0.13.2",
+        "commit": "13ff059a303963e583ca1d7a7f06ca158d05ae71",
+        "releaseID": 460980991,
+        "descriptorSHA256": "e75df77a3e6410bdf7c04480d40dd7d63931696efc01dee961a0d038200385d6",
+        "assets": {
+          "descriptor": {
+            "id": 801733216,
+            "name": "extension-package.json",
+            "sha256": "e75df77a3e6410bdf7c04480d40dd7d63931696efc01dee961a0d038200385d6"
+          },
+          "bundle": {
+            "id": 801733136,
+            "name": "example-extension.js",
+            "sha256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3"
+          },
+          "api": {
+            "id": 801733274,
+            "name": "extension-manifest.json",
+            "sha256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+          }
+        }
+      },
+      "measurements": {
+        "downloadBytes": 19704,
+        "expandedBytes": 0,
+        "cacheBytes": 0,
+        "temporaryDiskBytes": 0
+      },
+      "bundleSHA256": "cc751fb838f60c523b6003b7a960a9b0cafb68146f7f64912951da1e2b630de3",
+      "apiSHA256": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d"
+    }
+  ],
+  "source": {
+    "kind": "github",
+    "repository": "kubohiroya/turbowarp-extension-template",
+    "commit": "13ff059a303963e583ca1d7a7f06ca158d05ae71"
+  },
+  "snapshotFiles": 11,
+  "snapshotMeasurements": {
+    "downloadBytes": 143316,
+    "snapshotBytes": 71940,
+    "cacheBytes": 0,
+    "temporaryDiskBytes": 0
+  },
+  "buildMeasurements": {
+    "inputBytes": 71940,
+    "outputBytes": 4660,
+    "cacheBytes": 0,
+    "temporaryDiskBytes": 0
+  },
+  "receipt": {
+    "formatVersion": 1,
+    "profile": "turbowarp-typescript-v1",
+    "execution": "sandboxed",
+    "compiler": {
+      "name": "rolldown",
+      "version": "1.3.4",
+      "integrity": "sha512-p2rq4bfBmF0M6yaR8+A89fbkBQynZI2fxUW4G07eq9kpctAkpo7q5BZ4X4Mo4XZ7HHROu33cX9PeopUFN6u+2Q=="
+    },
+    "snapshotSHA256": "478ed8855d35d05119d397010fa44ca5a4e8379a77bba7da2faafcaa36d6ad9a",
+    "lockfileSHA256": "bf2796e94794e31aa03d21358e375cefb3b6a0618c82212fb233c26155b2b8ca",
+    "outputs": {
+      "example-extension.js": "6c77149bb4d28879c64bf98c12a9110afba1887bbb5892129e17d68da8b7e0e6",
+      "extension-manifest.json": "0e1dae3ad294b491feeb1f3ca7b8b9fa60e1eb794547e1040b3f39d8ce905b0d",
+      "example-extension.js.map": "ebbe4075a87d6e0c88c62d98b35599373162e988c2b97c85d78a33d6c721b326",
+      "extension-development.json": "057c89feee50d19f7dc8ec716e7e43b9daf586006505ce5b85a8849aa04915e7"
+    },
+    "source": {
+      "kind": "github",
+      "repository": "kubohiroya/turbowarp-extension-template",
+      "commit": "13ff059a303963e583ca1d7a7f06ca158d05ae71"
+    }
+  },
+  "repeatedBuildEqual": true,
+  "apiMatchesPublished": true,
+  "bundleMatchesPublished": false,
+  "sb3Roundtrips": {
+    "npm": true,
+    "release": true,
+    "sourceBuild": true
+  },
+  "sourceDistFetched": false,
+  "lowerNodeRetest": false,
+  "osIsolationTested": false
+}
