@@ -47,7 +47,7 @@ GitHub の ref は commit に固定してから Git tree を読む。各 blob �
 
 ローカル開発では Desktop が許可したディレクトリ handle から安定した `ReadonlyMap<string, Uint8Array>` を作り、同じビルド API に渡す。この API はディレクトリの許可や watch を代行しない。パスや開発セッション承認を receipt に保存せず、ローカル入力は `local-snapshot` と内容の SHA-256 で識別する。ホストの非公開セッション ID は別に管理する。
 
-対応 profile は Manifest 0.8.0 の `turbowarp-typescript-v1`。依存は `none` で、ソース内の静的な相対 import のみを解決する。未対応の外部依存、dynamic import、CommonJS、tsconfig、追加の profile field は任意コード実行への fallback を行わず診断する。package scripts、install／prepare／postinstall、Vite config、ソースのトップレベルコードはビルド中に実行しない。ホストの Rolldown 1.3.3 を使用し、receipt にホスト lockfile 由来の compiler archive integrity を記録する。これはインストール済み compiler 全ファイルの再検証結果ではない。
+対応 profile は Manifest 0.9.1 の `turbowarp-typescript-v1`。依存は `none` で、ソース内の静的な相対 import のみを解決する。未対応の外部依存、dynamic import、CommonJS、tsconfig、追加の profile field は任意コード実行への fallback を行わず診断する。package scripts、install／prepare／postinstall、Vite config、ソースのトップレベルコードはビルド中に実行しない。ホストの Rolldown 1.3.4 を使用し、receipt にホスト lockfile 由来の compiler archive integrity を記録する。これはインストール済み compiler 全ファイルの再検証結果ではない。
 
 `runStandardExtensionBuild` は環境変数を限定した専用子プロセスで動作する。入力・出力上限、JS heap 上限、最大 120 秒の deadline、AbortSignal に対応し、失敗時はプロセス終了と作業用ディレクトリの削除を待ってから reject する。出力はメモリ／pipe 上にあり、完成候補を部分返却しない。`buildStandardExtension` は同じ固定 recipe の低水準 API で、詳細な compiler 診断を呼び出し側へ返す。低水準 API の signal は協調的な中断であり、強制停止には子プロセス API を使う。
 
@@ -70,6 +70,12 @@ lock した拡張をそのまま bundle／ID 変更すると検証済み成果�
 - [CORS の実測記録](../evidence/issue-103-cors.json): ヘッドレス Chromium 156.0.8078.4、ブラウザー保護有効。Template 0.13.0 の npm・Release・repo の3経路が成功。asset 直接 URL の fetch は失敗した。npm 取得 367,219 bytes、展開 4,345,856 bytes、JS 2,838 bytes。
 - [ソースビルドの実測記録](../evidence/issue-103-source-build.json): macOS arm64、Node 26.7.0、commit `b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a`。dist を取得せず 11 入力ファイル（71,675 bytes）を2回別プロセスでビルドし、すべての出力 hash が一致。API manifest は同じ Release の hash と一致し、JS のバイト列は公開版とは異なった。他 OS・Node 版との一致は未測定。
 - fixture は archive traversal／symlink／過剰 entry、blob／lock／成果物の改変、source／scripts の非実行、外部 import、並列 job、timeout／中断、SB3 往復を検証する。
+
+2026-11-28 JST の公開候補 0.31.3（Manifest 0.9.1／Rolldown 1.3.4）での追加検証:
+
+- [Template 0.13.2 の取得・build・保存](../evidence/issue-103-template-0.13.2-pipeline.json): npm exact／latest、Release、repo の4経路が同じ公開 JS／API を返した。commit `13ff059a303963e583ca1d7a7f06ca158d05ae71` の dist を取得せず、Node 26.7.0／macOS arm64 の独立プロセス2回で全 output hash が一致。API は公開版と一致し、JS は公開版とは異なる。npm／Release／source build の各 lock は SB3 保存・展開・再buildで保持された。
+- [Template 0.13.2 の CORS](../evidence/issue-103-template-0.13.2-cors.json): ヘッドレス Chromium、ブラウザー保護有効で npm／Release／repo の3経路が成功。Release asset の直接 URL は引き続き CORS で拒否された。検証には既存スクリプトの入力版を 0.13.2 に置換したコピーを使った。
+- この追加検証は Toolchain の公開契約と保存の互換性を対象とし、Desktop の OS 隔離・native resource 制限・他 OS の受け入れ完了を意味しない。通常の検証基準は Node 26 とし、Node 24 は追加実行していない。
 
 再検証は `node scripts/verify-distribution-cors.mjs`。Playwright 対応のヘッドレス Chromium とネットワーク接続が必要で、結果は `tmp/cors-evidence.json` に出る。通常の対象 unit test に実ネットワークを要求しない。
 
