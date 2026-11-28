@@ -3,7 +3,7 @@ import {builtinModules} from 'node:module';
 import {rolldown} from 'rolldown';
 import {expect, it} from 'vitest';
 
-it.each(['src/browser.ts', 'src/web-distribution.ts'])(
+it.each(['src/browser.ts', 'src/web-distribution.ts', 'src/project-extensions.ts'])(
   'keeps Node and compiler code outside %s',
   async (input) => {
     const forbidden = new Set([...builtinModules, ...builtinModules.map((name) => 'node:' + name)]);

@@ -178,6 +178,32 @@ await unbundleSb3({
 });
 ```
 
+### 作品の拡張の版と保存形式を変える
+
+`@kubohiroya/sb3-toolchain/project-extensions` は、`extensions list-sb3 / update-sb3` と Editor のプロジェクトのプロパティが共有する処理です。ブラウザーでも Node でも動き、展開済みのアーカイブと解析済みの `project.json` を受け取ります。ファイル、VM、承認には触れません。
+
+```js
+import {
+  applyProjectExtensionUpdate,
+  listProjectExtensions,
+  planProjectExtensionUpdate,
+} from '@kubohiroya/sb3-toolchain/project-extensions';
+
+const extensions = await listProjectExtensions(archive, project);
+const plan = await planProjectExtensionUpdate(archive, project, {
+  myextension: {version: 'latest', format: 'remote-cacheable'},
+});
+if (!plan.blocked) {
+  const result = await applyProjectExtensionUpdate(archive, project, plan); // 新しいアーカイブと作品
+}
+```
+
+- 取得元が分かるのは、同じバイト列に対する SB3 自身の拡張 lock（`tw-plus/extension-locks.json`）か、呼び出し側が渡す `reference` があるときだけです。それ以外は `unknown` で、ID・名前・URL からパッケージを断定せず、拡張の JavaScript も評価しません。
+- `latest` は現在の安定版です。`latest` やタグがプレリリースを指したときは、`allowPrerelease` が無ければその変更を止めます。版を明示したプレリリースは明示の指定として扱います。
+- 候補は先に検査します。ID、lock にある API との比較、作品が使うブロック、実行モードの拡大、リモート参照に記録する URL が同じバイト列を返すことです。エラーはその変更を止め、`allow*` で警告に変わります。サンドボックス外の実行を要求しても許可ではなく、ホストは新しい digest について改めて確認します。
+- 形式だけの変更は `@kubohiroya/turbowarp-sb3-save-format/extension-format` を使い、同じバイト列と SHA-256 を保ちます。版の変更はコードと lock を置き換え、具体的な版・URL・SHA-256 を記録します。
+- 止められた計画、計画後に変わった入力への計画、このプロセスで作っていない計画は適用しません。入力は変更せず、1つの拡張が失敗すれば何も適用しません。
+
 ### ブラウザーで作品フォルダを作る
 
 `@kubohiroya/sb3-toolchain/browser` の `unpackSb3(bytes)` は、SB3 のバイト列を作品フォルダの `Map<string, Uint8Array>` と警告の一覧に変換します。作品フォルダは展開ソース形式 1 で作ります。TurboWarp Plus Editor の画面状態（ZIP のエントリ `tw-plus/workspace.json`）は `.tw-plus/workspace.json` になります。生成されたファイルは `validateSourceFiles(files)` で再検査できます。どちらの関数も Node.js の組み込みモジュールやファイルシステムを使いません。

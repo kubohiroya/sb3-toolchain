@@ -19,6 +19,12 @@ import {
 import type {ExtensionBundleMetadata} from './types';
 import {migrateExtensionId} from './extension-id-migration';
 import {replaceSb3Extensions} from './extension-sb3-replacement';
+import {listSb3Extensions, updateSb3Extensions} from './project-extensions-cli';
+import type {
+  ProjectExtension,
+  ProjectExtensionPlan,
+  ProjectExtensionRequest,
+} from './project-extensions';
 import type {ExtensionIdMigrationCounts, ExtensionIdReference} from './extension-id-migration';
 import {extensionStatus, syncExtensions, updateExtensions} from './extension-sync';
 import type {ExtensionSyncConfirmContext, FetchImplementation} from './extension-sync';
@@ -147,7 +153,27 @@ export interface ExtensionsReplaceSb3CliOptions {
   yes: boolean;
 }
 
+export interface ExtensionsListSb3CliOptions {
+  action: 'list-sb3';
+  command: 'extensions';
+  inputPath: string;
+  json: boolean;
+}
+
+export interface ExtensionsUpdateSb3CliOptions {
+  action: 'update-sb3';
+  command: 'extensions';
+  inputPath: string;
+  /** Absent with --dry-run. */
+  outputPath?: string;
+  requests: Record<string, ProjectExtensionRequest>;
+  json: boolean;
+  yes: boolean;
+}
+
 export type ExtensionsCliOptions =
+  | ExtensionsListSb3CliOptions
+  | ExtensionsUpdateSb3CliOptions
   | ExtensionsDigestsCliOptions
   | ExtensionsReplaceSb3CliOptions
   | ExtensionsStatusCliOptions
@@ -262,6 +288,8 @@ export function usage() {
   sb3-toolchain test run INPUT.sb3 --editor-dir DIR --editor-revision SHA [--test TARGET/BLOCK_ID ...] [--allow-sandboxed ID=SHA256 ...] [--reporter junit] [--out FILE]
   sb3-toolchain extensions digests INPUT.sb3 [INPUT.sb3 ...] [--json]
   sb3-toolchain extensions replace-sb3 INPUT.sb3 [--from DONOR.sb3] --output OUTPUT.sb3 [--yes]
+  sb3-toolchain extensions list-sb3 INPUT.sb3 [--json]
+  sb3-toolchain extensions update-sb3 INPUT.sb3 (--output OUTPUT.sb3 | --dry-run) [--version ID=latest|X.Y.Z ...] [--format ID=FORMAT ...] [--reference ID=REFERENCE ...] [--url ID=URL ...] [--allow-prerelease] [--allow-breaking-api] [--allow-execution-change] [--json] [--yes]
   sb3-toolchain extensions status SOURCE_DIR
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
@@ -303,6 +331,21 @@ Extension digests:
   fetched and no browser storage is read: an extension cache belongs to an origin and a
   browser profile, so only the browser can list it, and an unresolved project URI never
   means an absent project.
+
+Project extension updates:
+  extensions list-sb3 lists every extension the SB3 uses with its form, SHA-256, version and
+  source. A source is known only from the SB3's own extension lock for the same bytes;
+  otherwise it is reported as unknown, never guessed from an ID or a name.
+  extensions update-sb3 changes the version and/or the stored form (remote-non-cacheable,
+  remote-cacheable, embedded-file, embedded-data) of the named extensions only. --version
+  resolves latest (the current stable release) or an exact version from the recorded source
+  or from --reference (npm-package@version|tag, a GitHub Release tag URL or repository URL).
+  A form change keeps the same bytes and SHA-256. Each candidate's ID, API, the blocks the
+  project uses, its execution mode and the address a reference form records are checked
+  first; any error blocks the whole update and nothing is written. --dry-run shows the plan.
+  The --allow-* options turn the matching errors into warnings; requesting a wider execution
+  mode is not permission, which the host still asks for. The input is preserved; output must
+  use a different path. Use --json for machine-readable plans and diagnostics.
 
 Kamishibai SB3 replacement:
   extensions replace-sb3 replaces the runtime bundle and Block Script in INPUT.sb3.
@@ -766,19 +809,133 @@ function parseExtensionReplaceSb3Arguments(arguments_: string[]): ExtensionsRepl
   return {action: 'replace-sb3', command: 'extensions', fromPath, inputPath, outputPath, yes};
 }
 
+function parseExtensionListSb3Arguments(arguments_: string[]): ExtensionsListSb3CliOptions {
+  let inputPath: string | undefined;
+  let json = false;
+  for (const argument of arguments_) {
+    if (argument === '--json') json = true;
+    else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      assert(!inputPath, 'Only one input SB3 may be specified.');
+      inputPath = path.resolve(argument);
+    }
+  }
+  assert(inputPath, 'The extensions list-sb3 command requires INPUT.sb3.');
+  return {action: 'list-sb3', command: 'extensions', inputPath, json};
+}
+
+const saveFormats = ['remote-non-cacheable', 'remote-cacheable', 'embedded-file', 'embedded-data'];
+
+function parseExtensionUpdateSb3Arguments(arguments_: string[]): ExtensionsUpdateSb3CliOptions {
+  let inputPath: string | undefined;
+  let outputPath: string | undefined;
+  let dryRun = false;
+  let json = false;
+  let yes = false;
+  const flags: {allowPrerelease?: true; allowBreakingApi?: true; allowExecutionChange?: true} = {};
+  const requests: Record<string, Record<string, unknown>> = {};
+  const fields: Record<string, 'version' | 'format' | 'reference' | 'url'> = {
+    '--version': 'version',
+    '--format': 'format',
+    '--reference': 'reference',
+    '--url': 'url',
+  };
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    const field = fields[argument];
+    if (field) {
+      const value = takeValue(arguments_, index, argument);
+      index += 1;
+      const split = value.indexOf('=');
+      assert(split > 0 && split < value.length - 1, `${argument} expects ID=VALUE.`);
+      const id = value.slice(0, split);
+      const setting = value.slice(split + 1);
+      if (field === 'format')
+        assert(saveFormats.includes(setting), `--format must be one of ${saveFormats.join(', ')}.`);
+      const request = (requests[id] ??= {});
+      assert(request[field] === undefined, `${argument} may only be given once for ${id}.`);
+      request[field] = setting;
+    } else if (argument === '--output') {
+      assert(!outputPath, '--output may only be specified once.');
+      outputPath = path.resolve(takeValue(arguments_, index, '--output'));
+      index += 1;
+    } else if (argument === '--dry-run') dryRun = true;
+    else if (argument === '--json') json = true;
+    else if (argument === '--yes') yes = true;
+    else if (argument === '--allow-prerelease') flags.allowPrerelease = true;
+    else if (argument === '--allow-breaking-api') flags.allowBreakingApi = true;
+    else if (argument === '--allow-execution-change') flags.allowExecutionChange = true;
+    else {
+      assert(!argument.startsWith('-'), `Unknown option: ${argument}`);
+      assert(!inputPath, 'Only one input SB3 may be specified.');
+      inputPath = path.resolve(argument);
+    }
+  }
+  assert(inputPath, 'The extensions update-sb3 command requires INPUT.sb3.');
+  assert(
+    dryRun !== (outputPath !== undefined),
+    'Specify exactly one of --output OUTPUT.sb3 or --dry-run.',
+  );
+  assert(
+    Object.keys(requests).length > 0,
+    'Name at least one extension with --version, --format, --reference or --url.',
+  );
+  const withFlags = Object.fromEntries(
+    Object.entries(requests).map(([id, request]) => [
+      id,
+      {...request, ...flags} as ProjectExtensionRequest,
+    ]),
+  );
+  return {
+    action: 'update-sb3',
+    command: 'extensions',
+    inputPath,
+    ...(outputPath ? {outputPath} : {}),
+    requests: withFlags,
+    json,
+    yes,
+  };
+}
+
+function formatProjectExtension(extension: ProjectExtension): string[] {
+  const source =
+    extension.source.kind === 'npm'
+      ? `npm ${extension.source.package}@${extension.source.version}`
+      : extension.source.kind === 'github'
+        ? `github ${extension.source.repository}@${extension.source.tag}`
+        : extension.source.kind;
+  return [
+    `${extension.id}\t${extension.format}\tversion=${extension.version ?? 'unknown'}\tsource=${source}\tsha256=${extension.sha256}`,
+    ...extension.diagnostics.map((item) => `  ${item.severity} ${item.code}: ${item.message}`),
+  ];
+}
+
+function formatProjectExtensionPlan(plan: ProjectExtensionPlan): string[] {
+  return plan.steps.flatMap((step) => [
+    `${step.id}\t${step.change}${step.blocked ? ' (blocked)' : ''}\t` +
+      `${step.from.format} ${step.from.version ?? 'unknown'} -> ${step.to.format} ${step.to.version ?? 'unknown'}` +
+      `\tsha256=${step.to.sha256}${step.to.url ? `\turl=${step.to.url}` : ''}`,
+    ...step.diagnostics.map((item) => `  ${item.severity} ${item.code}: ${item.message}`),
+  ]);
+}
+
 function parseExtensionsArguments(arguments_: string[]): ExtensionsCliOptions {
   const [action, ...actionArguments] = arguments_;
   assert(
     action === 'digests' ||
       action === 'replace-sb3' ||
+      action === 'list-sb3' ||
+      action === 'update-sb3' ||
       action === 'bundle' ||
       action === 'migrate-id' ||
       action === 'status' ||
       action === 'sync' ||
       action === 'unbundle' ||
       action === 'update',
-    'The extensions command requires status, digests, sync, update, migrate-id, bundle, unbundle, or replace-sb3.',
+    'The extensions command requires status, digests, sync, update, migrate-id, bundle, unbundle, replace-sb3, list-sb3, or update-sb3.',
   );
+  if (action === 'list-sb3') return parseExtensionListSb3Arguments(actionArguments);
+  if (action === 'update-sb3') return parseExtensionUpdateSb3Arguments(actionArguments);
   if (action === 'digests') return parseExtensionDigestsArguments(actionArguments);
   if (action === 'replace-sb3') return parseExtensionReplaceSb3Arguments(actionArguments);
   if (action === 'status') {
@@ -1048,6 +1205,35 @@ export async function runCli(
         return;
       }
       for (const line of formatExtensionDigestInventory(inventory)) log(line);
+      return;
+    }
+    if (options.action === 'list-sb3') {
+      const extensions = await listSb3Extensions(options.inputPath);
+      if (options.json) log(JSON.stringify({extensions}, null, 2));
+      else
+        for (const extension of extensions)
+          for (const line of formatProjectExtension(extension)) log(line);
+      return;
+    }
+    if (options.action === 'update-sb3') {
+      const result = await updateSb3Extensions({
+        inputPath: options.inputPath,
+        outputPath: options.outputPath,
+        requests: options.requests,
+        fetch: fetchImplementation,
+        confirmReplace: confirmBuildReplacement,
+        yes: options.yes,
+      });
+      if (options.json) log(JSON.stringify(result, null, 2));
+      else {
+        for (const line of formatProjectExtensionPlan(result.plan)) log(line);
+        if (result.written)
+          log(
+            `${result.written.changed ? 'Wrote' : 'Already up to date'}: ${result.written.outputPath}.`,
+          );
+        else if (!result.plan.blocked) log('Dry run: nothing was written.');
+      }
+      assert(!result.plan.blocked, 'The update is blocked; nothing was written.');
       return;
     }
     if (options.action === 'replace-sb3') {
