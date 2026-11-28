@@ -59,6 +59,7 @@ export interface ExtensionBundleConfigurationInput {
   sharedDependencies?: Record<string, string>;
   paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
   memberColors?: ExtensionBundleConfiguration['memberColors'];
+  memberParentGroups?: ExtensionBundleConfiguration['memberParentGroups'];
 }
 
 export interface ExtensionBundlePlanResult {
@@ -136,6 +137,7 @@ async function configurationContext({
   sharedDependencies,
   paletteGroups,
   memberColors,
+  memberParentGroups,
   metadata,
   sourceDirectory,
   willReplace,
@@ -151,6 +153,7 @@ async function configurationContext({
   sharedDependencies?: Record<string, string>;
   paletteGroups?: ExtensionBundleConfiguration['paletteGroups'];
   memberColors?: ExtensionBundleConfiguration['memberColors'];
+  memberParentGroups?: ExtensionBundleConfiguration['memberParentGroups'];
   metadata?: ExtensionBundleConfiguration['metadata'];
 }): Promise<ConfigurationContext> {
   validateBundleId(bundleId);
@@ -185,6 +188,7 @@ async function configurationContext({
       ...(sharedDependencies === undefined ? {} : {sharedDependencies}),
       ...(paletteGroups === 'members' ? {paletteGroups} : {}),
       ...(memberColors === 'member' ? {memberColors} : {}),
+      ...(memberParentGroups === undefined ? {} : {memberParentGroups}),
       ...(recoveryCapsule === true ? {recoveryCapsule: true} : {}),
     },
   ];
@@ -214,6 +218,7 @@ export async function planExtensionBundle({
   sharedDependencies,
   paletteGroups,
   memberColors,
+  memberParentGroups,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundlePlanResult> {
   const context = await configurationContext({
@@ -226,6 +231,7 @@ export async function planExtensionBundle({
     sharedDependencies,
     paletteGroups,
     memberColors,
+    memberParentGroups,
     metadata,
     willReplace: false,
   });
@@ -317,6 +323,7 @@ export async function bundleExtensions({
   sharedDependencies,
   paletteGroups,
   memberColors,
+  memberParentGroups,
   metadata,
 }: ExtensionBundleConfigurationInput): Promise<ExtensionBundleApplyResult> {
   const context = await configurationContext({
@@ -329,6 +336,7 @@ export async function bundleExtensions({
     sharedDependencies,
     paletteGroups,
     memberColors,
+    memberParentGroups,
     metadata,
     willReplace: yes,
   });

@@ -500,6 +500,28 @@ sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension
 - `single`（既定）はマニフェストに書かず、生成する JavaScript も今までとバイト単位で同じです。bundle は
   `groups` を宣言しないので、メンバーがブロックに印を付けていても、1つのグループのままです。
 
+#### 親グループ
+
+メンバーごとのグループと組み合わせて、bundle の `memberParentGroups`（`--member-parent-groups-json JSON`、
+または API の `memberParentGroups`）を指定すると、選んだメンバーを1つの親グループの下にまとめられます。
+たとえば、ライブラリのメンバーを「ライブラリ」の下に置きます。
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo extensionthree --palette-groups members \
+  --member-parent-groups-json '[{"id":"libraries","name":{"en":"Libraries","ja":"ライブラリ"},"members":["extensiontwo","extensionthree"]}]'
+```
+
+- 各項目は `id`（`[A-Za-z0-9_-]+`。メンバーの ID と同じにはできず、`メンバー-` で始めることもできません）、
+  `name`（1つの文字列か言語ごとの文字列）、省略できる `menuIconURI` と `color1`〜`color3`（`#RRGGBB`）、
+  `members`（bundle のメンバー。1つのメンバーが属せる親は1つまで）を持ちます。`paletteGroups: "members"`
+  が必要です。
+- `getInfo().groups` は各親を、その最初のメンバーの直前に1度だけ宣言し、そのメンバーたちのグループに
+  `parent: '<親の id>'` を付けます。親自体はブロックを持ちません。メンバー自身が宣言したグループには、
+  親グループの有無にかかわらず常に `parent: 'メンバー'` が付き、メンバーの下に入ります。
+- `parent` を知らないエディターは、今までどおりグループを平らに並べます。標準の TurboWarp と Scratch は
+  `groups` 自体を無視します。`memberParentGroups` を指定しなければ、マニフェストには何も書きません。
+
 ### メンバーの色
 
 既定では、bundle のすべてのブロックを bundle の色で描きます。`--member-colors member`（bundle の

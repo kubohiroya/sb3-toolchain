@@ -86,6 +86,25 @@ export interface ExtensionBundleConfiguration {
    * block, `member` keeps each member's own `color1`–`color3`, in every editor. A block's own colour always wins.
    */
   memberColors?: 'bundle' | 'member';
+  /**
+   * With `paletteGroups: 'members'`, parent palette groups that hold chosen member groups. Each parent is declared
+   * in `getInfo().groups` once, before its first member, and each member's group carries `parent: '<parent id>'`.
+   * A parent holds no blocks of its own. Editors that do not know `parent` show the groups flat.
+   */
+  memberParentGroups?: ExtensionBundleMemberParentGroup[];
+}
+
+export interface ExtensionBundleMemberParentGroup {
+  /** Group ID, `[A-Za-z0-9_-]+`; it must not be a member ID or start with `<member ID>-`. */
+  id: string;
+  /** Display name: one text, or texts by locale such as `{en: 'Libraries', ja: 'ライブラリ'}`. */
+  name: string | Record<string, string>;
+  menuIconURI?: string;
+  color1?: string;
+  color2?: string;
+  color3?: string;
+  /** Bundle members whose groups nest under this parent; a member belongs to at most one parent. */
+  members: string[];
 }
 
 export interface EmbeddedExtensionManifest {

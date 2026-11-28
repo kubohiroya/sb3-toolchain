@@ -516,6 +516,27 @@ sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension
 - `single` (the default) is not written to the manifest, and the generated JavaScript stays byte for byte as
   before. The bundle declares no `groups`, so it stays one group even if a member marks its blocks.
 
+#### Parent groups
+
+With member palette groups, `memberParentGroups` on the bundle (`--member-parent-groups-json JSON`, or the
+`memberParentGroups` option of the API) puts chosen members under one parent group, such as the library
+members under "Libraries":
+
+```bash
+sb3-toolchain extensions bundle app --id projectbundle --name "Project Extension Bundle" \
+  extensionone extensiontwo extensionthree --palette-groups members \
+  --member-parent-groups-json '[{"id":"libraries","name":{"en":"Libraries","ja":"ライブラリ"},"members":["extensiontwo","extensionthree"]}]'
+```
+
+- Each entry has `id` (`[A-Za-z0-9_-]+`, not a member ID and not starting with `MEMBER-`), `name` (one text or
+  texts by locale), optional `menuIconURI` and `color1`–`color3` (`#RRGGBB`), and `members`: bundle members, each
+  in at most one parent. It requires `paletteGroups: "members"`.
+- `getInfo().groups` declares each parent once, just before its first member, and each of those members' groups
+  carries `parent: '<parent id>'`. A parent holds no blocks. A group a member declares itself always carries
+  `parent: 'MEMBER'`, so it nests under its member, with or without parent groups.
+- Editors that do not know `parent` show the groups flat, as before, and standard TurboWarp and Scratch ignore
+  `groups` entirely. Without `memberParentGroups` nothing is written to the manifest.
+
 ### Member colours
 
 By default every block of the bundle is drawn in the bundle's colours. With `--member-colors member`

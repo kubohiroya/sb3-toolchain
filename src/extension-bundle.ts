@@ -8,6 +8,7 @@ import type {ExtensionModuleBuild, ExtensionModuleBuildReport} from './extension
 import type {
   EmbeddedExtension,
   ExtensionBundleConfiguration,
+  ExtensionBundleMemberParentGroup,
   ProjectJson,
   UnknownRecord,
 } from './types';
@@ -140,6 +141,100 @@ function validateBundleName(name: unknown): string {
   return name;
 }
 
+const PALETTE_GROUP_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
+const PALETTE_GROUP_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/u;
+
+function validateMemberParentGroups(
+  value: unknown,
+  bundleId: string,
+  members: string[],
+): ExtensionBundleMemberParentGroup[] {
+  const label = `Extension bundle ${bundleId} memberParentGroups`;
+  assert(Array.isArray(value) && value.length > 0, `${label} must be a non-empty array.`);
+  const memberIds = new Set(members);
+  const groupIds = new Set<string>();
+  const parentOf = new Map<string, string>();
+  return (value as unknown[]).map((group, index) => {
+    assert(isObject(group), `${label}[${index}] must be an object.`);
+    const known = new Set(['id', 'name', 'menuIconURI', 'color1', 'color2', 'color3', 'members']);
+    for (const key of Object.keys(group)) {
+      assert(known.has(key), `${label}[${index}] has an unknown property: ${key}`);
+    }
+    const {id} = group;
+    assert(
+      typeof id === 'string' && PALETTE_GROUP_ID_PATTERN.test(id),
+      `${label}[${index}].id must match [A-Za-z0-9_-]+: ${JSON.stringify(id)}`,
+    );
+    assert(!groupIds.has(id), `${label} repeats group ID: ${id}`);
+    groupIds.add(id);
+    assert(!memberIds.has(id), `${label} group ID collides with a member: ${id}`);
+    for (const memberId of members) {
+      assert(
+        !id.startsWith(`${memberId}-`),
+        `${label} group ID may collide with a group of member ${memberId}: ${id}`,
+      );
+    }
+    const {name} = group;
+    if (typeof name === 'string') {
+      assert(name.length > 0, `${label}.${id}.name must not be empty.`);
+    } else {
+      assert(
+        isObject(name) && Object.keys(name).length > 0,
+        `${label}.${id}.name must be a non-empty string or an object of texts by locale.`,
+      );
+      for (const [locale, text] of Object.entries(name)) {
+        assert(
+          /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/u.test(locale),
+          `${label}.${id}.name locale must be a lowercase language tag: ${JSON.stringify(locale)}`,
+        );
+        assert(
+          typeof text === 'string' && text.length > 0,
+          `${label}.${id}.name.${locale} must be a non-empty string.`,
+        );
+      }
+    }
+    assert(
+      group.menuIconURI === undefined ||
+        (typeof group.menuIconURI === 'string' && group.menuIconURI.length > 0),
+      `${label}.${id}.menuIconURI must be a non-empty string when present.`,
+    );
+    for (const key of ['color1', 'color2', 'color3'] as const) {
+      assert(
+        group[key] === undefined ||
+          (typeof group[key] === 'string' && PALETTE_GROUP_COLOR_PATTERN.test(group[key])),
+        `${label}.${id}.${key} must be a #RRGGBB colour when present.`,
+      );
+    }
+    assert(
+      Array.isArray(group.members) && group.members.length > 0,
+      `${label}.${id}.members must be a non-empty array.`,
+    );
+    const groupMembers: string[] = [];
+    for (const memberId of group.members as unknown[]) {
+      assert(
+        typeof memberId === 'string' && memberIds.has(memberId),
+        `${label}.${id} names a non-member: ${JSON.stringify(memberId)}`,
+      );
+      const existing = parentOf.get(memberId);
+      assert(
+        existing === undefined,
+        `${label}: member ${memberId} belongs to more than one parent group (${existing}, ${id}).`,
+      );
+      parentOf.set(memberId, id);
+      groupMembers.push(memberId);
+    }
+    return {
+      id,
+      name: typeof name === 'string' ? name : {...(name as Record<string, string>)},
+      ...(group.menuIconURI === undefined ? {} : {menuIconURI: group.menuIconURI as string}),
+      ...(group.color1 === undefined ? {} : {color1: group.color1 as string}),
+      ...(group.color2 === undefined ? {} : {color2: group.color2 as string}),
+      ...(group.color3 === undefined ? {} : {color3: group.color3 as string}),
+      members: groupMembers,
+    };
+  });
+}
+
 export function validateExtensionBundleConfigurations(
   extensionBundles: unknown,
   extensions: EmbeddedExtension[],
@@ -230,6 +325,14 @@ export function validateExtensionBundleConfigurations(
       bundledMemberIds.add(memberId);
       members.push(memberId);
     }
+    let memberParentGroups: ExtensionBundleMemberParentGroup[] | undefined;
+    if (bundle.memberParentGroups !== undefined) {
+      assert(
+        bundle.paletteGroups === 'members',
+        `Extension bundle ${id} memberParentGroups requires paletteGroups members.`,
+      );
+      memberParentGroups = validateMemberParentGroups(bundle.memberParentGroups, id, members);
+    }
     return {
       id,
       members,
@@ -240,6 +343,7 @@ export function validateExtensionBundleConfigurations(
       ...(bundle.buildMode === undefined ? {} : {buildMode: bundle.buildMode}),
       ...(bundle.paletteGroups === undefined ? {} : {paletteGroups: bundle.paletteGroups}),
       ...(bundle.memberColors === undefined ? {} : {memberColors: bundle.memberColors}),
+      ...(memberParentGroups === undefined ? {} : {memberParentGroups}),
       ...(bundle.sharedDependencies === undefined
         ? {}
         : {sharedDependencies: {...bundle.sharedDependencies} as Record<string, string>}),
@@ -569,19 +673,41 @@ export function createStaticExtensionBundle(
           if (typeof info[key] === 'string' && info[key]) memberColors[key] = info[key];
         }`
     : '';
+  // Parent groups hold chosen members' groups: each is declared once, before its first member, and holds no blocks.
+  const parentGroupsByMember: Record<
+    string,
+    Omit<ExtensionBundleMemberParentGroup, 'members'>
+  > = {};
+  for (const {members: parentMembers, ...parentGroup} of memberGroups
+    ? (bundle.memberParentGroups ?? [])
+    : []) {
+    for (const memberId of parentMembers) parentGroupsByMember[memberId] = parentGroup;
+  }
+  const hasParentGroups = Object.keys(parentGroupsByMember).length > 0;
+  const parentGroupSource = hasParentGroups
+    ? `
+          const parentGroup = MEMBER_PARENT_GROUPS[componentId];
+          if (parentGroup) {
+            if (!declaredParentGroups.has(parentGroup.id)) {
+              declaredParentGroups.add(parentGroup.id);
+              result.groups.push(cloneGroup(parentGroup));
+            }
+            memberGroup.parent = parentGroup.id;
+          }`
+    : '';
   const memberGroupsSource = memberGroups
     ? `
         const memberGroupIds = new Set();
         {
           const memberIcon = info.menuIconURI || info.blockIconURI;
           const memberGroup = {id: componentId, name: info.name, ...memberColors};
-          if (typeof memberIcon === 'string' && memberIcon) memberGroup.menuIconURI = memberIcon;
+          if (typeof memberIcon === 'string' && memberIcon) memberGroup.menuIconURI = memberIcon;${parentGroupSource}
           result.groups.push(memberGroup);
           for (const group of Array.isArray(info.groups) ? info.groups : []) {
             if (!group || typeof group.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(group.id)) continue;
             if (memberGroupIds.has(group.id)) continue;
             memberGroupIds.add(group.id);
-            const declared = {...memberGroup, id: componentId + '-' + group.id, name: group.id};
+            const declared = {...memberGroup, id: componentId + '-' + group.id, name: group.id, parent: componentId};
             if ((typeof group.name === 'string' && group.name) || (group.name && typeof group.name === 'object')) {
               declared.name = group.name;
             }
@@ -625,7 +751,13 @@ export function createStaticExtensionBundle(
   const BUNDLE_ID = ${JSON.stringify(bundle.id)};
   const BUNDLE_NAME = ${JSON.stringify(bundle.name)};
   const COMPONENT_IDS = ${componentIds};
-${moduleBindings ? moduleValidation : sandboxedGuardSource(requirement, notice)}  const components = new Map();
+${
+  hasParentGroups
+    ? `  const MEMBER_PARENT_GROUPS = ${JSON.stringify(parentGroupsByMember)};
+  const cloneGroup = (group) => JSON.parse(JSON.stringify(group));
+`
+    : ''
+}${moduleBindings ? moduleValidation : sandboxedGuardSource(requirement, notice)}  const components = new Map();
 
   const rewriteOpcode = (componentId, opcode) => {
     const prefix = componentId + '_';
@@ -809,6 +941,8 @@ ${
         menus: {},
         customFieldTypes: {},
       };${memberGroups ? '\n      result.groups = [];' : ''}${
+        hasParentGroups ? '\n      const declaredParentGroups = new Set();' : ''
+      }${
         requirement === 'optional'
           ? `
       if (SANDBOXED) result.blocks.push(...sandboxedNoticeBlocks(), '---', '---');`

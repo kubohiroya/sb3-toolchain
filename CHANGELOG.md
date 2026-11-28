@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 機能拡張 bundle に `memberParentGroups`（CLI は `--member-parent-groups-json`）を追加した。`paletteGroups: "members"` のとき、選んだメンバーのグループを1つの親グループの下にまとめる。親は `getInfo().groups` に最初のメンバーの直前で1度だけ宣言し、メンバーのグループに `parent: '<親の id>'` を付ける。メンバー自身が宣言したグループ（`メンバー-グループ`）には常に `parent: 'メンバー'` を付ける。`parent` を知らないエディターでは今までどおり平らに表示される。
+
 ## 0.32.0 - 2026-11-28
 
 - `./project-extensions` と CLI の `extensions list-sb3`／`extensions update-sb3` を追加した（turbowarp-plus-editor#901）。作品が使う任意の拡張について、記録された取得元・版・SHA-256・保存形式を一覧し、安定版の最新・指定版・旧版への変更と4形式の変更を、計画（解決・検証・診断）と適用に分けて行う。取得元は同じバイト列の lock か明示の参照からだけ決め、ID・名前から推測しない。ID、API、使用中のブロック、実行モードの拡大、リモート参照の URL が同じバイト列を返すことを先に検査し、1件でも止まれば何も書かない。入力の SB3 は保持し、別の出力先へ書く。ブラウザーでも動く。
