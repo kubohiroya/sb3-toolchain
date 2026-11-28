@@ -3,7 +3,8 @@
 ## 0.32.0 - 2026-11-28
 
 - `./project-extensions` と CLI の `extensions list-sb3`／`extensions update-sb3` を追加した（turbowarp-plus-editor#901）。作品が使う任意の拡張について、記録された取得元・版・SHA-256・保存形式を一覧し、安定版の最新・指定版・旧版への変更と4形式の変更を、計画（解決・検証・診断）と適用に分けて行う。取得元は同じバイト列の lock か明示の参照からだけ決め、ID・名前から推測しない。ID、API、使用中のブロック、実行モードの拡大、リモート参照の URL が同じバイト列を返すことを先に検査し、1件でも止まれば何も書かない。入力の SB3 は保持し、別の出力先へ書く。ブラウザーでも動く。
-- 形式変換に `@kubohiroya/turbowarp-sb3-save-format` の `./extension-format` を使う。
+- 形式変換に `@kubohiroya/turbowarp-sb3-save-format` 0.7.1 の `./extension-format` を使う。`data:application/javascript;base64,` など、`text/javascript` 以外の JavaScript の `data:` で保存された旧来の拡張も一覧・変換の対象になる。これに伴い、拡張ローダーは 0.17.0 になる。
+- 同じバイト列が別の版でも公開されているとき、その版を指定すると、コードを変えずに取得元・版・アドレスの記録をその版へ移す（`source`）。以前は変更なし（`none`）と扱い、指定と異なる版の記録を残したまま「書き込んだ」と報告していた。
 - `extension-api-manifest` が `node:crypto` と `Buffer` を使わなくなった。ブラウザー入口から API の比較を使えるようにするため。
 
 ## 0.31.4 - 2026-11-28

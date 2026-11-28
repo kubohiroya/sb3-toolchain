@@ -152,6 +152,14 @@ function readLocks(archive: ProjectArchive): {
   }
 }
 
+function sameSource(a: ProjectExtensionSource, b: ProjectExtensionSource): boolean {
+  if (a.kind === 'npm' && b.kind === 'npm')
+    return a.package === b.package && a.version === b.version;
+  if (a.kind === 'github' && b.kind === 'github')
+    return a.repository === b.repository && a.tag === b.tag;
+  return a.kind === b.kind;
+}
+
 function sourceOf(lock: ExtensionArtifactLock | undefined): ProjectExtensionSource {
   if (!lock) return {kind: 'unknown'};
   if (lock.provenance.kind === 'build') return {kind: 'build'};
@@ -600,8 +608,17 @@ export async function planProjectExtensionUpdate(
         );
 
     const versionChanges = toSha !== current.sha256;
+    // The same bytes can be published under another version. Asking for that version records it
+    // as their source, with its address, instead of silently keeping the old record.
+    const sourceChanges =
+      !versionChanges &&
+      candidate !== undefined &&
+      (!lock || !sameSource(current.source, toSource));
     let url: string | undefined =
-      request.url ?? (versionChanges && candidate ? publishedExtensionURL(candidate) : current.url);
+      request.url ??
+      ((versionChanges || sourceChanges) && candidate
+        ? publishedExtensionURL(candidate)
+        : current.url);
     if (!request.url && !versionChanges && candidate && !current.url)
       url = publishedExtensionURL(candidate);
     if (isReference(targetFormat) || versionChanges) {
@@ -656,7 +673,7 @@ export async function planProjectExtensionUpdate(
         : 'version'
       : formatChanges
         ? 'format'
-        : candidate && !lock
+        : sourceChanges
           ? 'source'
           : url !== undefined && url !== current.url
             ? 'format'
