@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import {createHash} from 'node:crypto';
+import {sha256} from '@noble/hashes/sha2.js';
 
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
@@ -160,7 +160,11 @@ function escapeJsonPointer(value: string): string {
 }
 
 export function extensionApiManifestIntegrity(contents: Uint8Array | string): string {
-  return `sha256-${createHash('sha256').update(contents).digest('base64')}`;
+  // A browser bundle reads the API too, so this hashes without node:crypto or Buffer.
+  const bytes = typeof contents === 'string' ? new TextEncoder().encode(contents) : contents;
+  let binary = '';
+  for (const byte of sha256(bytes)) binary += String.fromCharCode(byte);
+  return `sha256-${btoa(binary)}`;
 }
 
 export function extensionApiManifestLocalPath(extensionId: string): string {
@@ -445,7 +449,11 @@ export function parseExtensionApiManifest(
 ): ExtensionApiManifest {
   let manifest: unknown;
   try {
-    manifest = JSON.parse(Buffer.from(contents).toString('utf8'));
+    manifest = JSON.parse(
+      typeof contents === 'string'
+        ? contents
+        : new TextDecoder('utf-8', {ignoreBOM: true}).decode(contents),
+    );
   } catch (error) {
     throw new Error(`Extension API manifest is not valid JSON: ${errorMessage(error)}`, {
       cause: error,

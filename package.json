@@ -31,6 +31,11 @@
       "import": "./dist/web-distribution.js",
       "default": "./dist/web-distribution.js"
     },
+    "./project-extensions": {
+      "types": "./dist/project-extensions.d.ts",
+      "import": "./dist/project-extensions.js",
+      "default": "./dist/project-extensions.js"
+    },
     "./standard-extension-build": {
       "node": {
         "types": "./dist/standard-extension-build.d.ts",
@@ -74,6 +79,7 @@
   "dependencies": {
     "@kubohiroya/turbowarp-extension-manifest": "0.9.1",
     "@kubohiroya/turbowarp-plus-editor-test": "0.4.1",
+    "@kubohiroya/turbowarp-sb3-save-format": "0.6.0",
     "@noble/hashes": "2.4.0",
     "fflate": "0.8.3",
     "music-metadata": "12.8.4",

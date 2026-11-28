@@ -12,6 +12,8 @@ expanded sources and rebuilding bit-for-bit identical SB3 files from the same in
 - Manage embedded extensions from pinned GitHub commits or exact installed npm package versions and
   verify their SHA-256 hashes offline
 - Optionally compare versioned extension API manifests before replacing embedded JavaScript
+- Change the version (latest stable, exact, or older) and stored form of any extension an SB3
+  uses with `extensions update-sb3`, after checking its ID, API, execution mode and address
 - Statically bundle multiple extensions into one permission unit without deleting their original
   JavaScript, then restore them from either the expanded source or the bundled SB3
 - Report every extension's pinned SHA-256, retention form, held size, and the project URI, and
@@ -185,6 +187,44 @@ await unbundleSb3({
   yes: true,
 });
 ```
+
+### Change the version and stored form of a project's extensions
+
+`@kubohiroya/sb3-toolchain/project-extensions` is the shared core behind
+`extensions list-sb3 / update-sb3` and the Editor's project properties. It runs in a browser and in
+Node, takes an unpacked archive and a parsed `project.json`, and never touches files, a VM or an
+approval.
+
+```js
+import {
+  applyProjectExtensionUpdate,
+  listProjectExtensions,
+  planProjectExtensionUpdate,
+} from '@kubohiroya/sb3-toolchain/project-extensions';
+
+const extensions = await listProjectExtensions(archive, project);
+const plan = await planProjectExtensionUpdate(archive, project, {
+  myextension: {version: 'latest', format: 'remote-cacheable'},
+});
+if (!plan.blocked) {
+  const result = await applyProjectExtensionUpdate(archive, project, plan); // new archive and project
+}
+```
+
+- A source is known only from the SB3's own extension lock (`tw-plus/extension-locks.json`) for the
+  same bytes, or from a `reference` the caller names. Otherwise it is `unknown`; an ID, a name or a
+  URL never identifies a package, and no extension JavaScript is evaluated.
+- `latest` is the current stable release. A prerelease that `latest` or a tag resolves to blocks the
+  step unless `allowPrerelease` is set; an exact prerelease is an explicit request.
+- Every candidate is checked first: its ID, its API against the locked one, the blocks the project
+  uses, a wider execution mode, and that the address a reference form records serves the same
+  bytes. Errors block the step; `allow*` options turn them into warnings. Requesting unsandboxed
+  execution is not permission: the host still asks for the new digest.
+- A form change keeps the same bytes and SHA-256, using
+  `@kubohiroya/turbowarp-sb3-save-format/extension-format`. A new version replaces the code and
+  its lock and records the exact version, address and SHA-256.
+- Applying refuses a blocked plan, a plan for input that changed since, and a plan not made in this
+  process. Nothing changes the input, and one failing extension applies none.
 
 ### Create a project folder in a browser
 

@@ -50,7 +50,7 @@ function sha256(contents: Uint8Array): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-async function readArchive(filePath: string): Promise<Buffer> {
+export async function readArchive(filePath: string): Promise<Buffer> {
   assert(path.extname(filePath).toLowerCase() === '.sb3', `Expected an .sb3 file: ${filePath}`);
   const stats = await lstat(filePath);
   assert(stats.isFile() && !stats.isSymbolicLink(), `Expected a regular SB3 file: ${filePath}`);
@@ -58,7 +58,11 @@ async function readArchive(filePath: string): Promise<Buffer> {
   return readFile(filePath);
 }
 
-function parseArchive(contents: Uint8Array) {
+/** Unpack an SB3 within the toolchain's limits and parse its project document. */
+export function unpackSb3Entries(contents: Uint8Array): {
+  entries: Record<string, Uint8Array>;
+  project: UnknownRecord;
+} {
   const names = new Set<string>();
   let expandedSize = 0;
   const entries = unzipSync(contents, {
@@ -77,10 +81,13 @@ function parseArchive(contents: Uint8Array) {
   });
   assert(Object.hasOwn(entries, 'project.json'), 'SB3 archive does not contain project.json.');
   const project: unknown = JSON.parse(strFromU8(entries['project.json']));
-  assert(
-    isObject(project) && isObject(project.extensionURLs),
-    'SB3 requires an extensionURLs object.',
-  );
+  assert(isObject(project), 'SB3 project.json must contain an object.');
+  return {entries, project};
+}
+
+function parseArchive(contents: Uint8Array) {
+  const {entries, project} = unpackSb3Entries(contents);
+  assert(isObject(project.extensionURLs), 'SB3 requires an extensionURLs object.');
   return {entries, project, urls: project.extensionURLs};
 }
 
@@ -202,7 +209,10 @@ async function publishedDonor(fetchImplementation: FetchImplementation) {
   return {archive, source: url.href, version: manifest.version};
 }
 
-async function assertDistinctOutput(outputPath: string, protectedPaths: string[]): Promise<void> {
+export async function assertDistinctOutput(
+  outputPath: string,
+  protectedPaths: string[],
+): Promise<void> {
   for (const protectedPath of protectedPaths) {
     assert(
       path.resolve(outputPath) !== path.resolve(protectedPath),
