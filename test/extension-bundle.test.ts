@@ -749,7 +749,7 @@ test('makes each member a palette group of its own when asked, and one group by 
       },
       // The bundle's colours are the default, so the groups carry none of the members' colours.
       {id: 'beta', name: 'Beta Tools'},
-      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}},
+      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}, parent: 'beta'},
     ]);
     expect(members.colors.beta__echo).toBeUndefined();
     expect(members.byBlock).toMatchObject({
@@ -773,9 +773,57 @@ test('makes each member a palette group of its own when asked, and one group by 
     const coloured = await groupsOf();
     expect(coloured.groups.slice(1)).toEqual([
       {id: 'beta', name: 'Beta Tools', color1: '#112233'},
-      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}, color1: '#445566'},
+      {
+        id: 'beta-echoes',
+        name: {en: 'Echoes', ja: 'こだま\nの声'},
+        color1: '#445566',
+        parent: 'beta',
+      },
     ]);
     expect(coloured.colors).toMatchObject({beta__echo: '#112233', alpha__value: undefined});
+
+    // Parent groups hold chosen members: declared once before the first member, holding no blocks.
+    await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
+    const memberParentGroups = [
+      {
+        id: 'libraries',
+        name: {en: 'Libraries', ja: 'ライブラリ'},
+        menuIconURI: 'data:image/svg+xml,libraries',
+        color1: '#334455',
+        members: ['beta'],
+      },
+    ];
+    await bundleExtensions({
+      bundleId: 'projectbundle',
+      bundleName: 'Project Extension Bundle',
+      extensionIds: ['alpha', 'beta'],
+      paletteGroups: 'members',
+      memberParentGroups,
+      sourceDirectory,
+      yes: true,
+    });
+    expect(
+      JSON.parse(await readFile(path.join(sourceDirectory, 'embedded-extensions.json'), 'utf8'))
+        .extensionBundles[0].memberParentGroups,
+    ).toEqual(memberParentGroups);
+    const nested = await groupsOf();
+    expect(nested.groups).toEqual([
+      {
+        id: 'alpha',
+        name: 'Alpha Tools',
+        menuIconURI: 'data:image/svg+xml,%3Csvg%20id%3D%22alpha-default%22%2F%3E',
+      },
+      {
+        id: 'libraries',
+        name: {en: 'Libraries', ja: 'ライブラリ'},
+        menuIconURI: 'data:image/svg+xml,libraries',
+        color1: '#334455',
+      },
+      {id: 'beta', name: 'Beta Tools', parent: 'libraries'},
+      {id: 'beta-echoes', name: {en: 'Echoes', ja: 'こだま\nの声'}, parent: 'beta'},
+    ]);
+    expect(nested.byBlock).toMatchObject({beta__value: 'beta', beta__echo: 'beta-echoes'});
+    expect(Object.values(nested.byBlock)).not.toContain('libraries');
 
     // Member colours without member groups colour the blocks and declare no groups.
     await unbundleExtensions({bundleId: 'projectbundle', sourceDirectory, yes: true});
@@ -1165,6 +1213,58 @@ test('rejects bundle inputs that cannot be transformed without behavior risk', a
   });
 });
 
+test('validates member parent groups', () => {
+  const extensions = [{id: 'alpha'}, {id: 'beta'}, {id: 'gamma'}] as unknown as Parameters<
+    typeof validateExtensionBundleConfigurations
+  >[1];
+  const validate = (bundle: Record<string, unknown>) =>
+    validateExtensionBundleConfigurations(
+      [
+        {
+          id: 'projectbundle',
+          name: 'Project Extension Bundle',
+          members: ['alpha', 'beta', 'gamma'],
+          paletteGroups: 'members',
+          ...bundle,
+        },
+      ],
+      extensions,
+    );
+  const group = {id: 'libraries', name: 'Libraries', members: ['alpha', 'beta']};
+  expect(validate({memberParentGroups: [group]})[0].memberParentGroups).toEqual([group]);
+  expect(() => validate({paletteGroups: undefined, memberParentGroups: [group]})).toThrow(
+    /requires paletteGroups members/u,
+  );
+  expect(() => validate({memberParentGroups: []})).toThrow(/non-empty array/u);
+  expect(() => validate({memberParentGroups: [{...group, id: 'bad id'}]})).toThrow(
+    /must match \[A-Za-z0-9_-\]\+/u,
+  );
+  expect(() => validate({memberParentGroups: [{...group, id: 'alpha'}]})).toThrow(
+    /collides with a member/u,
+  );
+  expect(() => validate({memberParentGroups: [{...group, id: 'beta-x'}]})).toThrow(
+    /may collide with a group of member beta/u,
+  );
+  expect(() => validate({memberParentGroups: [{...group, members: ['delta']}]})).toThrow(
+    /names a non-member/u,
+  );
+  expect(() =>
+    validate({
+      memberParentGroups: [group, {id: 'others', name: 'Others', members: ['beta']}],
+    }),
+  ).toThrow(/member beta belongs to more than one parent group/u);
+  expect(() => validate({memberParentGroups: [group, {...group, members: ['gamma']}]})).toThrow(
+    /repeats group ID/u,
+  );
+  expect(() => validate({memberParentGroups: [{...group, color1: 'red'}]})).toThrow(/#RRGGBB/u);
+  expect(() => validate({memberParentGroups: [{...group, name: {EN: 'x'}}]})).toThrow(
+    /lowercase language tag/u,
+  );
+  expect(() => validate({memberParentGroups: [{...group, parent: 'x'}]})).toThrow(
+    /unknown property: parent/u,
+  );
+});
+
 test('parses reversible bundle and unbundle CLI commands', () => {
   expect(
     parseCliArguments([
@@ -1231,6 +1331,36 @@ test('parses reversible bundle and unbundle CLI commands', () => {
       'each',
     ]),
   ).toThrow(/--palette-groups must be single or members/u);
+  expect(
+    (
+      parseCliArguments([
+        'extensions',
+        'bundle',
+        'custom-source',
+        '--id',
+        'projectbundle',
+        '--name',
+        'Project Extension Bundle',
+        '--palette-groups',
+        'members',
+        '--member-parent-groups-json',
+        '[{"id":"libraries","name":"Libraries","members":["alpha"]}]',
+      ]) as ExtensionsBundleCliOptions
+    ).memberParentGroups,
+  ).toEqual([{id: 'libraries', name: 'Libraries', members: ['alpha']}]);
+  expect(() =>
+    parseCliArguments([
+      'extensions',
+      'bundle',
+      'custom-source',
+      '--id',
+      'projectbundle',
+      '--name',
+      'Project Extension Bundle',
+      '--member-parent-groups-json',
+      '{}',
+    ]),
+  ).toThrow(/--member-parent-groups-json must contain a JSON array/u);
   expect(
     (
       parseCliArguments([

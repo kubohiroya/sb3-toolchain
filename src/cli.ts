@@ -16,7 +16,7 @@ import {
   formatExtensionDigestInventory,
   inventoryExtensionDigests,
 } from './extension-digest-inventory';
-import type {ExtensionBundleMetadata} from './types';
+import type {ExtensionBundleMemberParentGroup, ExtensionBundleMetadata} from './types';
 import {migrateExtensionId} from './extension-id-migration';
 import {replaceSb3Extensions} from './extension-sb3-replacement';
 import {listSb3Extensions, updateSb3Extensions} from './project-extensions-cli';
@@ -118,6 +118,7 @@ export interface ExtensionsBundleCliOptions {
   sharedDependencies?: Record<string, string>;
   paletteGroups?: 'single' | 'members';
   memberColors?: 'bundle' | 'member';
+  memberParentGroups?: ExtensionBundleMemberParentGroup[];
 }
 
 export interface ExtensionsUnbundleSourceCliOptions {
@@ -294,7 +295,7 @@ export function usage() {
   sb3-toolchain extensions sync SOURCE_DIR [--yes]
   sb3-toolchain extensions update SOURCE_DIR [EXTENSION_ID] [--migrate-id NEW_ID] [--artifact PATH] [--api-manifest-artifact PATH] [--allow-breaking-api --yes]
   sb3-toolchain extensions migrate-id SOURCE_DIR --from OLD_ID --to NEW_ID [--yes]
-  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--palette-groups single|members] [--member-colors bundle|member] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
+  sb3-toolchain extensions bundle SOURCE_DIR --id BUNDLE_ID --name NAME [EXTENSION_ID ...] [--metadata-json JSON] [--build-mode classic|module] [--palette-groups single|members] [--member-colors bundle|member] [--member-parent-groups-json JSON] [--share PACKAGE@EXACT_VERSION] [--include-recovery-capsule] [--yes]
   sb3-toolchain extensions unbundle SOURCE_DIR BUNDLE_ID [--yes]
   sb3-toolchain extensions unbundle INPUT.sb3 BUNDLE_ID --output OUTPUT.sb3 [--yes]
 
@@ -622,6 +623,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
   let buildMode: 'classic' | 'module' | undefined;
   let paletteGroups: 'single' | 'members' | undefined;
   let memberColors: 'bundle' | 'member' | undefined;
+  let memberParentGroups: ExtensionBundleMemberParentGroup[] | undefined;
   const sharedDependencies: Record<string, string> = {};
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -664,6 +666,21 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
       const value = takeValue(arguments_, index, '--member-colors');
       assert(value === 'bundle' || value === 'member', '--member-colors must be bundle or member.');
       memberColors = value;
+      index += 1;
+    } else if (argument === '--member-parent-groups-json') {
+      assert(
+        memberParentGroups === undefined,
+        '--member-parent-groups-json may only be specified once.',
+      );
+      const value = takeValue(arguments_, index, '--member-parent-groups-json');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        throw new Error('--member-parent-groups-json must contain a JSON array.');
+      }
+      assert(Array.isArray(parsed), '--member-parent-groups-json must contain a JSON array.');
+      memberParentGroups = parsed as ExtensionBundleMemberParentGroup[];
       index += 1;
     } else if (argument === '--share') {
       const value = takeValue(arguments_, index, '--share');
@@ -715,6 +732,7 @@ function parseExtensionBundleArguments(arguments_: string[]): ExtensionsBundleCl
     ...(Object.keys(sharedDependencies).length ? {sharedDependencies} : {}),
     ...(paletteGroups === undefined ? {} : {paletteGroups}),
     ...(memberColors === undefined ? {} : {memberColors}),
+    ...(memberParentGroups === undefined ? {} : {memberParentGroups}),
   };
 }
 
@@ -1265,6 +1283,7 @@ export async function runCli(
         sharedDependencies: options.sharedDependencies,
         paletteGroups: options.paletteGroups,
         memberColors: options.memberColors,
+        memberParentGroups: options.memberParentGroups,
         sourceDirectory: options.sourceDirectory,
         yes: options.yes,
       });

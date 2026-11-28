@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 機能拡張 bundle に `memberParentGroups`（CLI は `--member-parent-groups-json`）を追加した。`paletteGroups: "members"` のとき、選んだメンバーのグループを1つの親グループの下にまとめる。親は `getInfo().groups` に最初のメンバーの直前で1度だけ宣言し、メンバーのグループに `parent: '<親の id>'` を付ける。メンバー自身が宣言したグループ（`メンバー-グループ`）には常に `parent: 'メンバー'` を付ける。`parent` を知らないエディターでは今までどおり平らに表示される。
+
 ## 0.32.0 - 2026-11-28
 
 - `./project-extensions` と CLI の `extensions list-sb3`／`extensions update-sb3` を追加した（turbowarp-plus-editor#901）。作品が使う任意の拡張について、記録された取得元・版・SHA-256・保存形式を一覧し、安定版の最新・指定版・旧版への変更と4形式の変更を、計画（解決・検証・診断）と適用に分けて行う。取得元は同じバイト列の lock か明示の参照からだけ決め、ID・名前から推測しない。ID、API、使用中のブロック、実行モードの拡大、リモート参照の URL が同じバイト列を返すことを先に検査し、1件でも止まれば何も書かない。入力の SB3 は保持し、別の出力先へ書く。ブラウザーでも動く。
@@ -15,14 +19,11 @@
 
 - 外部拡張の取得・検証・標準ビルドが使う Manifest を 0.9.1 へ更新した。配布物・API の検証を強化し、利用側の独自診断コードとの型互換性を維持する。
 
-## Unreleased
+## 0.31.2 - 2026-11-27
 
 - 外部拡張の取得元・build receipt・API を版付きの成果物 lock として SB3／展開ソースで保持し、未知の版や改変による情報欠落を拒否する。
 - GitHub の確定 commit から標準ビルド用 snapshot を取得し、環境変数を限定した子プロセスの timeout／中断・終了後の一時領域削除に対応する。OS 隔離は Desktop 側で必要。
 - npm archive の危険な path／link／重複／entry 数を検査し、公開 resolver・source snapshot・build に容量の記録を追加する。
-
-## 0.31.2 - 2026-11-27
-
 - 依存関係を更新した。
 
 ## 0.31.1 - 2026-11-26
