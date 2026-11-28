@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.33.0 - 2026-11-28
 
 - 機能拡張 bundle に `memberParentGroups`（CLI は `--member-parent-groups-json`）を追加した。`paletteGroups: "members"` のとき、選んだメンバーのグループを1つの親グループの下にまとめる。親は `getInfo().groups` に最初のメンバーの直前で1度だけ宣言し、メンバーのグループに `parent: '<親の id>'` を付ける。メンバー自身が宣言したグループ（`メンバー-グループ`）には常に `parent: 'メンバー'` を付ける。`parent` を知らないエディターでは今までどおり平らに表示される。
 
