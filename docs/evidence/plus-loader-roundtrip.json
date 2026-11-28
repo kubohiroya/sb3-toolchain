@@ -1,0 +1,35 @@
+{
+  "at": "2026-11-28T00:31:11.405Z",
+  "node": "26.7.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "loaderRevision": "2c70c0997d59f774b5e639ec0db899befe52e58c",
+  "toolchainRevision": "8a418da8071b071a020317e9a7d9ed602b199e17",
+  "toolchainDirty": false,
+  "source": {
+    "kind": "github",
+    "repository": "kubohiroya/turbowarp-extension-template",
+    "commit": "b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a"
+  },
+  "compiler": {
+    "name": "rolldown",
+    "version": "1.3.4",
+    "integrity": "sha512-p2rq4bfBmF0M6yaR8+A89fbkBQynZI2fxUW4G07eq9kpctAkpo7q5BZ4X4Mo4XZ7HHROu33cX9PeopUFN6u+2Q=="
+  },
+  "results": [
+    {
+      "storage": "embedded-file",
+      "receiptEqual": true,
+      "loaderReopened": true,
+      "sourceRoundtripEqual": true
+    },
+    {
+      "storage": "embedded-data",
+      "receiptEqual": true,
+      "loaderReopened": true,
+      "sourceRoundtripEqual": true
+    }
+  ],
+  "approvals": 2,
+  "validationScope": "Real public Template, Node compiler and Loader #55 APIs; no renderer or native Electron execution."
+}
