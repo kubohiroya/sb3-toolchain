@@ -10,6 +10,7 @@ import {resolveBlockPaletteReferences, validateBlockPaletteDocument} from './blo
 import type {BlockPaletteWarningCode} from './block-palette';
 import {expandArchive, formatSourceFiles, Sb3SourceError} from './expand-archive';
 import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
+import {plusFilePaths, readPlusExtensions, validatePlusArtifacts} from './plus-extension-project';
 import {
   assertSameFileSet,
   collectSourceAssetReferences,
@@ -77,10 +78,11 @@ const archiveLimits = {
 
 function validateEditorProject(project: ProjectJson) {
   if (project.turboWarpPlus !== undefined) {
-    throw new Sb3SourceError(
-      'unsupported-project',
-      'Plus extension manifests are not supported in project folders.',
-    );
+    try {
+      readPlusExtensions(project);
+    } catch (cause) {
+      throw new Sb3SourceError('unsupported-project', errorMessage(cause), {cause});
+    }
   }
   assert(Array.isArray(project.targets), 'Missing project targets.');
   const targetNames = new Set<string>();
@@ -132,10 +134,16 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
     const project = json(manifest.project);
     assert(isObject(project), 'project.source.json must contain an object.');
     const references = validatedAssetReferences(project);
+    const plusFiles = plusFilePaths(project);
+    for (const name of plusFiles)
+      assert(manifest.archiveEntries.includes(name), 'Plus embedded archive entry is missing.');
 
     const assetEntries = manifest.archiveEntries.filter(
       (name) =>
-        name !== 'project.json' && name !== screenStateEntry && name !== extensionLocksEntry,
+        name !== 'project.json' &&
+        name !== screenStateEntry &&
+        name !== extensionLocksEntry &&
+        !plusFiles.has(name),
     );
     // The Editor's screen state is optional and opaque here; it only has to be JSON.
     if (files.has(screenStateFile)) {
@@ -219,6 +227,7 @@ export function validateSourceFiles(files: ReadonlyMap<string, Uint8Array>): voi
           );
         }
       }
+      validatePlusArtifacts(project, extensions, files);
     } catch (cause) {
       throw new Sb3SourceError('invalid-extension', errorMessage(cause), {cause});
     }
@@ -240,11 +249,13 @@ export function unpackSb3(bytes: Uint8Array): UnpackedSb3 {
     }
   }
   const warnings: UnpackWarning[] = [];
+  const plusFiles = plusFilePaths(expanded.project);
   expanded.archiveEntries = expanded.archiveEntries.filter((name) => {
     if (
       name === 'project.json' ||
       name === screenStateEntry ||
       name === extensionLocksEntry ||
+      plusFiles.has(name) ||
       references.has(name)
     )
       return true;

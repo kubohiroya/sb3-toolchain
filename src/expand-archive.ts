@@ -5,6 +5,7 @@ import {strFromU8, strToU8, unzipSync} from 'fflate';
 import {validateArchiveEntryName} from './archive';
 import {assert, errorMessage} from './assert';
 import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
+import {plusFilePaths, readPlusExtensions, validatePlusArtifacts} from './plus-extension-project';
 import {
   embeddedExtensionManifestFormatVersion,
   isObject,
@@ -167,6 +168,12 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
   }
 
   const extensionUrls: unknown = project.extensionURLs ?? {};
+  let plus: ReturnType<typeof readPlusExtensions>;
+  try {
+    plus = readPlusExtensions(project);
+  } catch (cause) {
+    throw new Sb3SourceError('unsupported-project', errorMessage(cause), {cause});
+  }
   if (!isObject(extensionUrls)) {
     throw new Sb3SourceError(
       'invalid-project',
@@ -175,6 +182,25 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
   }
   const embeddedExtensions: EmbeddedExtension[] = [];
   const extensionFiles = new Map<string, Uint8Array>();
+  for (const spec of plus) {
+    if (spec.source.type !== 'embedded-file') continue;
+    assert(
+      !Object.hasOwn(extensionUrls, spec.id),
+      'Plus file storage conflicts with an extension URL.',
+    );
+    const bytes = archive[spec.source.path];
+    assert(bytes, 'Plus embedded file is missing.');
+    extensionFiles.set(spec.source.path, bytes);
+    embeddedExtensions.push({
+      id: spec.id,
+      path: spec.source.path,
+      mediaType: 'text/javascript',
+      parameters: [],
+      encoding: 'base64',
+    });
+    extensionUrls[spec.id] = `embedded-extension:${spec.source.path}`;
+  }
+  if (plus.length) project.extensionURLs = extensionUrls;
   for (const [extensionId, extensionUrl] of Object.entries(extensionUrls)) {
     if (typeof extensionUrl !== 'string' || !extensionUrl.startsWith('data:')) continue;
     if (!/^[A-Za-z0-9._-]+$/u.test(extensionId)) {
@@ -203,7 +229,7 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
   if (archive[extensionLocksEntry]) {
     try {
       assert(
-        archive[extensionLocksEntry].length <= 8 * 1024 * 1024,
+        archive[extensionLocksEntry].length <= (plus.length ? 1 : 8) * 1024 * 1024,
         'Extension locks attachment exceeds its size limit',
       );
       const document: unknown = JSON.parse(
@@ -241,14 +267,21 @@ export function expandArchive(bytes: Uint8Array, limits?: ArchiveLimits): Expand
       throw new Sb3SourceError('invalid-extension', errorMessage(cause), {cause});
     }
   }
+  try {
+    validatePlusArtifacts(project, embeddedExtensions, extensionFiles);
+  } catch (cause) {
+    throw new Sb3SourceError('invalid-extension', errorMessage(cause), {cause});
+  }
   // Attachments are handled separately from the project's asset files.
   const screenState = archive[screenStateEntry] ?? null;
   const assets = new Map<string, Uint8Array>();
+  const plusFiles = plusFilePaths(project);
   for (const name of archiveEntries) {
     if (
       name !== 'project.json' &&
       name !== screenStateEntry &&
       name !== extensionLocksEntry &&
+      !plusFiles.has(name) &&
       !name.endsWith('/')
     ) {
       assets.set(name, archive[name]);

@@ -14,6 +14,7 @@ import {
 } from './block-palette';
 import type {BlockPaletteDocument} from './block-palette';
 import {extensionLocksEntry, validateExtensionArtifactLock} from './extension-artifact-lock';
+import {plusFilePaths, validatePlusArtifacts} from './plus-extension-project';
 import {validateManagedExtensionApiManifest} from './extension-api-manifest';
 import {validateExtensionBundleConfigurations} from './extension-bundle';
 import {buildExtensionBundlesWithModules} from './extension-module-bundle';
@@ -174,12 +175,6 @@ async function inspectSb3Source(
     'SB3 source manifest',
   );
   validateSourceManifest(sourceManifest);
-  const assetEntries = sourceManifest.archiveEntries.filter(
-    (entryName) =>
-      entryName !== 'project.json' &&
-      entryName !== screenStateEntry &&
-      entryName !== extensionLocksEntry,
-  );
   // The Editor writes its screen state into the folder whenever it saves; it is optional and only has to be JSON.
   let screenState: Uint8Array | null = null;
   try {
@@ -199,6 +194,16 @@ async function inspectSb3Source(
     'SB3 project source',
   );
   assert(isObject(project), 'project.source.json must contain an object.');
+  const plusFiles = plusFilePaths(project);
+  for (const name of plusFiles)
+    assert(sourceManifest.archiveEntries.includes(name), 'Plus embedded archive entry is missing.');
+  const assetEntries = sourceManifest.archiveEntries.filter(
+    (entryName) =>
+      entryName !== 'project.json' &&
+      entryName !== screenStateEntry &&
+      entryName !== extensionLocksEntry &&
+      !plusFiles.has(entryName),
+  );
   const blockPalette =
     sourceManifest.blockPalette === undefined
       ? null
@@ -278,6 +283,7 @@ async function inspectSb3Source(
       }
     }),
   );
+  validatePlusArtifacts(project, extensions, extensionContents);
 
   return {
     assetContents,
@@ -378,6 +384,7 @@ export async function createDeterministicSb3(
     validateExtensionArtifactLock(extension.artifactLock, extension.id, contents);
   }
   let project = structuredClone(bundled.project);
+  validatePlusArtifacts(project, bundled.extensions, bundled.extensionContents);
   let blockCleanUp: BlockCleanUpSummary | null = null;
   if (cleanUpBlocks) {
     const cleaned = cleanUpTurboWarpBlocks(project);
@@ -391,10 +398,12 @@ export async function createDeterministicSb3(
   }
   applyBlockPaletteComments(project, source.blockPalette);
   const extensionUrls: Record<string, unknown> = project.extensionURLs ?? {};
+  const plusFiles = plusFilePaths(project);
   for (const extension of bundled.extensions) {
     const contents = bundled.extensionContents.get(extension.id);
     assert(contents, `Embedded extension has no contents: ${extension.id}`);
-    extensionUrls[extension.id] = encodeExtensionDataUrl(extension, contents);
+    if (plusFiles.has(extension.path)) delete extensionUrls[extension.id];
+    else extensionUrls[extension.id] = encodeExtensionDataUrl(extension, contents);
   }
   project.extensionURLs = extensionUrls;
 
@@ -409,11 +418,20 @@ export async function createDeterministicSb3(
       )
     : null;
   assert(
-    lockedExtensions.length <= 256 && (!lockBytes || lockBytes.byteLength <= 8 * 1024 * 1024),
+    lockedExtensions.length <= 256 &&
+      (!lockBytes ||
+        lockBytes.byteLength <= (project.turboWarpPlus === undefined ? 8 : 1) * 1024 * 1024),
     'Extension locks attachment exceeds its size limit',
   );
   if (lockBytes && !entryNames.includes(extensionLocksEntry)) entryNames.push(extensionLocksEntry);
   for (const entryName of entryNames) {
+    if (plusFiles.has(entryName)) {
+      const extension = bundled.extensions.find((extension) => extension.path === entryName);
+      const contents = extension && bundled.extensionContents.get(extension.id);
+      assert(contents, 'Plus embedded archive entry has no contents.');
+      archiveEntries[entryName] = contents;
+      continue;
+    }
     if (entryName === extensionLocksEntry) {
       assert(lockBytes, 'Extension locks attachment lost its records; refusing to discard it');
       archiveEntries[entryName] = lockBytes;
