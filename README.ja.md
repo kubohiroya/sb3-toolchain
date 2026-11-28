@@ -2,6 +2,8 @@
 
 [English](README.md) | 日本語
 
+検証済みの埋込拡張を持つ Plus SB3 の対応範囲と証跡は [lock 付き Plus SB3 のソース往復](docs/ja/plus-artifact-roundtrip.md) を参照してください。
+
 Scratch 3およびTurboWarpの`.sb3`プロジェクトを、Gitで差分を確認できる展開ソースとして管理し、
 同じ入力からバイト単位で同一のSB3ファイルを再ビルドするためのNode.jsツールチェーンです。
 

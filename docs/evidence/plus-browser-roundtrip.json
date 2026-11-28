@@ -1,0 +1,28 @@
+{
+  "at": "2026-11-28T00:32:58.280Z",
+  "chromium": "159.0.8154.6",
+  "headless": true,
+  "externalRequestsBlocked": true,
+  "browserBundleBytes": 103101,
+  "forbiddenImports": [],
+  "results": [
+    {
+      "storage": "embedded-file",
+      "receipt": {
+        "kind": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "commit": "b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a"
+      },
+      "nodeGlobals": false
+    },
+    {
+      "storage": "embedded-data",
+      "receipt": {
+        "kind": "github",
+        "repository": "kubohiroya/turbowarp-extension-template",
+        "commit": "b4cd60ecf9f2a3094dc446bf1b99dabaeb89517a"
+      },
+      "nodeGlobals": false
+    }
+  ]
+}
