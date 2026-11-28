@@ -3,6 +3,9 @@
 ## Unreleased
 
 - 機能拡張 bundle に `memberParentGroups`（CLI は `--member-parent-groups-json`）を追加した。`paletteGroups: "members"` のとき、選んだメンバーのグループを1つの親グループの下にまとめる。親は `getInfo().groups` に最初のメンバーの直前で1度だけ宣言し、メンバーのグループに `parent: '<親の id>'` を付ける。メンバー自身が宣言したグループ（`メンバー-グループ`）には常に `parent: 'メンバー'` を付ける。`parent` を知らないエディターでは今までどおり平らに表示される。
+- 外部拡張の取得元・build receipt・API を版付きの成果物 lock として SB3／展開ソースで保持し、未知の版や改変による情報欠落を拒否する。
+- GitHub の確定 commit から標準ビルド用 snapshot を取得し、環境変数を限定した子プロセスの timeout／中断・終了後の一時領域削除に対応する。OS 隔離は Desktop 側で必要。
+- npm archive の危険な path／link／重複／entry 数を検査し、公開 resolver・source snapshot・build に容量の記録を追加する。
 
 ## 0.32.0 - 2026-11-28
 
@@ -18,12 +21,6 @@
 ## 0.31.3 - 2026-11-28
 
 - 外部拡張の取得・検証・標準ビルドが使う Manifest を 0.9.1 へ更新した。配布物・API の検証を強化し、利用側の独自診断コードとの型互換性を維持する。
-
-## Unreleased
-
-- 外部拡張の取得元・build receipt・API を版付きの成果物 lock として SB3／展開ソースで保持し、未知の版や改変による情報欠落を拒否する。
-- GitHub の確定 commit から標準ビルド用 snapshot を取得し、環境変数を限定した子プロセスの timeout／中断・終了後の一時領域削除に対応する。OS 隔離は Desktop 側で必要。
-- npm archive の危険な path／link／重複／entry 数を検査し、公開 resolver・source snapshot・build に容量の記録を追加する。
 
 ## 0.31.2 - 2026-11-27
 
