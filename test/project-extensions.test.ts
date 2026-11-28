@@ -33,9 +33,10 @@ function published(
   {
     opcodes = ['go'],
     execution = 'sandboxed',
-  }: {opcodes?: string[]; execution?: 'sandboxed' | 'unsandboxed'} = {},
+    bundle = bundleOf(version),
+  }: {opcodes?: string[]; execution?: 'sandboxed' | 'unsandboxed'; bundle?: string} = {},
 ): PublishedExtension {
-  const bytes = encode(bundleOf(version));
+  const bytes = encode(bundle);
   const apiBytes = encode(apiOf(opcodes));
   return {
     distribution: {
@@ -65,6 +66,8 @@ function published(
 
 const releases = {
   '1.0.0': published('1.0.0'),
+  // A release that changed nothing in the bundle: the same bytes as 1.0.0.
+  '1.0.1': published('1.0.1', {bundle: bundleOf('1.0.0')}),
   '1.1.0': published('1.1.0'),
   '2.0.0-beta.1': published('2.0.0-beta.1'),
   '2.0.0': published('2.0.0', {opcodes: ['stop']}),
@@ -350,6 +353,80 @@ describe('project extension updates', () => {
       url: cdn('1.0.0'),
       version: '1.0.0',
     });
+  });
+
+  it('records the version asked for when its bytes are the ones the project holds', async () => {
+    const {archive, project} = lockedProject();
+    const options = ports();
+    const same = await planProjectExtensionUpdate(
+      archive,
+      project,
+      {[id]: {version: '1.0.0'}},
+      options,
+    );
+    expect(same.steps[0]!.change).toBe('none');
+
+    const plan = await planProjectExtensionUpdate(
+      archive,
+      project,
+      {[id]: {version: '1.0.1'}},
+      options,
+    );
+    expect(plan.blocked).toBe(false);
+    expect(plan.steps[0]).toMatchObject({
+      change: 'source',
+      from: {version: '1.0.0', sha256: hex(releases['1.0.0'].bytes)},
+      to: {
+        version: '1.0.1',
+        format: 'remote-cacheable',
+        url: cdn('1.0.1'),
+        sha256: hex(releases['1.0.0'].bytes),
+        source: {kind: 'npm', version: '1.0.1'},
+      },
+    });
+    const result = await applyProjectExtensionUpdate(archive, project, plan, options);
+    const [sample] = await listProjectExtensions(result.archive, result.project);
+    expect(sample).toMatchObject({
+      format: 'remote-cacheable',
+      sha256: hex(releases['1.0.0'].bytes),
+      version: '1.0.1',
+      url: cdn('1.0.1'),
+      source: {kind: 'npm', version: '1.0.1'},
+    });
+
+    // Embedded, the bytes stay where they are and only the record moves to the version asked for.
+    const embedded = await applyProjectExtensionUpdate(
+      archive,
+      project,
+      await planProjectExtensionUpdate(
+        archive,
+        project,
+        {[id]: {format: 'embedded-data'}},
+        options,
+      ),
+      options,
+    );
+    const back = await applyProjectExtensionUpdate(
+      embedded.archive,
+      embedded.project,
+      await planProjectExtensionUpdate(
+        embedded.archive,
+        embedded.project,
+        {[id]: {version: '1.0.1'}},
+        options,
+      ),
+      options,
+    );
+    const [kept] = await listProjectExtensions(back.archive, back.project);
+    expect(kept).toMatchObject({
+      format: 'embedded-data',
+      version: '1.0.1',
+      url: cdn('1.0.1'),
+      source: {kind: 'npm', version: '1.0.1'},
+    });
+    expect((back.project.extensionURLs as Record<string, string>)[id]).toBe(
+      dataUrl(bundleOf('1.0.0')),
+    );
   });
 
   it('refuses a plan for a project that changed since', async () => {
