@@ -116,6 +116,9 @@ describe('locked Plus extension source roundtrip', () => {
   it('rejects unsupported manifest shapes, storage, capability and execution changes', () => {
     const mutations = [
       (project: any) => {
+        project.extensions.push({id: 'not-an-ID'});
+      },
+      (project: any) => {
         project.turboWarpPlus.schemaVersion = 2;
       },
       (project: any) => {

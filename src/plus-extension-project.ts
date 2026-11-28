@@ -9,7 +9,10 @@ export function readPlusExtensions(project: ProjectJson) {
   const manifest = readProjectManifest(project);
   if (!manifest) return [];
   assert(manifest.extensions.length > 0, 'Unsupported empty Plus manifest.');
-  assert(Array.isArray(project.extensions), 'Plus extension IDs must be listed in the project.');
+  assert(
+    Array.isArray(project.extensions) && project.extensions.every((id) => typeof id === 'string'),
+    'Plus extension IDs must be listed as strings in the project.',
+  );
   const raw = (project.turboWarpPlus as UnknownRecord).extensions as UnknownRecord[];
   for (const spec of manifest.extensions) {
     const entry = raw.find((entry) => entry.id === spec.id)!;
